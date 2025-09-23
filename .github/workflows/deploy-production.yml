@@ -161,7 +161,7 @@ jobs:
           sleep 60
           
           # Basic health check
-          curl -f https://ehr.uossm.us/api/health || echo "Health check failed - this is expected if health endpoint doesn't exist yet"
+          curl -f https://ehr.uossm.us/ || echo "Health check failed - root may require auth"
           
           # Additional production health checks can be added here
           
