@@ -111,6 +111,7 @@
     "web-vitals": "^4.2.4"
   },
   "overrides": {
-    "@tanstack/react-router": "^1.121.2"
+    "@tanstack/react-router": "^1.121.2",
+    "devalue": ">=5.3.2"
   }
 }
