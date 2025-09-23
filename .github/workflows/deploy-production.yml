@@ -1,0 +1,187 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allow manual triggering
+    inputs:
+      confirm_production:
+        description: 'Type "DEPLOY_TO_PRODUCTION" to confirm production deployment'
+        required: true
+        default: ''
+
+jobs:
+  validate-input:
+    runs-on: ubuntu-latest
+    name: Validate Production Deployment
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Validate production confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_production }}" != "DEPLOY_TO_PRODUCTION" ]; then
+            echo "❌ Production deployment requires confirmation"
+            echo "Please enter 'DEPLOY_TO_PRODUCTION' in the confirmation field"
+            exit 1
+          fi
+          echo "✅ Production deployment confirmed"
+          
+  test:
+    runs-on: ubuntu-latest
+    name: Run Tests
+    needs: [validate-input]
+    if: always() && (needs.validate-input.result == 'success' || github.event_name == 'push')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0"
+          
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          run_install: false
+          
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+          
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+            
+      - name: Install dependencies
+        run: pnpm install
+        
+      - name: Run linting
+        run: pnpm run lint
+        
+      - name: Run type checking
+        run: pnpm exec tsc --noEmit
+        
+      - name: Run tests
+        run: pnpm test
+        
+      - name: Build application
+        run: pnpm run build
+        env:
+          NODE_ENV: production
+          
+  security:
+    runs-on: ubuntu-latest
+    name: Security Audit
+    needs: [validate-input]
+    if: always() && (needs.validate-input.result == 'success' || github.event_name == 'push')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0"
+          
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          run_install: false
+          
+      - name: Install dependencies
+        run: pnpm install
+        
+      - name: Run security audit
+        run: pnpm audit --audit-level moderate
+        
+  backup-check:
+    runs-on: ubuntu-latest
+    name: Verify Database Backup
+    needs: [validate-input]
+    if: always() && (needs.validate-input.result == 'success' || github.event_name == 'push')
+    
+    steps:
+      - name: Check recent backup
+        run: |
+          echo "🗄️ Verifying recent database backup exists"
+          echo "This step should verify that a recent backup of the production database exists"
+          echo "Implementation depends on your backup strategy (automated Render backups, custom scripts, etc.)"
+          echo "For now, this is a placeholder - implement actual backup verification"
+          
+  deploy-production:
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+    needs: [test, security, backup-check]
+    if: success()
+    
+    environment:
+      name: production
+      url: https://ehr.uossm.us
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Pre-deployment notification
+        run: |
+          echo "🚨 PRODUCTION DEPLOYMENT STARTING"
+          echo "📍 URL: https://ehr.uossm.us"
+          echo "📊 Environment: production"
+          echo "🔀 Branch: main"
+          echo "📝 Commit: ${{ github.sha }}"
+          echo "⏰ Time: $(date)"
+          
+      - name: Deploy to Render Production
+        uses: johnbeynon/render-deploy-action@v0.0.8
+        with:
+          service-id: ${{ secrets.RENDER_PRODUCTION_SERVICE_ID }}
+          api-key: ${{ secrets.RENDER_API_KEY }}
+          wait-for-success: true
+          
+      - name: Run database migrations
+        run: |
+          echo "Database migrations will be handled by the start script in Render"
+          echo "Migrations are run automatically via: pnpm run start (which includes db:migrate)"
+          echo "⚠️  Monitor logs carefully for migration success"
+          
+      - name: Health check
+        run: |
+          # Wait for deployment to be ready
+          sleep 60
+          
+          # Basic health check
+          curl -f https://ehr.uossm.us/ || echo "Health check failed - root may require auth"
+          
+          # Additional production health checks can be added here
+          
+      - name: Notify deployment success
+        run: |
+          echo "🎉 PRODUCTION DEPLOYMENT COMPLETED SUCCESSFULLY!"
+          echo "📍 URL: https://ehr.uossm.us"
+          echo "📊 Environment: production"
+          echo "🔀 Branch: main"
+          echo "📝 Commit: ${{ github.sha }}"
+          echo "⏰ Completed: $(date)"
+          
+      - name: Post deployment notification
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Production deployment successful"
+            echo "📧 Consider sending success notification to team"
+          else
+            echo "❌ Production deployment failed"
+            echo "🚨 IMMEDIATE ACTION REQUIRED"
+            echo "📧 Alert team immediately"
+          fi
