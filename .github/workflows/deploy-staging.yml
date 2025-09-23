@@ -115,8 +115,8 @@ jobs:
           # Wait a bit for deployment to be ready
           sleep 30
           
-          # Basic health check
-          curl -f https://ehr-staging.uossm.us/api/health || echo "Health check failed - this is expected if health endpoint doesn't exist yet"
+          # Basic health check against root
+          curl -f https://ehr-staging.uossm.us/ || echo "Health check failed - this may be expected if the app requires auth on root"
           
       - name: Notify deployment success
         run: |
