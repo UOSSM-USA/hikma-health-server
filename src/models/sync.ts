@@ -241,7 +241,7 @@ namespace Sync {
 
             for (const record of deltaData.created.concat(deltaData.updated)) {
                 // console.log(`Upserting ${tableName} record:`, record.id);
-                await pushTableNameModelMap[tableName].Sync.upsertFromDelta(record as typeof pushTableNameModelMap[typeof tableName].EncodedT);
+                await (pushTableNameModelMap[tableName] as any).Sync.upsertFromDelta(record as any);
             }
 
             for (const id of deltaData.deleted) {
