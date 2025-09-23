@@ -1,0 +1,67 @@
+services:
+  - type: web
+    name: "hikma-health-server-staging"
+    runtime: node
+    plan: standard # Use at least standard for staging
+    buildCommand: pnpm install && pnpm run build
+    startCommand: pnpm run start
+    
+    # Auto-deploy from develop branch
+    repo: https://github.com/UOSSM-USA/hikma-health-server
+    branch: develop
+    
+    # Custom domains
+    domains:
+      - ehr-staging.uossm.us
+    
+    envVars:
+      # Database connection
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hikma-health-db-staging
+          property: connectionString
+          
+      # Node version
+      - key: NODE_VERSION
+        value: "22.14.0"
+        
+      # Environment designation
+      - key: NODE_ENV
+        value: "production"
+        
+      # App configuration
+      - key: VITE_APP_TITLE
+        value: "Hikma Health (Staging)"
+        
+      # Server URL for staging
+      - key: SERVER_URL
+        value: "https://ehr-staging.uossm.us"
+        
+      # Sentry configuration for staging
+      - key: VITE_SENTRY_ORG
+        sync: false # Set manually in Render dashboard
+        
+      - key: VITE_SENTRY_PROJECT
+        value: "hikma-health-staging"
+        
+      - key: SENTRY_AUTH_TOKEN
+        sync: false # Set manually in Render dashboard
+        
+      # Feature flags for staging
+      - key: ENABLE_DEBUG_FEATURES
+        value: "true"
+        
+      - key: ALLOW_REGISTRATION
+        value: "true"
+        
+    # Health check configuration
+    healthCheckPath: /api/health
+    
+databases:
+  - name: "hikma-health-db-staging"
+    plan: standard # Use at least standard for staging
+    databaseName: hhdb_staging
+    user: hikma_staging
+    # Consider enabling high availability for staging if budget allows
+    # highAvailability:
+    #   enabled: true

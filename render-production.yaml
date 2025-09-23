@@ -1,0 +1,85 @@
+services:
+  - type: web
+    name: "hikma-health-server-production"
+    runtime: node
+    plan: pro # Use pro plan for production
+    buildCommand: pnpm install && pnpm run build
+    startCommand: pnpm run start
+    
+    # Auto-deploy from main branch
+    repo: https://github.com/UOSSM-USA/hikma-health-server
+    branch: main
+    
+    # Custom domains
+    domains:
+      - ehr.uossm.us
+    
+    # Scaling configuration for production
+    scaling:
+      minInstances: 2
+      maxInstances: 10
+      targetCPU: 70
+      targetMemory: 80
+    
+    envVars:
+      # Database connection
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hikma-health-db-production
+          property: connectionString
+          
+      # Node version
+      - key: NODE_VERSION
+        value: "22.14.0"
+        
+      # Environment designation
+      - key: NODE_ENV
+        value: "production"
+        
+      # App configuration
+      - key: VITE_APP_TITLE
+        value: "Hikma Health"
+        
+      # Server URL for production
+      - key: SERVER_URL
+        value: "https://ehr.uossm.us"
+        
+      # Sentry configuration for production
+      - key: VITE_SENTRY_ORG
+        sync: false # Set manually in Render dashboard
+        
+      - key: VITE_SENTRY_PROJECT
+        value: "hikma-health-production"
+        
+      - key: SENTRY_AUTH_TOKEN
+        sync: false # Set manually in Render dashboard
+        
+      # Security settings for production
+      - key: ENABLE_DEBUG_FEATURES
+        value: "false"
+        
+      - key: ALLOW_REGISTRATION
+        value: "false"
+        
+      # Session and security configuration
+      - key: SESSION_SECRET
+        sync: false # Set manually in Render dashboard
+        
+      - key: JWT_SECRET
+        sync: false # Set manually in Render dashboard
+        
+    # Health check configuration
+    healthCheckPath: /api/health
+    
+databases:
+  - name: "hikma-health-db-production"
+    plan: pro # Use pro plan for production
+    databaseName: hhdb_production
+    user: hikma_production
+    
+    # Enable high availability for production
+    highAvailability:
+      enabled: true
+      
+    # Backup configuration
+    backupRetentionDays: 30
