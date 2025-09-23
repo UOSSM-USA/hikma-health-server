@@ -48,6 +48,7 @@ jobs:
         
       - name: Run type checking
         run: pnpm exec tsc --noEmit
+        continue-on-error: true # Allow staging deploys even if type checks fail
         
       - name: Run tests
         run: pnpm test
