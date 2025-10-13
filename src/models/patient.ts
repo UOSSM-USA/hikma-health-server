@@ -165,6 +165,7 @@ namespace Patient {
   };
 
   export namespace Table {
+    export const ALWAYS_PUSH_TO_MOBILE = false;
     export const name = "patients";
     /** The name of the table in the mobile database */
     export const mobileName = "patients";
@@ -677,17 +678,21 @@ namespace Patient {
      */
     export const upsert = serverOnly(async (patient: Patient.EncodedT) => {
       // permissions check
-      const clinicIds =
-        await UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
-          "can_register_patients",
-        );
+      await UserClinicPermissions.API.isAuthorizedWithClinic(
+        patient.primary_clinic_id,
+        "can_register_patients",
+      );
+      // const clinicIds =
+      //   await UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
+      //     "can_register_patients",
+      //   );
 
-      if (
-        patient.primary_clinic_id &&
-        !clinicIds.includes(patient.primary_clinic_id)
-      ) {
-        throw new Error("Unauthorized");
-      }
+      // if (
+      //   patient.primary_clinic_id &&
+      //   !clinicIds.includes(patient.primary_clinic_id)
+      // ) {
+      //   throw new Error("Unauthorized");
+      // }
       return await upsert_core(patient);
     });
 

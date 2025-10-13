@@ -1,4 +1,4 @@
-import { Data, Either, Option } from "effect";
+import { Data, Either, Match, Option } from "effect";
 import {
   type ColumnType,
   type Generated,
@@ -84,6 +84,8 @@ namespace EventForm {
     export type NewEventForms = Insertable<T>;
     export type EventFormsUpdate = Updateable<T>;
   }
+
+  export const RESERVED_FIELD_NAMES = ["diagnosis", "medicine"];
 
   // ==============
 
@@ -391,12 +393,26 @@ namespace EventForm {
 
   export const createFieldSchema = <T extends string, A, I, R>(
     tag: T,
-    specific: Schema.Schema<A, I, R>
+    specific: Schema.Schema<A, I, R>,
   ) =>
     Schema.Struct({
       _tag: Schema.Literal(tag),
       fieldType: Schema.Literal(tag),
     }).pipe(Schema.extend(specific), Schema.extend(BaseFieldSchema));
+
+  // Given a fieldType and inputType, return the appropriate _tag field
+  export const getFieldTag = (fieldType: Field["fieldType"]): Field["_tag"] => {
+    return Match.value(fieldType).pipe(
+      Match.when("binary", () => "binary"),
+      Match.when("free-text", () => "free-text"),
+      Match.when("medicine", () => "medicine"),
+      Match.when("diagnosis", () => "diagnosis"),
+      Match.when("date", () => "date"),
+      Match.when("file", () => "file"),
+      Match.when("options", () => "options"),
+      Match.exhaustive,
+    ) as Field["_tag"];
+  };
 
   export const BinaryFieldSchema = createFieldSchema(
     "binary",
@@ -404,10 +420,10 @@ namespace EventForm {
       inputType: Schema.Union(
         Schema.Literal("checkbox"),
         Schema.Literal("radio"),
-        Schema.Literal("select")
+        Schema.Literal("select"),
       ),
       options: Schema.Array(FieldOptionSchema),
-    })
+    }),
   );
 
   export const TextFieldSchema = createFieldSchema(
@@ -418,7 +434,7 @@ namespace EventForm {
         Schema.Literal("number"),
         Schema.Literal("email"),
         Schema.Literal("password"),
-        Schema.Literal("tel")
+        Schema.Literal("tel"),
       ),
       length: Schema.Union(Schema.Literal("short"), Schema.Literal("long")),
       units: Schema.Array(
@@ -428,10 +444,10 @@ namespace EventForm {
           Schema.Literal("mcg"),
           Schema.Literal("mL"),
           Schema.Literal("L"),
-          Schema.Literal("units")
-        )
+          Schema.Literal("units"),
+        ),
       ),
-    })
+    }),
   );
   export const MedicineFieldSchema = createFieldSchema(
     "medicine",
@@ -456,8 +472,8 @@ namespace EventForm {
             Schema.Literal("otic"),
             Schema.Literal("vaginal"),
             Schema.Literal("transdermal"),
-            Schema.Literal("other")
-          )
+            Schema.Literal("other"),
+          ),
         ),
         form: Schema.Array(
           Schema.Union(
@@ -475,8 +491,8 @@ namespace EventForm {
             Schema.Literal("capsule"),
             Schema.Literal("injection"),
             Schema.Literal("patch"),
-            Schema.Literal("other")
-          )
+            Schema.Literal("other"),
+          ),
         ),
         frequency: Schema.String,
         intervals: Schema.String,
@@ -488,8 +504,8 @@ namespace EventForm {
             Schema.Literal("mcg"),
             Schema.Literal("mL"),
             Schema.Literal("L"),
-            Schema.Literal("units")
-          )
+            Schema.Literal("units"),
+          ),
         ),
         duration: Schema.String,
         durationUnits: Schema.Array(
@@ -498,24 +514,24 @@ namespace EventForm {
             Schema.Literal("days"),
             Schema.Literal("weeks"),
             Schema.Literal("months"),
-            Schema.Literal("years")
-          )
+            Schema.Literal("years"),
+          ),
         ),
       }),
-    })
+    }),
   );
   export const DiagnosisFieldSchema = createFieldSchema(
     "diagnosis",
     Schema.Struct({
       inputType: Schema.Literal("select"),
       options: Schema.Array(FieldOptionSchema),
-    })
+    }),
   );
   export const DateFieldSchema = createFieldSchema(
     "date",
     Schema.Struct({
       inputType: Schema.Literal("date"),
-    })
+    }),
   );
   export const OptionsFieldSchema = createFieldSchema(
     "options",
@@ -523,11 +539,11 @@ namespace EventForm {
       inputType: Schema.Union(
         Schema.Literal("dropdown"),
         Schema.Literal("radio"),
-        Schema.Literal("select")
+        Schema.Literal("select"),
       ),
       options: Schema.Array(FieldOptionSchema),
       multi: Schema.Boolean,
-    })
+    }),
   );
   export const FileFieldSchema = createFieldSchema(
     "file",
@@ -538,14 +554,14 @@ namespace EventForm {
           Schema.Union(
             Schema.Literal("image/png"),
             Schema.Literal("image/jpeg"),
-            Schema.Literal("application/pdf")
-          )
-        )
+            Schema.Literal("application/pdf"),
+          ),
+        ),
       ),
       multiple: Schema.Boolean,
       minItems: Schema.Number,
       maxItems: Schema.Number,
-    })
+    }),
   );
 
   export const FieldSchema = Schema.Union(
@@ -555,7 +571,7 @@ namespace EventForm {
     DiagnosisFieldSchema,
     DateFieldSchema,
     OptionsFieldSchema,
-    FileFieldSchema
+    FileFieldSchema,
   );
 
   export type Field = Schema.Schema.Type<typeof FieldSchema>;
@@ -607,7 +623,7 @@ namespace EventForm {
      * @returns
      */
     export function hasUnits(
-      field: HHFieldWithPosition | HHField
+      field: HHFieldWithPosition | HHField,
     ): field is HHFieldWithPosition {
       return "units" in field;
     }
@@ -618,7 +634,7 @@ namespace EventForm {
      * @returns
      */
     export function getUnits(
-      field: HHFieldWithPosition | HHField
+      field: HHFieldWithPosition | HHField,
     ): (DoseUnit | DurationUnit)[] {
       return hasUnits(field) ? Array.from(new Set(field?.units || [])) : [];
     }
@@ -752,6 +768,7 @@ namespace EventForm {
         .orderBy("created_at", "desc")
         .selectAll()
         .execute();
+
       return result;
     });
 
@@ -797,7 +814,7 @@ namespace EventForm {
           .returningAll()
           .executeTakeFirst();
         return result;
-      }
+      },
     );
 
     /**
@@ -831,7 +848,7 @@ namespace EventForm {
           .returningAll()
           .executeTakeFirst();
         return result;
-      }
+      },
     );
 
     /**
@@ -853,7 +870,7 @@ namespace EventForm {
           .returningAll()
           .executeTakeFirst();
         return result;
-      }
+      },
     );
 
     /**
@@ -881,7 +898,7 @@ namespace EventForm {
           .returningAll()
           .executeTakeFirst();
         return result;
-      }
+      },
     );
 
     /**
@@ -909,7 +926,7 @@ namespace EventForm {
           .returningAll()
           .executeTakeFirst();
         return result;
-      }
+      },
     );
   }
 }

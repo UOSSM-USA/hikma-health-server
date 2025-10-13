@@ -25,6 +25,7 @@ import upperFirst from "lodash/upperFirst";
 import uniq from "lodash/uniq";
 import If from "@/components/if";
 import EventForm from "@/models/event-form";
+import { Textarea } from "../ui/textarea";
 
 let YesNoOptions: { value: string; label: string }[] = [
   { value: "yes", label: "Yes" },
@@ -56,11 +57,11 @@ type InputConfigProps = {
   onFieldChange: (fieldId: string, key: string, value: any) => void;
   onFieldOptionChange: (
     fieldId: string,
-    options: EventForm.FieldOption[]
+    options: EventForm.FieldOption[],
   ) => void;
   onFieldUnitChange: (
     fieldId: string,
-    units: EventForm.DoseUnit[] | false
+    units: EventForm.DoseUnit[] | false,
   ) => void;
   onRemoveField: (fieldId: string) => void;
 };
@@ -76,7 +77,7 @@ export function InputsConfiguration({
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   );
 
   function handleDragEnd(event: any) {
@@ -90,6 +91,8 @@ export function InputsConfiguration({
     }
   }
 
+  const allFieldNames = fields.map((field) => field.name.trim().toLowerCase());
+
   return (
     <DndContext
       sensors={sensors}
@@ -99,6 +102,24 @@ export function InputsConfiguration({
       <div className="space-y-10">
         <SortableContext items={fields} strategy={verticalListSortingStrategy}>
           {fields.map((field) => {
+            const fieldNameExists =
+              field.name.trim().length > 0 &&
+              allFieldNames.filter(
+                (allField) => allField === field.name.trim().toLowerCase(),
+              ).length > 1;
+
+            const nameErrorMessage = (() => {
+              if (fieldNameExists) {
+                return "Field name already exists. Names must be unique.";
+              } else if (
+                EventForm.RESERVED_FIELD_NAMES.includes(
+                  field.name.trim().toLowerCase(),
+                )
+              ) {
+                return `${field.name} is reserved.`;
+              }
+              return null;
+            })();
             return (
               <SortableItem id={field.id} key={field.id}>
                 <div className="space-y-4 bg-muted/50 p-4 rounded-lg border">
@@ -112,6 +133,7 @@ export function InputsConfiguration({
                       onChange={(e) =>
                         onFieldChange(field.id, "name", e.currentTarget.value)
                       }
+                      error={nameErrorMessage}
                     />
                     <Input
                       label="Description (Optional)"
@@ -120,7 +142,7 @@ export function InputsConfiguration({
                         onFieldChange(
                           field.id,
                           "description",
-                          e.currentTarget.value
+                          e.currentTarget.value,
                         )
                       }
                     />
@@ -130,16 +152,18 @@ export function InputsConfiguration({
 
                     {/* IF the field type is medicine, then show the textarea for medication options the doctor can choose from. This is optional. */}
                     <If show={field.fieldType === "medicine"}>
-                      <Input
+                      <Textarea
                         rows={4}
                         value={field.options?.join("; ") || " "}
                         onChange={(e) =>
                           onFieldOptionChange(
                             field.id,
                             e.currentTarget.value
-                              .split(";")
-                              .map((opt) => opt.trim())
-                              .filter((option) => option.trim() !== "")
+                              .replaceAll("  ", " ")
+                              .split(";"),
+                            // Filtering is ideal to remove empty strings but prevents entry of semi colon. Have to do trims and filters in the submission
+                            // .map((opt) => opt.trim()),
+                            // .filter((option) => option.trim() !== ""),
                           )
                         }
                         label="Medication options, separated by semicolon (;)"
@@ -151,7 +175,7 @@ export function InputsConfiguration({
                     <If
                       show={
                         ["select", "dropdown", "checkbox", "radio"].includes(
-                          field.inputType
+                          field.inputType,
                         ) && field.fieldType !== "diagnosis"
                       }
                     >
@@ -167,7 +191,7 @@ export function InputsConfiguration({
                           name="colors"
                           options={fieldOptionsUnion(
                             YesNoOptions,
-                            field.options || []
+                            field.options || [],
                           )}
                         />
                       </div>
@@ -180,7 +204,7 @@ export function InputsConfiguration({
                             field.id,
                             e.currentTarget.value === "on"
                               ? listToFieldOptions(measurementOptions)
-                              : false
+                              : false,
                           )
                         }
                         value={
@@ -196,7 +220,7 @@ export function InputsConfiguration({
                           onFieldChange(
                             field.id,
                             "multi",
-                            e.currentTarget.value === "on" ? false : true
+                            e.currentTarget.value === "on" ? false : true,
                           )
                         }
                         value={field.multi ? "on" : "off"}

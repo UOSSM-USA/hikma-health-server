@@ -14,7 +14,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { LucideEdit, LucideTrash } from "lucide-react";
+import {
+  LucideArchive,
+  LucideEdit,
+  LucideTrash,
+  LucideView,
+} from "lucide-react";
 import { toast } from "sonner";
 import { getAllClinics } from "@/lib/server-functions/clinics";
 import { Link } from "@tanstack/react-router";
@@ -23,6 +28,12 @@ const deleteClinic = createServerFn({ method: "POST" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     return Clinic.softDelete(data.id);
+  });
+
+export const archiveClinic = createServerFn({ method: "POST" })
+  .validator((data: { id: string; isArchived: boolean }) => data)
+  .handler(async ({ data }) => {
+    return Clinic.API.setArchivedStatus(data.id, data.isArchived);
   });
 
 export const Route = createFileRoute("/app/clinics/")({
@@ -38,11 +49,18 @@ function RouteComponent() {
   const navigate = useNavigate();
   const router = useRouter();
 
+  console.log("Clinics:", clinics);
+
   const handleEdit = (id: string) => {
     navigate({ to: `/app/clinics/edit/${id}` });
   };
 
+  const handleOpen = (id: string) => {
+    navigate({ to: `/app/clinics/${id}` });
+  };
+
   const handleDelete = (id: string) => {
+    return;
     if (!window.confirm("Are you sure you want to delete this clinic?")) {
       return;
     }
@@ -54,6 +72,28 @@ function RouteComponent() {
       })
       .then(() => {
         toast.success("Clinic deleted successfully");
+        router.invalidate({ sync: true });
+      });
+  };
+
+  const handleArchive = (id: string) => {
+    const usersCount =
+      clinics.find((clinic) => clinic.id === id)?.users?.length || 0;
+    if (usersCount > 0) {
+      toast.error("Cannot archive a clinic with users");
+      return;
+    }
+    if (!window.confirm("Are you sure you want to archive this clinic?")) {
+      return;
+    }
+
+    archiveClinic({ data: { id, isArchived: true } })
+      .catch((error) => {
+        console.error(error);
+        toast.error(error.message);
+      })
+      .then(() => {
+        toast.success("Clinic archived successfully");
         router.invalidate({ sync: true });
       });
   };
@@ -73,6 +113,7 @@ function RouteComponent() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Users</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -80,7 +121,17 @@ function RouteComponent() {
             {clinics?.map((clinic) => (
               <TableRow key={clinic.id} className="py-2">
                 <TableCell>{clinic.name}</TableCell>
+                <TableCell align="center">
+                  {clinic?.users?.length || 0}
+                </TableCell>
                 <TableCell className="flex gap-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleOpen(clinic.id)}
+                  >
+                    <LucideView className="mr-2" />
+                    Open
+                  </Button>
                   <Button
                     variant="outline"
                     onClick={() => handleEdit(clinic.id)}
@@ -88,13 +139,22 @@ function RouteComponent() {
                     <LucideEdit className="mr-2" />
                     Edit
                   </Button>
-                  <Button
+                  {/* DELETE IS NOT ALLOWED */}
+                  {/*<Button
                     variant="outline"
                     className="text-red-500"
                     onClick={() => handleDelete(clinic.id)}
                   >
                     <LucideTrash className="mr-2" />
                     Delete
+                  </Button>*/}
+                  <Button
+                    variant="outline"
+                    className="text-red-500"
+                    onClick={() => handleArchive(clinic.id)}
+                  >
+                    <LucideArchive className="mr-2" />
+                    Archive
                   </Button>
                 </TableCell>
               </TableRow>

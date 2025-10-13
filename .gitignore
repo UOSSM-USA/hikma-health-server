@@ -14,3 +14,10 @@ count.txt
 
 .tanstack/*
 documentation.pdf*
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

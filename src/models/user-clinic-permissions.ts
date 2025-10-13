@@ -53,7 +53,7 @@ namespace UserClinicPermissions {
   >;
 
   // Role permissions
-  const rolePermissions: Record<
+  export const rolePermissions: Record<
     User.RoleT,
     Record<UserPermissionsT, boolean>
   > = {
@@ -89,6 +89,7 @@ namespace UserClinicPermissions {
 
   export type T = typeof UserClinicPermissionsSchema.Type;
   export type EncodedT = typeof UserClinicPermissionsSchema.Encoded;
+  export type RolePermissions = typeof rolePermissions;
 
   /**
    * Union type representing the available permission fields that can be checked for a user
@@ -121,6 +122,11 @@ namespace UserClinicPermissions {
   };
 
   export namespace Table {
+    /**
+     * If set to true, this table is always pushed regardless of the the last sync date times. All sync events push to mobile the latest table.
+     * IMPORTANT: If ALWAYS_PUSH_TO_MOBILE is true, content of the table should never be edited on the client or pushed to the server from mobile. its one way only.
+     * */
+    export const ALWAYS_PUSH_TO_MOBILE = true;
     export const name = "user_clinic_permissions";
     /** The name of the table in the mobile database */
     export const mobileName = "user_clinic_permissions";
@@ -252,6 +258,26 @@ namespace UserClinicPermissions {
     );
 
     /**
+     * Check if the current user (from token) is authorized to perform an action in a specific clinic
+     * @param {string | null} clinicId - The clinic ID to check authorization for
+     * @param {UserPermissionsT} permission - The permission to check
+     * @throws {Error} Throws "Unauthorized" error if the user doesn't have the permission for the clinic
+     * @returns {Promise<void>} Resolves if authorized, rejects if not
+     */
+    export const isAuthorizedWithClinic = serverOnly(
+      async (clinicId: string | null, permission: UserPermissionsT) => {
+        if (!clinicId) {
+          throw new Error("Unauthorized");
+        }
+        const clinicIds = await getClinicIdsWithPermissionFromToken(permission);
+
+        if (clinicId && !clinicIds.includes(clinicId)) {
+          throw new Error("Unauthorized");
+        }
+      },
+    );
+
+    /**
      * Get all clinic permissions for a user
      * @param {string} userId - The user ID
      * @returns {Promise<UserClinicPermissions.EncodedT[]>} - All clinic permissions for the user
@@ -330,6 +356,40 @@ namespace UserClinicPermissions {
           .executeTakeFirstOrThrow();
 
         return result;
+      },
+    );
+
+    /**
+     * When a new clinic is created, we update all the permissions for all super_admins for that clinic
+     * @param {string} clinicId
+     * @param {string} currentUserId
+     */
+    export const newClinicCreated = serverOnly(
+      async (clinicId: string, currentUserId: string) => {
+        const superAdmins = await db
+          .selectFrom(User.Table.name)
+          .where("role", "=", User.ROLES.SUPER_ADMIN)
+          .selectAll()
+          .execute();
+
+        await Promise.all(
+          superAdmins.map(async (superAdmin) => {
+            await db
+              .insertInto(UserClinicPermissions.Table.name)
+              .values({
+                user_id: superAdmin.id,
+                clinic_id: clinicId,
+                can_register_patients: true,
+                can_view_history: true,
+                can_edit_records: true,
+                can_delete_records: true,
+                is_clinic_admin: true,
+                last_modified_by: currentUserId,
+                updated_at: sql`now()::timestamp with time zone`,
+              })
+              .executeTakeFirstOrThrow();
+          }),
+        );
       },
     );
 

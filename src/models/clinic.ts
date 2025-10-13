@@ -11,6 +11,9 @@ import db from "@/db";
 import { serverOnly } from "@tanstack/react-start";
 import { v1 as uuidV1 } from "uuid";
 import User from "./user";
+import UserClinicPermissions from "./user-clinic-permissions";
+import Token from "./token";
+import { getCookie } from "@tanstack/react-start/server";
 
 namespace Clinic {
   export const ClinicSchema = Schema.Struct({
@@ -22,12 +25,13 @@ namespace Clinic {
     last_modified: Schema.DateFromSelf,
     server_created_at: Schema.DateFromSelf,
     deleted_at: Schema.OptionFromNullOr(Schema.DateFromSelf),
+    is_archived: Schema.Boolean,
   });
   export type T = typeof ClinicSchema.Type;
   export type EncodedT = typeof ClinicSchema.Encoded;
 
   export const fromDbEntry = (
-    entry: Clinic.Table.Clinics
+    entry: Clinic.Table.Clinics,
   ): Either.Either<Clinic.T, Error> => {
     return Schema.decodeUnknownEither(ClinicSchema)(entry);
   };
@@ -43,6 +47,11 @@ namespace Clinic {
   // };
 
   export namespace Table {
+    /**
+     * If set to true, this table is always pushed regardless of the the last sync date times. All sync events push to mobile the latest table.
+     * IMPORTANT: If ALWAYS_PUSH_TO_MOBILE is true, content of the table should never be edited on the client or pushed to the server from mobile. its one way only.
+     * */
+    export const ALWAYS_PUSH_TO_MOBILE = true;
     export const name = "clinics";
     /** The name of the table in the mobile database */
     export const mobileName = "clinics";
@@ -55,6 +64,7 @@ namespace Clinic {
       last_modified: "last_modified",
       server_created_at: "server_created_at",
       deleted_at: "deleted_at",
+      is_archived: "is_archived",
     };
 
     export interface T {
@@ -72,29 +82,83 @@ namespace Clinic {
         string | null | undefined,
         string | null
       >;
+      is_archived: ColumnType<boolean, boolean, boolean>;
     }
     export type Clinics = Selectable<T>;
     export type NewClinics = Insertable<T>;
     export type ClinicsUpdate = Updateable<T>;
   }
 
+  export namespace API {
+    /**
+     * Set the archived status of a clinic
+     * @param {string} id of the clinic
+     * @param {boolean} isArchived - The new archived status of the clinic
+     */
+    export const setArchivedStatus = serverOnly(
+      async (id: string, isArchived: boolean = false): Promise<void> => {
+        await db
+          .updateTable(Clinic.Table.name)
+          .where("id", "=", id)
+          .set({
+            is_archived: isArchived,
+            updated_at: sql`now()`,
+            last_modified: sql`now()`,
+          })
+          .execute();
+      },
+    );
+  }
+
   /**
    * Returns a list of all the clinics
-   * @returns {Promise<EncodedT>[]} - List of clinics
+   * @returns {Promise<(EncodedT & { users?: { id: string; clinic_id: string }[] })[]>} - List of clinics
    */
-  export const getAll = serverOnly(async (): Promise<EncodedT[]> => {
-    const result = await db
-      .selectFrom(Clinic.Table.name)
-      .where("is_deleted", "=", false)
-      .selectAll()
-      .execute();
+  export const getAll = serverOnly(
+    async (
+      options: { includeUsers: boolean } = { includeUsers: true },
+    ): Promise<
+      (EncodedT & { users?: { id: string; clinic_id: string }[] })[]
+    > => {
+      const baseQuery = db
+        .selectFrom(Clinic.Table.name)
+        .where("is_deleted", "=", false)
+        .where("is_archived", "=", false);
 
-    return result;
-  });
+      if (options.includeUsers) {
+        const query = sql`
+          SELECT
+              clinic.*,
+              COALESCE(
+                ARRAY_AGG(
+                  JSON_BUILD_OBJECT(
+                    'id', users.id,
+                    'clinic_id', users.clinic_id
+                  )
+                ) FILTER (WHERE users.id IS NOT NULL),
+                ARRAY[]::json[]
+              ) as users
+            FROM  ${sql.id(Clinic.Table.name)} clinic
+            LEFT JOIN users ON users.clinic_id = clinic.id
+            WHERE clinic.is_deleted = false AND clinic.is_archived = false
+            GROUP BY clinic.id
+        `.compile(db);
+
+        const result = await db.executeQuery(query);
+
+        return result.rows;
+      }
+
+      const result = await baseQuery.selectAll().execute();
+
+      return result;
+    },
+  );
 
   /**
    * Deletes a clinic given an id, and that the clinic does not have any registered members,
    * If there are registered members, the clinic will not be deleted and an error will be thrown
+   * TODO: We should prevent deleting clinics, only archive them
    * @param {string} id - The id of the clinic to delete
    * @returns {Promise<void>} - Resolves when the clinic is deleted
    * @throws {Error} - If the clinic has registered users
@@ -111,7 +175,7 @@ namespace Clinic {
     // If there are users, throw an error
     if (usersInClinic.length > 0) {
       throw new Error(
-        `Cannot delete clinic with ID ${id} because it has ${usersInClinic.length} registered users. Please remove or reassign all users before deleting the clinic.`
+        `Cannot delete clinic with ID ${id} because it has ${usersInClinic.length} registered users. Please remove or reassign all users before deleting the clinic.`,
       );
     }
 
@@ -134,6 +198,17 @@ namespace Clinic {
    */
   export const save = serverOnly(
     async ({ id, name }: { id?: string; name: string }): Promise<void> => {
+      const token = getCookie("token");
+      if (!token) {
+        return Promise.reject(new Error("Unauthorized"));
+      }
+      const userOption = await Token.getUser(token);
+      if (Option.isNone(userOption)) {
+        return Promise.reject(new Error("Unauthorized"));
+      }
+
+      const currentUser = userOption.value;
+
       if (typeof id !== "string" || id.length <= 5) {
         const clinicId = uuidV1();
         await db
@@ -147,8 +222,13 @@ namespace Clinic {
             last_modified: sql`now()`,
             server_created_at: sql`now()`,
             deleted_at: null,
+            is_archived: false,
           })
           .execute();
+
+        // get all the current super admins
+        // going to ignore any errors here
+        UserClinicPermissions.API.newClinicCreated(clinicId, currentUser.id);
       } else {
         await db
           .updateTable(Clinic.Table.name)
@@ -158,23 +238,25 @@ namespace Clinic {
           .where("id", "=", id)
           .execute();
       }
-    }
+    },
   );
 
   /**
    * Get by id
    * @param {string} id - The id of the clinic to get
-   * @returns {Promise<Clinic.T>} - The clinic
+   * @returns {Promise<Clinic.EncodedT>} - The clinic
    */
-  export const getById = serverOnly(async (id: string): Promise<Clinic.T> => {
-    const result = await db
-      .selectFrom(Clinic.Table.name)
-      .where("id", "=", id)
-      .where("is_deleted", "=", false)
-      .selectAll()
-      .executeTakeFirstOrThrow();
-    return result;
-  });
+  export const getById = serverOnly(
+    async (id: string): Promise<Clinic.EncodedT> => {
+      const result = await db
+        .selectFrom(Clinic.Table.name)
+        .where("id", "=", id)
+        .where("is_deleted", "=", false)
+        .selectAll()
+        .executeTakeFirstOrThrow();
+      return result;
+    },
+  );
 }
 
 export default Clinic;
