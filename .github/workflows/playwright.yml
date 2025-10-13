@@ -19,6 +19,14 @@ jobs:
       run: pnpm exec playwright install --with-deps
     - name: Run Playwright tests
       run: pnpm exec playwright test
+      env:
+        # Database configuration for tests
+        DB_HOST: localhost
+        DB_NAME: test_db
+        DB_USER: test_user
+        DB_PASSWORD: test_password
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        NODE_ENV: test
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
