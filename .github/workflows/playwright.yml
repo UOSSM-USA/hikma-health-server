@@ -27,6 +27,9 @@ jobs:
         DB_PASSWORD: test_password
         DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
         NODE_ENV: test
+        # Admin credentials for e2e tests
+        VITE_ADMIN_EMAIL: admin@test.com
+        VITE_ADMIN_PASS: testpassword123
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
