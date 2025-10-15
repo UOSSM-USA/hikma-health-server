@@ -38,7 +38,7 @@ namespace User {
     ADMIN: "admin",
     SUPER_ADMIN_2: "super_admin_2",
     SUPER_ADMIN: "super_admin",
-  };
+  } as const;
 
   export const roles = [
     ROLES.REGISTRAR,
