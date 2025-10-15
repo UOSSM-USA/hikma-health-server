@@ -8,7 +8,7 @@ export const getPatientVitals = createServerFn({
   method: "GET",
 })
   .validator((data: { patientId: string }) => data)
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<PatientVital.EncodedT[]> => {
     return Sentry.startSpan({ name: "getPatientVitals" }, async () => {
       const authorized = await userRoleTokenHasCapability([
         User.CAPABILITIES.READ_ALL_PATIENT,
@@ -17,6 +17,7 @@ export const getPatientVitals = createServerFn({
       if (!authorized) {
         return Promise.reject({
           message: "Unauthorized: Insufficient permissions",
+          source: "getPatientVitals",
         });
       }
 
@@ -45,6 +46,7 @@ export const getMostRecentVital = createServerFn({
       if (!authorized) {
         return Promise.reject({
           message: "Unauthorized: Insufficient permissions",
+          source: "getMostRecentVital",
         });
       }
 
@@ -75,6 +77,7 @@ export const getVitalsByDateRange = createServerFn({
       if (!authorized) {
         return Promise.reject({
           message: "Unauthorized: Insufficient permissions",
+          source: "getVitalsByDateRange",
         });
       }
 
@@ -107,6 +110,7 @@ export const createPatientVital = createServerFn({
       if (!authorized) {
         return Promise.reject({
           message: "Unauthorized: Insufficient permissions",
+          source: "createPatientVital",
         });
       }
 
