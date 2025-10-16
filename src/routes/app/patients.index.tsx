@@ -279,7 +279,7 @@ function RouteComponent() {
         const eventFormFields = eventForm.form_fields;
         const headerRow = [
           "ID",
-          ...eventFormFields.map((f) => f.name),
+          ...eventFormFields?.map((f) => f.name),
           ...Object.values(extraColumns),
         ];
         worksheet.addRow(headerRow);
@@ -443,7 +443,7 @@ function RouteComponent() {
               <TableHead className="px-6" key={"id"}>
                 {t("patientsList.idHeader")}
               </TableHead>
-              {headers.map((header) => (
+              {headers?.map((header) => (
                 <TableHead className="px-6" key={header}>
                   {header}
                 </TableHead>
@@ -451,7 +451,7 @@ function RouteComponent() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {patientsList.map((patient) => (
+            {patientsList?.map((patient) => (
               <TableRow
                 className="hover:bg-gray-100 cursor-pointer"
                 onClick={() => openPatientChart(patient.id)}
@@ -506,7 +506,7 @@ function RouteComponent() {
               />
             </PaginationItem>
 
-            {pageNumbers.map((pageNumber, index) => {
+            {pageNumbers?.map((pageNumber, index) => {
               // Add ellipsis if there's a gap between page numbers
               const shouldShowEllipsis =
                 index > 0 && pageNumber > pageNumbers[index - 1] + 1;
