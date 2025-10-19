@@ -2,7 +2,10 @@
 
 /**
  * Script to create sample clinic departments
- * Run with: npx tsx scripts/create-sample-departments.ts
+ * 
+ * Usage:
+ *   npx tsx scripts/create-sample-departments.ts          # Create departments (skip if exist)
+ *   npx tsx scripts/create-sample-departments.ts --cleanup # Clean up existing and recreate
  */
 
 import { v1 as uuidv1 } from "uuid";
@@ -116,7 +119,38 @@ const clinicDepartmentAssignments = {
 async function createSampleDepartments() {
   console.log("🏥 Creating sample clinic departments...\n");
 
+  // Check for command line arguments
+  const shouldCleanup = process.argv.includes("--cleanup") || process.argv.includes("-c");
+
   try {
+    // Check if departments already exist
+    const existingDepartments = await db
+      .selectFrom("clinic_departments")
+      .select(["id"])
+      .where("is_deleted", "=", false)
+      .execute();
+
+    if (existingDepartments.length > 0 && !shouldCleanup) {
+      console.log(`⚠️  Found ${existingDepartments.length} existing departments. Skipping creation to avoid duplicates.`);
+      console.log("💡 To recreate departments, run: npx tsx scripts/create-sample-departments.ts --cleanup");
+      return;
+    }
+
+    if (shouldCleanup && existingDepartments.length > 0) {
+      console.log(`🗑️  Cleaning up ${existingDepartments.length} existing departments...`);
+      await db
+        .updateTable("clinic_departments")
+        .set({
+          is_deleted: true,
+          deleted_at: new Date(),
+          updated_at: new Date(),
+          last_modified: new Date()
+        })
+        .where("is_deleted", "=", false)
+        .execute();
+      console.log("✅ Existing departments cleaned up.");
+    }
+
     // Get all clinics
     const clinics = await db
       .selectFrom("clinics")

@@ -2,7 +2,10 @@
 
 /**
  * Script to create sample appointment data
- * Run with: npx tsx scripts/create-sample-appointments.ts
+ * 
+ * Usage:
+ *   npx tsx scripts/create-sample-appointments.ts          # Create appointments (skip if exist)
+ *   npx tsx scripts/create-sample-appointments.ts --cleanup # Clean up existing and recreate
  */
 
 import { v1 as uuidv1 } from "uuid";
@@ -147,7 +150,38 @@ const sampleAppointments = [
 async function createSampleAppointments() {
   console.log("🏥 Creating sample appointments...\n");
 
+  // Check for command line arguments
+  const shouldCleanup = process.argv.includes("--cleanup") || process.argv.includes("-c");
+
   try {
+    // Check if appointments already exist
+    const existingAppointments = await db
+      .selectFrom("appointments")
+      .select(["id"])
+      .where("is_deleted", "=", false)
+      .execute();
+
+    if (existingAppointments.length > 0 && !shouldCleanup) {
+      console.log(`⚠️  Found ${existingAppointments.length} existing appointments. Skipping creation to avoid duplicates.`);
+      console.log("💡 To recreate appointments, run: npx tsx scripts/create-sample-appointments.ts --cleanup");
+      return;
+    }
+
+    if (shouldCleanup && existingAppointments.length > 0) {
+      console.log(`🗑️  Cleaning up ${existingAppointments.length} existing appointments...`);
+      await db
+        .updateTable("appointments")
+        .set({
+          is_deleted: true,
+          deleted_at: new Date(),
+          updated_at: new Date(),
+          last_modified: new Date()
+        })
+        .where("is_deleted", "=", false)
+        .execute();
+      console.log("✅ Existing appointments cleaned up.");
+    }
+
     // Get all patients to match with appointments
     const patients = await db
       .selectFrom("patients")
