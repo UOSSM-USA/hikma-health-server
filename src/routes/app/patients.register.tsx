@@ -1,14 +1,5 @@
-import { createFileRoute, Link, useLoaderData } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { DatePickerInput } from "@/components/date-picker-input";
 import { Button } from "@/components/ui/button";
 import { useForm } from "react-hook-form";
@@ -17,7 +8,6 @@ import Language from "@/models/language";
 import { createServerFn } from "@tanstack/react-start";
 import { Label } from "@/components/ui/label";
 import Patient from "@/models/patient";
-import upperFirst from "lodash/upperFirst";
 import { Option } from "effect";
 import { v1 as uuidv1 } from "uuid";
 import PatientAdditionalAttribute from "@/models/patient-additional-attribute";
@@ -90,6 +80,7 @@ function RouteComponent() {
       external_patient_id: Option.fromNullable(data.external_patient_id),
       primary_clinic_id: Option.fromNullable(data.primary_clinic_id),
       last_modified_by: Option.none(),
+      additional_attributes: {},
     };
 
     const patientBaseData: Record<string, any> = {};
@@ -137,7 +128,7 @@ function RouteComponent() {
 
     try {
       await createPatient({
-        data: { baseFields: patient, additionalAttributes },
+        data: { baseFields: patient, additionalAttributes } as any,
       });
       alert("Patient registered successfully!");
     } catch (error) {
@@ -171,10 +162,7 @@ function RouteComponent() {
           {patientRegistrationForm?.fields
             .filter((field) => field.visible && field.deleted !== true)
             .map((field, idx) => {
-              if (
-                field.fieldType === "text" &&
-                field.column !== "primary_clinic_id"
-              ) {
+              if (field.fieldType === "text") {
                 return (
                   <div key={field.id} className="space-y-2">
                     <Label
@@ -193,7 +181,7 @@ function RouteComponent() {
                   </div>
                 );
               }
-              if (field.column === "primary_clinic_id") {
+              if (field.fieldType === "select") {
                 return (
                   <div key={field.id} className="space-y-2">
                     <SelectInput
@@ -201,10 +189,16 @@ function RouteComponent() {
                       data-testid={"register-patient-" + idx}
                       data-inputtype={"select"}
                       label={Language.getTranslation(field.label, "en")}
-                      data={clinicsList.map((clinic) => ({
-                        label: clinic.name,
-                        value: clinic.id,
-                      }))}
+                      data={field.column === "primary_clinic_id" 
+                        ? clinicsList.map((clinic) => ({
+                            label: clinic.name || "Unknown Clinic",
+                            value: clinic.id,
+                          }))
+                        : field.options?.map((option) => ({
+                            label: Language.getTranslation(option, "en"),
+                            value: Language.getTranslation(option, "en"),
+                          })) || []
+                      }
                       value={watch(field.column)}
                       onChange={(v) => setValue(field.column, v)}
                     />
@@ -226,51 +220,6 @@ function RouteComponent() {
                       key={field.id}
                       {...register(field.column)}
                     />
-                  </div>
-                );
-              }
-              if (field.fieldType === "select") {
-                return (
-                  <div key={field.id} className="space-y-2">
-                    <Label
-                      htmlFor={field.column}
-                      className="text-muted-foreground"
-                    >
-                      {Language.getTranslation(field.label, "en")}
-                    </Label>
-                    <Select
-                      key={field.id}
-                      {...register(field.column)}
-                      value={watch(field.column)}
-                      data-inputtype="select"
-                      data-testid={"register-patient-" + idx}
-                      onValueChange={(value) => setValue(field.column, value)}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue
-                          placeholder={`Select ${Language.getTranslation(
-                            field.label,
-                            "en",
-                          )}`}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>
-                            {Language.getTranslation(field.label, "en")}
-                          </SelectLabel>
-                          {field.options.map((opt) => (
-                            <SelectItem
-                              key={Language.getTranslation(opt, "en")}
-                              data-testid={Language.getTranslation(opt, "en")}
-                              value={Language.getTranslation(opt, "en")}
-                            >
-                              {upperFirst(Language.getTranslation(opt, "en"))}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
                   </div>
                 );
               }

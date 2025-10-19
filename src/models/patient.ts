@@ -351,16 +351,21 @@ namespace Patient {
       }));
 
       return await db.transaction().execute(async (trx) => {
-        await trx
+        const patient = await trx
           .insertInto(Patient.Table.name)
           .values(ptObject)
           .returning("id")
           .executeTakeFirstOrThrow();
 
-        return await trx
-          .insertInto(PatientAdditionalAttribute.Table.name)
-          .values(patientAttributes)
-          .executeTakeFirst();
+        // Only insert additional attributes if there are any
+        if (patientAttributes.length > 0) {
+          await trx
+            .insertInto(PatientAdditionalAttribute.Table.name)
+            .values(patientAttributes)
+            .execute();
+        }
+
+        return patient;
       });
     },
   );
