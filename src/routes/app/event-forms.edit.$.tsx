@@ -602,7 +602,7 @@ const ComponentRegistry = [
     () =>
       new EventForm.MedicineField2({
         id: nanoid(),
-        name: "Medication",
+        name: "",
         description: "",
         required: false,
         inputType: "input-group",
@@ -630,7 +630,7 @@ const ComponentRegistry = [
     () =>
       new EventForm.DiagnosisField2({
         id: nanoid(),
-        name: "ICD 11 Diagnosis",
+        name: "",
         description: "",
         required: false,
         inputType: "select",
