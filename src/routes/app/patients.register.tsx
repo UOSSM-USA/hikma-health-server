@@ -88,6 +88,8 @@ function RouteComponent() {
       photo_url: Option.fromNullable(data.photo_url),
       government_id: Option.fromNullable(data.government_id),
       external_patient_id: Option.fromNullable(data.external_patient_id),
+      primary_clinic_id: Option.fromNullable(data.primary_clinic_id),
+      last_modified_by: Option.none(),
     };
 
     const patientBaseData: Record<string, any> = {};
