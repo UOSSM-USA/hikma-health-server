@@ -218,7 +218,7 @@ export const baseFields: PatientRegistrationForm.T["fields"] = [
       ar: "العيادة الأساسية",
       es: "Clínica Principal",
     },
-    fieldType: "text",
+    fieldType: "select",
     options: [],
     visible: true,
     required: true,
