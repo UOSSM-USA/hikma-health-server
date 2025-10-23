@@ -29,11 +29,66 @@ import { MedicineInput } from "@/components/form-builder/MedicineInput";
 import { DiagnosisSelect } from "@/components/form-builder/DiagnosisPicker";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useMemo } from "react";
-import { useEventFormPermissions } from "@/hooks/use-permissions";
-import User from "@/models/user";
-import { getCurrentUser } from "@/lib/server-functions/auth";
-import { redirect } from "@tanstack/react-router";
+
+const getFormById = createServerFn({ method: "GET" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const res = await EventForm.API.getById(data.id);
+
+    // For some users migrating from old old version, where the "form_fields" is a JSON string;
+    const formFields = (() => {
+      let data;
+      if (typeof res.form_fields === "string") {
+        data = safeJSONParse(res.form_fields, []);
+        // on error, just return the original string. usually we would return an empty []. But I want to allow the client side code one more chance to fix without throwing an error.
+        if (data.length === 0) {
+          data = res.form_fields;
+        }
+      } else {
+        data = res.form_fields;
+      }
+
+      // process the array to make sure all fields are formatted from older versions of data to new ones.
+      // also act as an ongoing robustness measure
+      if (Array.isArray(data)) {
+        data.forEach((field) => {
+          // migrate text area to text input with long length
+          if (field.inputType === "textarea") {
+            field.inputType = "text";
+            field.length = "long";
+          }
+          // Add a _tag to each field
+          field._tag = EventForm.getFieldTag(field.fieldType);
+        });
+      }
+
+      return data;
+    })();
+
+    // console.log({ formFields });
+
+    return {
+      ...res,
+      form_fields: formFields,
+    };
+  });
+
+const saveForm = createServerFn({ method: "POST" })
+  .validator(
+    (d: { form: EventForm.EncodedT; updateFormId: null | string }) => d,
+  )
+  .handler(async ({ data }) => {
+    const { updateFormId, form } = data;
+
+    if (updateFormId) {
+      return EventForm.API.update({
+        id: updateFormId,
+        form,
+      });
+    } else {
+      return EventForm.API.insert(form);
+    }
+  });
 
 export const Route = createFileRoute("/app/event-forms/edit/$")({
   // ssr: false,

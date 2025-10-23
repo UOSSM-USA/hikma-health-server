@@ -2,10 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import Patient from "@/models/patient";
 import * as React from "react";
 import {
+  LucideBox,
   LucideCalculator,
   LucideCalendar,
   LucideCalendarPlus,
   LucideDownload,
+  LucideTrash,
 } from "lucide-react";
 import { Option } from "effect";
 
@@ -25,6 +27,7 @@ import { getPatientRegistrationForm } from "@/lib/server-functions/patient-regis
 import {
   getAllPatients,
   searchPatients,
+  softDeletePatientById,
 } from "@/lib/server-functions/patients";
 import PatientRegistrationForm from "@/models/patient-registration-form";
 import { createServerFn } from "@tanstack/react-start";
@@ -48,6 +51,10 @@ import User from "@/models/user";
 import { toast } from "sonner";
 import PatientVital from "@/models/patient-vital";
 import { safeJSONParse } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useMap } from "usehooks-ts";
+import If from "@/components/if";
+import { forEach } from "ramda";
 
 // Function to get all patients for export (no pagination)
 const getAllPatientsForExport = createServerFn({ method: "GET" }).handler(
@@ -105,6 +112,8 @@ function RouteComponent() {
   const [currentPage, setCurrentPage] = React.useState(1);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+
+  const [selectedPatients, actions] = useMap<string, string>(); // [patientId, patientName]
 
   const fields = patientRegistrationForm?.fields.filter((f) => !f.deleted);
   // Use current language for field labels instead of always English
@@ -178,6 +187,52 @@ function RouteComponent() {
     return Array.from(new Set([firstPage, ...nearbyPages, lastPage])).sort(
       (a, b) => a - b,
     );
+  };
+
+  const handleToggleSelectedPatients = (
+    patientId: string,
+    patientName: string,
+  ) => {
+    const exists = selectedPatients.has(patientId);
+    if (exists) {
+      actions.remove(patientId);
+    } else {
+      actions.set(patientId, patientName);
+    }
+  };
+
+  const handleResetPatientSelection = () => {
+    actions.reset();
+  };
+
+  const handleDeleteSelectedPatients = () => {
+    const confirmPrompt = `Delete ${selectedPatients.size} patients`;
+    if (
+      prompt(`Type the phrase "${confirmPrompt}" to confirm`, "") ===
+      confirmPrompt
+    ) {
+      const selectedPatientIds = Array.from(selectedPatients.keys());
+      forEach(
+        (id) =>
+          softDeletePatientById({ data: { id } })
+            .then(() => {
+              setPatientsList(
+                patientsList.filter((patient) => patient.id !== id),
+              );
+              toast.success(
+                `Patient ${selectedPatients.get(id)} deleted successfully`,
+              );
+            })
+            .catch((err) => {
+              console.error(`Error deleting patient ${id}: ${err}`);
+              toast.error(`Error deleting patient ${selectedPatients.get(id)}`);
+            }),
+        selectedPatientIds,
+      );
+      actions.reset();
+    } else {
+      toast.info("Invalid confirmation phrase. Not deleting patients");
+    }
   };
 
   const addVitalsWorksheet = (
@@ -438,6 +493,32 @@ function RouteComponent() {
         </Button>
       </div>
 
+      <If show={selectedPatients.size > 0}>
+        <div className="mt-8 font-semibold">
+          {selectedPatients.size} Patients Selected
+        </div>
+        <div className="space-x-4">
+          <Button
+            size={"default"}
+            onClick={handleResetPatientSelection}
+            variant="outline"
+            className=""
+          >
+            <LucideBox className="mr-2 h-4 w-4" />
+            Unselect all patients
+          </Button>
+          <Button
+            size={"default"}
+            variant="outline"
+            onClick={handleDeleteSelectedPatients}
+            className="text-red-800"
+          >
+            <LucideTrash className="mr-2 h-4 w-4 text-red-500" />
+            Delete Selected Patients
+          </Button>
+        </div>
+      </If>
+
       <div className="rounded-md border overflow-hidden  mt-8">
         <Table className="overflow-scroll">
           <TableHeader>
@@ -462,7 +543,24 @@ function RouteComponent() {
                 onClick={() => openPatientChart(patient.id)}
                 key={patient.id}
               >
-                <TableCell className="px-6" key={"actions"}>
+                <TableCell
+                  className="px-6 space-x-4"
+                  onClick={(evt) => {
+                    // Prevent propagation of click event to parent elements
+                    // evt.preventDefault();
+                    evt.stopPropagation();
+                  }}
+                  key={"actions"}
+                >
+                  <Checkbox
+                    checked={selectedPatients.has(patient.id)}
+                    onCheckedChange={() => {
+                      handleToggleSelectedPatients(
+                        patient.id,
+                        patient.given_name,
+                      );
+                    }}
+                  />
                   <Button
                     onClick={(evt) => handleCreateAppointment(evt, patient.id)}
                     variant="outline"
