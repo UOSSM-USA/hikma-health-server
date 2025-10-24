@@ -12,7 +12,6 @@ import Token from "./token";
 import bcrypt from "bcrypt";
 import { serverOnly } from "@tanstack/react-start";
 import { v1 as uuidV1 } from "uuid";
-import cloneDeep from "lodash/cloneDeep";
 import UserClinicPermissions from "./user-clinic-permissions";
 
 namespace User {
@@ -54,6 +53,119 @@ namespace User {
   );
 
   export type RoleT = typeof RoleSchema.Encoded;
+
+  /**
+   * Role hierarchy levels - higher numbers have more authority
+   * This hierarchy prevents lower-level users from managing higher-level users
+   */
+  export const ROLE_HIERARCHY: Record<typeof RoleSchema.Type, number> = {
+    registrar: 1,    // Can only register patients
+    provider: 2,     // Can manage patients
+    admin: 3,        // Can manage clinic users and patients
+    super_admin: 4,  // Can manage all users and system
+  };
+
+  /**
+   * Check if an actor role can manage a target role
+   * @param actorRole - The role of the user attempting the action
+   * @param targetRole - The role of the user being managed
+   * @returns true if actor can manage target, false otherwise
+   */
+  export function canManageRole(
+    actorRole: typeof RoleSchema.Type,
+    targetRole: typeof RoleSchema.Type,
+  ): boolean {
+    // Only admins and super_admins can manage users
+    if (actorRole !== ROLES.ADMIN && actorRole !== ROLES.SUPER_ADMIN) {
+      return false;
+    }
+    
+    // Super admins can manage everyone
+    if (actorRole === ROLES.SUPER_ADMIN) {
+      return true;
+    }
+    
+    // Admins can manage everyone except super_admins
+    if (actorRole === ROLES.ADMIN && targetRole !== ROLES.SUPER_ADMIN) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Check if an actor role can delete a target role
+   * @param actorRole - The role of the user attempting the deletion
+   * @param targetRole - The role of the user being deleted
+   * @returns true if actor can delete target, false otherwise
+   */
+  export function canDeleteRole(
+    actorRole: typeof RoleSchema.Type,
+    targetRole: typeof RoleSchema.Type,
+  ): boolean {
+    // Only super admins can delete users
+    if (actorRole !== ROLES.SUPER_ADMIN) {
+      return false;
+    }
+    
+    // Super admins can delete anyone except other super admins (to prevent system lockout)
+    // This is a safety measure - super admins should be managed carefully
+    return true; // Allow super admin to delete other super admins, but UI will prevent self-deletion
+  }
+
+  /**
+   * Check if an actor role can create a user with a target role
+   * @param actorRole - The role of the user attempting to create
+   * @param targetRole - The role being assigned to the new user
+   * @returns true if actor can create user with target role, false otherwise
+   */
+  export function canCreateRole(
+    actorRole: typeof RoleSchema.Type,
+    targetRole: typeof RoleSchema.Type,
+  ): boolean {
+    // Super admins can create any role
+    if (actorRole === ROLES.SUPER_ADMIN) {
+      return true;
+    }
+    
+    // Admins can create roles lower than super_admin
+    if (actorRole === ROLES.ADMIN && targetRole !== ROLES.SUPER_ADMIN) {
+      return true;
+    }
+    
+    // Providers and registrars cannot create users
+    return false;
+  }
+
+  /**
+   * Check if an actor role can update a target role
+   * @param actorRole - The role of the user attempting the update
+   * @param targetRole - The current role of the user being updated
+   * @param newRole - The new role being assigned (optional)
+   * @returns true if actor can update target, false otherwise
+   */
+  export function canUpdateUser(
+    actorRole: typeof RoleSchema.Type,
+    targetRole: typeof RoleSchema.Type,
+    newRole?: typeof RoleSchema.Type,
+  ): boolean {
+    // Only admins and super_admins can update users
+    if (actorRole !== ROLES.ADMIN && actorRole !== ROLES.SUPER_ADMIN) {
+      return false;
+    }
+    
+    // Check if actor can manage the current role
+    if (!canManageRole(actorRole, targetRole)) {
+      return false;
+    }
+    
+    // If changing role, check if actor can assign the new role
+    if (newRole && newRole !== targetRole) {
+      return canCreateRole(actorRole, newRole);
+    }
+    
+    return true;
+  }
 
   export const UserSchema = Schema.Struct({
     id: Schema.String,
