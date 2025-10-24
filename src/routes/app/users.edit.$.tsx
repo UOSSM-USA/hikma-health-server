@@ -56,19 +56,35 @@ const updateUser = createServerFn({ method: "POST" })
   )
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
-    if (!context.userId) {
+    if (!context.userId || !context.role) {
       return Promise.reject({
         message: "Unauthorized: Insufficient permissions",
         source: "updateUser",
       });
     }
 
-    console.log("Before");
+    // Get the current user data to check their role
+    const currentUser = await User.API.getById(data.id);
+    if (!currentUser) {
+      return Promise.reject({
+        message: "User not found",
+        source: "updateUser",
+      });
+    }
+
+    // Check if the actor has permission to update this user's role
+    if (!User.canUpdateUser(context.role, currentUser.role, data.user.role)) {
+      return Promise.reject({
+        message: `Unauthorized: Cannot modify ${currentUser.role} users or assign ${data.user.role} role`,
+        source: "updateUser",
+      });
+    }
+
+    // Check clinic permissions
     await UserClinicPermissions.API.isAuthorizedWithClinic(
       data.user.clinic_id,
       "is_clinic_admin",
     );
-    console.log("After");
 
     const res = await User.API.update(data.id, data.user);
     return res;
@@ -81,28 +97,26 @@ const registerUser = createServerFn({ method: "POST" })
   }))
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
-    if (!context.userId) {
+    if (!context.userId || !context.role) {
       return Promise.reject({
         message: "Unauthorized: Insufficient permissions",
         source: "registerUser",
       });
     }
 
+    // Check if the actor has permission to create a user with this role
+    if (!User.canCreateRole(context.role, data.user.role)) {
+      return Promise.reject({
+        message: `Unauthorized: Cannot create ${data.user.role} users. ${context.role} users can only create users with lower privileges.`,
+        source: "registerUser",
+      });
+    }
+
+    // Check clinic permissions
     await UserClinicPermissions.API.isAuthorizedWithClinic(
       data.user.clinic_id,
       "is_clinic_admin",
     );
-
-    // If the user is not super admin, they cannot create a super admin user
-    if (
-      data.user.role !== User.ROLES.SUPER_ADMIN &&
-      data.user.role === User.ROLES.SUPER_ADMIN
-    ) {
-      return Promise.reject({
-        message:
-          "Unauthorized: Insufficient permissions. A non super admin cannot create a super admin user",
-      });
-    }
 
     const res = await User.API.create(data.user, data.creatorId);
     return res;
@@ -118,6 +132,12 @@ const userFormSchema = Schema.Struct({
 
 type UserFormValues = typeof userFormSchema.Encoded;
 
+const getCurrentUserRole = createServerFn({ method: "GET" })
+  .middleware([permissionsMiddleware])
+  .handler(async ({ context }) => {
+    return context.role;
+  });
+
 export const Route = createFileRoute("/app/users/edit/$")({
   component: RouteComponent,
   loader: async ({ params }) => {
@@ -126,17 +146,24 @@ export const Route = createFileRoute("/app/users/edit/$")({
       user: await getUserById({ data: { id: userId } }),
       clinics: await getAllClinics(),
       currentUserId: await getCurrentUserId(),
+      currentUserRole: await getCurrentUserRole(),
       isSuperAdmin: await currentUserHasRole({ data: { role: "super_admin" } }),
     };
   },
 });
 
 function RouteComponent() {
-  const { user, clinics, currentUserId, isSuperAdmin } = Route.useLoaderData();
+  const { user, clinics, currentUserId, currentUserRole } = Route.useLoaderData();
   const navigate = Route.useNavigate();
   const userId = Route.useParams()._splat;
   const isEditMode = Boolean(userId && user);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Filter roles that the current user can assign
+  const availableRoles = User.roles.filter((role) => {
+    if (!currentUserRole) return false;
+    return User.canCreateRole(currentUserRole, role);
+  });
 
   // Initialize form with user data if in edit mode
   const form = useForm<UserFormValues>({
@@ -312,19 +339,19 @@ function RouteComponent() {
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>
-                          Registrar can only register patients and cannot access
+                          <strong>Registrar:</strong> Can only register patients and cannot access
                           patient records.
                         </p>
                         <p>
-                          Providers can view medical history and access patient
+                          <strong>Provider:</strong> Can view medical history and access patient
                           records.
                         </p>
                         <p>
-                          Admins can view medical history, access patient
-                          records, and manage users.
+                          <strong>Admin:</strong> Can view medical history, access patient
+                          records, and manage users within their clinic.
                         </p>
                         <p>
-                          Superadmins can perform all actions and have full
+                          <strong>Super Admin:</strong> Can perform all actions and have full
                           access to the system.
                         </p>
                       </TooltipContent>
@@ -341,7 +368,7 @@ function RouteComponent() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {User.roles.map((role) => (
+                      {availableRoles.map((role) => (
                         <SelectItem key={role} value={role}>
                           {upperFirst(role)}
                         </SelectItem>
@@ -349,7 +376,9 @@ function RouteComponent() {
                     </SelectContent>
                   </Select>
                   <FormDescription>
-                    The role determines what permissions the user will have.
+                    {availableRoles.length === 0 
+                      ? "You don't have permission to assign any roles."
+                      : "The role determines what permissions the user will have. You can only assign roles at or below your permission level."}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
