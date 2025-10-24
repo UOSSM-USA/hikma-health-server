@@ -1,4 +1,41 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// Mock the database before importing User
+vi.mock("@/db", () => ({
+  default: {
+    selectFrom: vi.fn().mockReturnThis(),
+    insertInto: vi.fn().mockReturnThis(),
+    updateTable: vi.fn().mockReturnThis(),
+    deleteFrom: vi.fn().mockReturnThis(),
+    where: vi.fn().mockReturnThis(),
+    select: vi.fn().mockReturnThis(),
+    selectAll: vi.fn().mockReturnThis(),
+    values: vi.fn().mockReturnThis(),
+    set: vi.fn().mockReturnThis(),
+    execute: vi.fn().mockResolvedValue([]),
+    executeTakeFirst: vi.fn().mockResolvedValue(null),
+    executeTakeFirstOrThrow: vi.fn().mockResolvedValue({}),
+  },
+}));
+
+vi.mock("@/db/db-config", () => ({
+  getDatabaseConfig: () => ({
+    host: "localhost",
+    port: 5432,
+    database: "test_db",
+    user: "test_user",
+    password: "test_password",
+    ssl: { rejectUnauthorized: false },
+  }),
+}));
+
+// Set test environment variables
+process.env.NODE_ENV = "test";
+process.env.DB_HOST = "localhost";
+process.env.DB_NAME = "test_db";
+process.env.DB_USER = "test_user";
+process.env.DB_PASSWORD = "test_password";
+
 import User from "../../src/models/user";
 
 describe("Provider and Registrar Permission Verification", () => {
