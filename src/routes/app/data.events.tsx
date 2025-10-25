@@ -24,23 +24,32 @@ import {
 import Event from "@/models/event";
 import { getEventsByFormId } from "@/lib/server-functions/events";
 import { Option } from "effect";
-import type EventForm from "@/models/event-form";
+import EventForm from "@/models/event-form";
 import { format } from "date-fns";
-import { createPermissionContext } from "@/lib/server-functions/permissions";
-import { PermissionOperation } from "@/models/permissions";
-import { checkDataAnalysisPermission } from "@/lib/server-functions/permissions";
-import { permissionsMiddleware } from "@/middleware/auth";
-import { redirect } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
+import User from "@/models/user";
 import { getCurrentUser } from "@/lib/server-functions/auth";
-import { useDataAnalysisPermissions } from "@/hooks/use-permissions";
 
-const ensureCanViewDataAnalysis = createServerFn({ method: "GET" })
-  .middleware([permissionsMiddleware])
-  .handler(async ({ context }) => {
-    const permContext = createPermissionContext(context);
-    checkDataAnalysisPermission(permContext, PermissionOperation.VIEW);
-    return true;
-  });
+// Function endpoint to get all the event data for exports (no pagination)
+// const getEventDataForExport = createServerFn({ method: "GET" }).handler(
+//   async ({ data }: { data: { eventFormId: string } }) => {
+//     const currentUser = await getCurrentUser();
+//     if (!currentUser || currentUser.role !== User.ROLES.SUPER_ADMIN) {
+//       throw new Error("Unauthorized");
+//     }
+
+//     const eventForms = await EventForm.API.getById(data.eventFormId);
+//     const exportEvents = await Event.API.getAllForExport(
+//       data.eventFormId,
+//       true,
+//     );
+
+//     return {
+//       eventForms,
+//       exportEvents,
+//     };
+//   },
+// );
 
 export const Route = createFileRoute("/app/data/events")({
   component: RouteComponent,
@@ -138,9 +147,17 @@ function RouteComponent() {
     }
   };
 
-  useEffect(() => {
-    fetchEvents();
-  }, [selectedForm]);
+  // useEffect(() => {
+  //   fetchEvents();
+
+  //   getEventDataForExport({ data: { form_id: selectedForm } })
+  //     .then((res) => {
+  //       console.log({ res });
+  //     })
+  //     .catch((error) => {
+  //       console.error(error);
+  //     });
+  // }, [selectedForm]);
 
   // Generate page numbers to display using functional approach
   const getPageNumbers = () => {
@@ -302,15 +319,15 @@ function RouteComponent() {
 function RenderDiagnosisField({
   field,
 }: {
-  field: { value: Array<{ code: string; desc: string }> };
+  field?: { value: Array<{ code: string; desc: string }> };
 }) {
-  console.log(field.value.map((diagnosis) => diagnosis.desc).join(", "));
-  console.log(field.value);
+  console.log(field?.value?.map((diagnosis) => diagnosis?.desc).join(", "));
+  console.log(field?.value);
   return (
     <div>
-      {field.value
-        .map((diagnosis) => `(${diagnosis.code}) ${diagnosis.desc}`)
-        .join(", ")}
+      {field?.value
+        ?.map((diagnosis) => `(${diagnosis?.code}) ${diagnosis?.desc}`)
+        ?.join(", ")}
     </div>
   );
 }
@@ -319,7 +336,7 @@ function RenderDiagnosisField({
 function RenderMedicineField({
   field,
 }: {
-  field: {
+  field?: {
     value: Array<{
       dose: number;
       doseUnits: string;
@@ -333,20 +350,20 @@ function RenderMedicineField({
     }>;
   };
 }) {
-  console.log(field.value.map((medicine) => medicine.name).join(", "));
-  console.log(field.value);
+  console.log(field?.value?.map((medicine) => medicine?.name)?.join(", "));
+  console.log(field?.value);
   return (
     <div>
-      {field.value.map((medicine) => (
+      {field?.value?.map((medicine) => (
         <>
           <div className="medicine-entry">
             <p className="medicine-name">
-              {medicine.name} ({medicine.dose} {medicine.doseUnits})
+              {medicine?.name} ({medicine?.dose} {medicine?.doseUnits})
             </p>
             <p className="medicine-details">
-              {medicine.form} - {medicine.route}
+              {medicine?.form} - {medicine?.route}
             </p>
-            <p className="medicine-schedule">Frequency {medicine.frequency}</p>
+            <p className="medicine-schedule">Frequency {medicine?.frequency}</p>
           </div>
         </>
       ))}
