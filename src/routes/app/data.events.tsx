@@ -131,6 +131,7 @@ function RouteComponent() {
       },
     })
       .then((res) => {
+        console.warn({ res });
         setEventsList(res.events);
         setPaginationResults(res);
         setCurrentPage(page);
@@ -147,17 +148,17 @@ function RouteComponent() {
     }
   };
 
-  // useEffect(() => {
-  //   fetchEvents();
+  useEffect(() => {
+    fetchEvents();
 
-  //   getEventDataForExport({ data: { form_id: selectedForm } })
-  //     .then((res) => {
-  //       console.log({ res });
-  //     })
-  //     .catch((error) => {
-  //       console.error(error);
-  //     });
-  // }, [selectedForm]);
+    // getEventDataForExport({ data: { form_id: selectedForm } })
+    //   .then((res) => {
+    //     console.log({ res });
+    //   })
+    //   .catch((error) => {
+    //     console.error(error);
+    //   });
+  }, [selectedForm]);
 
   // Generate page numbers to display using functional approach
   const getPageNumbers = () => {
