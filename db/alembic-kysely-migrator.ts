@@ -1,7 +1,6 @@
 import type { Database } from "../src/db";
 import { createMigrationProviderFromAlembic } from "./utils";
 import { alembicMigrationIds } from "./alembic-mapping";
-import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { Migrator, type Kysely } from "kysely";
 
@@ -14,7 +13,6 @@ export async function almebicBackcompatMigrator(db: Kysely<Database>) {
     {
       migrationFolder: path.join(__dirname, "migrations"),
       // importCheck: false,
-      path: path,
     },
   );
 
