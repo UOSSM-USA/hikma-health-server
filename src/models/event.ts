@@ -269,6 +269,19 @@ namespace Event {
         return res as unknown as Event.EncodedT[];
       }
     );
+
+    export const getByPatientId = serverOnly(
+      async (patientId: string): Promise<Event.EncodedT[]> => {
+        const res = await db
+          .selectFrom(Table.name)
+          .selectAll()
+          .where("patient_id", "=", patientId)
+          .where("is_deleted", "=", false)
+          .orderBy("created_at", "desc")
+          .execute();
+        return res as unknown as Event.EncodedT[];
+      }
+    );
   }
 
   export namespace Sync {

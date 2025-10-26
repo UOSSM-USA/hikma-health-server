@@ -17,6 +17,7 @@ import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo.tanstack-query'
 import { Route as DemoTableRouteImport } from './routes/demo.table'
 import { Route as DemoStoreRouteImport } from './routes/demo.store'
+import { Route as AppPatientsEventRouteImport } from './routes/app/patients-event'
 import { Route as AppUsersIndexRouteImport } from './routes/app/users.index'
 import { Route as AppPrescriptionsIndexRouteImport } from './routes/app/prescriptions.index'
 import { Route as AppPatientsIndexRouteImport } from './routes/app/patients.index'
@@ -79,6 +80,11 @@ const DemoStoreRoute = DemoStoreRouteImport.update({
   id: '/demo/store',
   path: '/demo/store',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppPatientsEventRoute = AppPatientsEventRouteImport.update({
+  id: '/patients-event',
+  path: '/patients-event',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppUsersIndexRoute = AppUsersIndexRouteImport.update({
   id: '/users/',
@@ -240,6 +246,7 @@ const ApiAuthIsValidTokenServerRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/patients-event': typeof AppPatientsEventRoute
   '/demo/store': typeof DemoStoreRoute
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
@@ -270,6 +277,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/app/patients-event': typeof AppPatientsEventRoute
   '/demo/store': typeof DemoStoreRoute
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
@@ -302,6 +310,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/patients-event': typeof AppPatientsEventRoute
   '/demo/store': typeof DemoStoreRoute
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
@@ -335,6 +344,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/app/patients-event'
     | '/demo/store'
     | '/demo/table'
     | '/demo/tanstack-query'
@@ -365,6 +375,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/app/patients-event'
     | '/demo/store'
     | '/demo/table'
     | '/demo/tanstack-query'
@@ -396,6 +407,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/app'
+    | '/app/patients-event'
     | '/demo/store'
     | '/demo/table'
     | '/demo/tanstack-query'
@@ -548,6 +560,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/demo/store'
       preLoaderRoute: typeof DemoStoreRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/app/patients-event': {
+      id: '/app/patients-event'
+      path: '/patients-event'
+      fullPath: '/app/patients-event'
+      preLoaderRoute: typeof AppPatientsEventRouteImport
+      parentRoute: typeof AppRoute
     }
     '/app/users/': {
       id: '/app/users/'
@@ -767,6 +786,7 @@ declare module '@tanstack/react-start/server' {
 }
 
 interface AppRouteChildren {
+  AppPatientsEventRoute: typeof AppPatientsEventRoute
   AppIndexRoute: typeof AppIndexRoute
   AppDataEventsRoute: typeof AppDataEventsRoute
   AppPatientsCustomizeRegistrationFormRoute: typeof AppPatientsCustomizeRegistrationFormRoute
@@ -789,6 +809,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppPatientsEventRoute: AppPatientsEventRoute,
   AppIndexRoute: AppIndexRoute,
   AppDataEventsRoute: AppDataEventsRoute,
   AppPatientsCustomizeRegistrationFormRoute:

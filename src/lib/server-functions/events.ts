@@ -41,3 +41,24 @@ export const getEventsByFormId = createServerFn({ method: "GET" })
       };
     },
   );
+
+/**
+ * Get all events by patient id
+ * @returns {Promise<Event.EncodedT[]>} - The list of events for the patient
+ */
+export const getEventsByPatientId = createServerFn({ method: "GET" })
+  .validator((data: { patient_id: string }) => data)
+  .handler(async ({ data }): Promise<Event.EncodedT[]> => {
+    return await Event.API.getByPatientId(data.patient_id);
+  });
+
+/**
+ * Save an event for a patient
+ * @returns {Promise<Event.EncodedT>} - The saved event
+ */
+export const saveEvent = createServerFn({ method: "POST" })
+  .validator((data: { event: Event.EncodedT }) => data)
+  .handler(async ({ data }): Promise<Event.EncodedT> => {
+    const result = await Event.API.save(null, data.event);
+    return result as Event.EncodedT;
+  });
