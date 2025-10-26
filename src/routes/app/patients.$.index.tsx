@@ -54,7 +54,12 @@ export const Route = createFileRoute("/app/patients/$/")({
         clinic: Clinic.EncodedT;
         provider: User.EncodedT;
       }[];
-      prescriptions: Prescription.EncodedT[];
+      prescriptions: {
+        prescription: Prescription.EncodedT;
+        patient: Patient.EncodedT;
+        clinic: Clinic.EncodedT;
+        provider: User.EncodedT;
+      }[];
       events: any[];
       eventForms: any[];
     } = {
@@ -124,6 +129,15 @@ export const Route = createFileRoute("/app/patients/$/")({
           result.eventForms = forms || [];
         } catch (error) {
           console.error("Failed to fetch event forms:", error);
+        }
+
+        // Get patient prescriptions
+        try {
+          const { getPrescriptionsByPatientId } = await import("@/lib/server-functions/prescriptions");
+          const fetchedPrescriptions = await getPrescriptionsByPatientId({ data: { patientId } });
+          result.prescriptions = fetchedPrescriptions || [];
+        } catch (error) {
+          console.error("Failed to fetch prescriptions:", error);
         }
       }
     } catch (error) {
@@ -520,9 +534,90 @@ function RouteComponent() {
               <CardDescription>Active and past medications</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                No prescriptions recorded
-              </div>
+              {prescriptions.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No prescriptions recorded
+                </div>
+              ) : (
+                prescriptions.map(({ prescription, provider, clinic }) => (
+                  <div
+                    key={prescription.id}
+                    className="border rounded-lg p-4 mb-4 last:mb-0"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <p className="font-medium">
+                            {format(
+                              new Date(prescription.prescribed_at),
+                              "MMM dd, yyyy"
+                            )}
+                          </p>
+                          <Badge
+                            variant={
+                              prescription.status === "picked-up"
+                                ? "default"
+                                : prescription.status === "prepared"
+                                  ? "secondary"
+                                  : prescription.status === "pending"
+                                    ? "outline"
+                                    : "destructive"
+                            }
+                          >
+                            {prescription.status?.replace("-", " ") || "Pending"}
+                          </Badge>
+                        </div>
+                        <div className="space-y-1 text-sm text-muted-foreground">
+                          <p>
+                            <span className="font-medium">Provider:</span>{" "}
+                            {provider?.name || provider?.given_name || ""} {provider?.surname || ""}
+                          </p>
+                          <p>
+                            <span className="font-medium">Pickup Clinic:</span>{" "}
+                            {clinic?.name || "N/A"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right text-sm">
+                        <p className="text-muted-foreground">Prescription ID</p>
+                        <p className="font-mono text-xs">
+                          {prescription.id.slice(0, 8)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {prescription.items && prescription.items.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-sm font-medium mb-1">Items:</p>
+                        <ul className="list-disc list-inside text-sm space-y-1">
+                          {prescription.items.map((item: any, idx: number) => (
+                            <li key={idx}>
+                              {item.medication || item.name}
+                              {item.dosage && ` - ${item.dosage}`}
+                              {item.frequency && ` (${item.frequency})`}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {prescription.notes && (
+                      <div className="pt-2 border-t">
+                        <p className="text-sm">
+                          <span className="font-medium">Notes:</span>{" "}
+                          {prescription.notes}
+                        </p>
+                      </div>
+                    )}
+
+                    {prescription.expiration_date && (
+                      <div className="pt-2 mt-2 border-t text-xs text-muted-foreground">
+                        Expires: {format(new Date(prescription.expiration_date), "MMM dd, yyyy")}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </TabsContent>
