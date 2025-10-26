@@ -190,9 +190,35 @@ namespace Prescription {
           row_to_json(users.*) as provider
         FROM prescriptions
         INNER JOIN patients ON prescriptions.patient_id = patients.id
-        INNER JOIN clinics ON prescriptions.clinic_id = clinics.id
+        INNER JOIN clinics ON prescriptions.pickup_clinic_id = clinics.id
         INNER JOIN users ON prescriptions.provider_id = users.id
         WHERE prescriptions.is_deleted = false
+      `.compile(db),
+      );
+
+      return res.rows;
+    });
+
+    export const getByPatientIdWithDetails = serverOnly(async (patientId: string) => {
+      const res = await db.executeQuery<{
+        prescription: Prescription.EncodedT;
+        patient: Patient.EncodedT;
+        clinic: Clinic.EncodedT;
+        provider: User.EncodedT;
+      }>(
+        sql`
+        SELECT
+          row_to_json(prescriptions.*) as prescription,
+          row_to_json(patients.*) as patient,
+          row_to_json(clinics.*) as clinic,
+          row_to_json(users.*) as provider
+        FROM prescriptions
+        INNER JOIN patients ON prescriptions.patient_id = patients.id
+        INNER JOIN clinics ON prescriptions.pickup_clinic_id = clinics.id
+        INNER JOIN users ON prescriptions.provider_id = users.id
+        WHERE prescriptions.is_deleted = false
+        AND prescriptions.patient_id = ${patientId}
+        ORDER BY prescriptions.prescribed_at DESC
       `.compile(db),
       );
 

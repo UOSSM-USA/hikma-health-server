@@ -1,4 +1,4 @@
-import { Kysely, sql } from "kysely";
+import { Kysely } from "kysely";
 
 /**
  * Migration: add_primary_clinic_to_patients

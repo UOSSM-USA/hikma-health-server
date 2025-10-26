@@ -93,6 +93,11 @@ function RouteComponent() {
   };
 
   const handleSubmit = async () => {
+    // Prevent duplicate submissions
+    if (isSubmitting) {
+      return;
+    }
+
     if (!selectedFormId || !currentForm || !patient) {
       toast.error("Please select an event form");
       return;
@@ -144,11 +149,20 @@ function RouteComponent() {
       await saveEvent({ data: { event: eventData } });
       
       toast.success("Event form submitted successfully!");
-      window.location.href = `/app/patients/${patient.id}`;
+      
+      // Clear form data to prevent duplicate submissions
+      setFormData({});
+      setSelectedFormId(null);
+      setCurrentForm(null);
+      setIsSubmitting(false);
+      
+      // Redirect after a short delay to allow success message to be seen
+      setTimeout(() => {
+        window.location.href = `/app/patients/${patient.id}`;
+      }, 800);
     } catch (error: any) {
       console.error("Failed to submit event:", error);
       toast.error(error?.message || "Failed to submit event form");
-    } finally {
       setIsSubmitting(false);
     }
   };
