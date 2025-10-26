@@ -12,7 +12,6 @@ export async function almebicBackcompatMigrator(db: Kysely<Database>) {
     db,
     alembicMigrationIds,
     {
-      fs: fs,
       migrationFolder: path.join(__dirname, "migrations"),
       // importCheck: false,
       path: path,
