@@ -103,7 +103,7 @@ export const getMigrations = (
 
   const ignoredMigrationIds = alembicMigrationIds
     .slice(0, latestMigrationIndex + 1)
-    .map(([key, _]) => key);
+    .map(([key]: [string, string]) => key);
 
   const migrationsToRun = {};
 

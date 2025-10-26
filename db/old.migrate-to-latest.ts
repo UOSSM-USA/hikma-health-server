@@ -2,11 +2,10 @@
 // this is replaces by `npx kysely migrate latest` operation that uses
 // configuration from `$ROOT/kysely.config.ts` and the `$ROOT/db/alembic-kysely-migrator`
 import * as path from "path";
-import { promises as fs } from "fs";
-import { Migrator, FileMigrationProvider, sql } from "kysely";
+import { Migrator, sql } from "kysely";
 import { fileURLToPath } from "url";
-import db from "./index";
-import { getMigrations } from "./migrations";
+import db from "@/db";
+import { getMigrations } from "./old.index";
 
 // Get the directory path in ES modules
 const __filename = fileURLToPath(import.meta.url);
