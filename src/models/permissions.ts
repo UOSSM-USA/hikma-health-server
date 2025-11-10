@@ -248,17 +248,11 @@ export const PERMISSION_MATRIX: Record<
     },
     [Module.CLINICS]: {
       [PermissionOperation.VIEW]: {
-        scope: PermissionScope.CLINIC,
-        restrictions: ["Can view clinic information"],
+        scope: PermissionScope.NONE,
+        restrictions: ["No access to clinic information"],
       },
-      [PermissionOperation.ADD]: {
-        scope: PermissionScope.CLINIC,
-        restrictions: ["Can add clinic information"],
-      },
-      [PermissionOperation.EDIT]: {
-        scope: PermissionScope.CLINIC,
-        restrictions: ["Can edit clinic information"],
-      },
+      [PermissionOperation.ADD]: { scope: PermissionScope.NONE },
+      [PermissionOperation.EDIT]: { scope: PermissionScope.NONE },
       [PermissionOperation.DELETE]: { scope: PermissionScope.NONE },
     },
     [Module.APPOINTMENTS]: {
