@@ -1,13 +1,12 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { getCurrentUser } from "@/lib/server-functions/auth";
 import {
-  getAllPrescriptions,
+  getAllPrescriptionsWithDetails,
   togglePrescriptionStatus,
 } from "@/lib/server-functions/prescriptions";
 import {
   Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -25,7 +24,7 @@ export const Route = createFileRoute("/app/prescriptions/")({
   component: RouteComponent,
   loader: async () => {
     return {
-      prescriptions: await getAllPrescriptions(),
+      prescriptions: await getAllPrescriptionsWithDetails(),
       currentUser: await getCurrentUser(),
     };
   },
@@ -33,15 +32,15 @@ export const Route = createFileRoute("/app/prescriptions/")({
 
 function RouteComponent() {
   const router = useRouter();
-  const { prescriptions, currentUser } = Route.useLoaderData();
+  const { prescriptions } = Route.useLoaderData();
 
   const handleStatusChange = async (id: string, status: string) => {
     togglePrescriptionStatus({ data: { id, status } })
-      .then((res) => {
+      .then(() => {
         toast.success("Status updated successfully");
         router.invalidate({ sync: true });
       })
-      .catch((err) => {
+      .catch(() => {
         toast.error("Failed to update status");
       });
   };
@@ -62,8 +61,9 @@ function RouteComponent() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Patient ID</TableHead>
-                <TableHead>Provider ID</TableHead>
+                <TableHead>Patient Name</TableHead>
+                <TableHead>Provider Name</TableHead>
+                <TableHead>Clinic</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Prescribed At</TableHead>
                 <TableHead>Expiration Date</TableHead>
@@ -71,39 +71,51 @@ function RouteComponent() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {prescriptions.map((prescription) => (
-                <TableRow key={prescription.id}>
-                  <TableCell>{prescription.patient_id}</TableCell>
-                  <TableCell>{prescription.provider_id}</TableCell>
-                  <TableCell>
-                    <SelectInput
-                      data={Prescription.statusValues.map((status) => ({
-                        value: status,
-                        label: upperFirst(status),
-                      }))}
-                      value={prescription.status}
-                      onChange={(value) =>
-                        handleStatusChange(prescription.id, value || "")
-                      }
-                      size="sm"
-                      clearable={false}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {prescription.prescribed_at
-                      ? format(new Date(prescription.prescribed_at), "PPP")
-                      : "N/A"}
-                  </TableCell>
-                  <TableCell>
-                    {prescription.expiration_date
-                      ? format(new Date(prescription.expiration_date), "PPP")
-                      : "N/A"}
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate">
-                    {prescription.notes}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {prescriptions.map((item) => {
+                const prescription = item.prescription || item;
+                const patient = item.patient || {};
+                const provider = item.provider || {};
+                const clinic = item.clinic || {};
+                
+                return (
+                  <TableRow key={prescription.id}>
+                    <TableCell>
+                      {(patient as any).given_name || ""} {(patient as any).surname || ""}
+                    </TableCell>
+                    <TableCell>
+                      {provider.name || (provider as any).given_name || ""} {(provider as any).surname || ""}
+                    </TableCell>
+                    <TableCell>{clinic.name || "N/A"}</TableCell>
+                    <TableCell>
+                      <SelectInput
+                        data={Prescription.statusValues.map((status) => ({
+                          value: status,
+                          label: upperFirst(status),
+                        }))}
+                        value={prescription.status}
+                        onChange={(value) =>
+                          handleStatusChange(prescription.id, value || "")
+                        }
+                        size="sm"
+                        clearable={false}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {prescription.prescribed_at
+                        ? format(new Date(prescription.prescribed_at), "PPP")
+                        : "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      {prescription.expiration_date
+                        ? format(new Date(prescription.expiration_date), "PPP")
+                        : "N/A"}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {prescription.notes}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>

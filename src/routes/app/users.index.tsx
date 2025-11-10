@@ -46,13 +46,46 @@ const deleteUser = createServerFn({ method: "POST" })
   .validator((d: { id: string }) => d)
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
+    // Check if the current user has permission to delete users
     if (context.role !== User.ROLES.SUPER_ADMIN) {
       return Promise.reject({
-        message: "Unauthorized: Insufficient permissions",
+        message: "Unauthorized: Only Super Admins can delete users",
         source: "deleteUser",
       });
     }
+
+    // Prevent users from deleting themselves
+    if (context.userId === data.id) {
+      return Promise.reject({
+        message: "Cannot delete your own account",
+        source: "deleteUser",
+      });
+    }
+
+    // Get the target user to check their role
+    const targetUser = await User.API.getById(data.id);
+    if (!targetUser) {
+      return Promise.reject({
+        message: "User not found",
+        source: "deleteUser",
+      });
+    }
+
+    // Check role hierarchy - verify actor can delete target role
+    if (!context.role || !User.canDeleteRole(context.role, targetUser.role)) {
+      return Promise.reject({
+        message: `Unauthorized: Cannot delete ${targetUser.role} users`,
+        source: "deleteUser",
+      });
+    }
+
     return User.API.softDelete(data.id);
+  });
+
+const getCurrentUserRole = createServerFn({ method: "GET" })
+  .middleware([permissionsMiddleware])
+  .handler(async ({ context }) => {
+    return context.role;
   });
 
 export const Route = createFileRoute("/app/users/")({
@@ -63,6 +96,7 @@ export const Route = createFileRoute("/app/users/")({
     return {
       users: await getAllUsers(),
       currentUserId,
+      currentUserRole: await getCurrentUserRole(),
       currentUserAdminClinics: await getClinicIdsWithUserPermission({
         data: {
           userId: currentUserId || "",
@@ -75,12 +109,12 @@ export const Route = createFileRoute("/app/users/")({
 });
 
 function RouteComponent() {
-  const { users, currentUserId, isSuperAdmin, currentUserAdminClinics } =
+  const { users, currentUserId, currentUserRole, isSuperAdmin, currentUserAdminClinics } =
     Route.useLoaderData();
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, targetUserRole: User.RoleT) => {
     if (!window.confirm("Are you sure you want to delete this user?")) {
       return;
     }
@@ -90,13 +124,20 @@ function RouteComponent() {
       return;
     }
 
+    // Additional check for role hierarchy
+    if (currentUserRole && !User.canDeleteRole(currentUserRole, targetUserRole)) {
+      toast.error(`You cannot delete ${targetUserRole} users.`);
+      return;
+    }
+
     setIsDeleting(id);
     try {
       await deleteUser({ data: { id } });
+      toast.success("User deleted successfully");
       router.invalidate({ sync: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to delete user:", error);
-      toast.error("Failed to delete user");
+      toast.error(error?.message || "Failed to delete user");
     } finally {
       setIsDeleting(null);
     }
@@ -107,6 +148,25 @@ function RouteComponent() {
     if (userId === currentUserId && currentUserAdminClinics.includes(clinicId))
       return true;
     return false;
+  };
+
+  /**
+   * Check if the current user can edit a target user based on role hierarchy
+   */
+  const canEditUser = (targetUserRole: User.RoleT): boolean => {
+    if (!currentUserRole) return false;
+    return User.canManageRole(currentUserRole, targetUserRole);
+  };
+
+  /**
+   * Check if the current user can delete a target user based on role hierarchy
+   */
+  const canDeleteUser = (targetUserId: string, targetUserRole: User.RoleT): boolean => {
+    // Cannot delete yourself
+    if (currentUserId === targetUserId) return false;
+    
+    if (!currentUserRole) return false;
+    return User.canDeleteRole(currentUserRole, targetUserRole);
   };
 
   return (
@@ -141,13 +201,15 @@ function RouteComponent() {
                   {new Date(user.created_at).toLocaleDateString()}
                 </TableCell>
                 <TableCell className="text-right space-x-2">
+                  {/* Show Edit button if user can manage this role and has clinic admin access */}
                   <If
                     show={
-                      isSuperAdmin ||
-                      isUserClinicAdmin(
-                        currentUserId || "",
-                        user.clinic_id || "",
-                      )
+                      canEditUser(user.role) &&
+                      (isSuperAdmin ||
+                        isUserClinicAdmin(
+                          currentUserId || "",
+                          user.clinic_id || "",
+                        ))
                     }
                   >
                     <Button variant="outline" size="sm" asChild>
@@ -156,27 +218,27 @@ function RouteComponent() {
                       </Link>
                     </Button>
                   </If>
-                  {/* Only allow super admins to manage permissions or delete users */}
+                  {/* Show Permissions button only to super admins for non-self users */}
                   <If show={isSuperAdmin && currentUserId !== user.id}>
-                    <>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link
-                          to="/app/users/manage-permissions/$"
-                          params={{ _splat: user.id }}
-                        >
-                          Permissions
-                        </Link>
-                      </Button>
-
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(user.id)}
-                        disabled={isDeleting === user.id}
+                    <Button variant="outline" size="sm" asChild>
+                      <Link
+                        to="/app/users/manage-permissions/$"
+                        params={{ _splat: user.id }}
                       >
-                        {isDeleting === user.id ? "Deleting..." : "Delete"}
-                      </Button>
-                    </>
+                        Permissions
+                      </Link>
+                    </Button>
+                  </If>
+                  {/* Show Delete button based on role hierarchy */}
+                  <If show={canDeleteUser(user.id, user.role)}>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDelete(user.id, user.role)}
+                      disabled={isDeleting === user.id}
+                    >
+                      {isDeleting === user.id ? "Deleting..." : "Delete"}
+                    </Button>
                   </If>
                 </TableCell>
               </TableRow>

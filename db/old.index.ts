@@ -1,17 +1,17 @@
 // FILE RETAIN AS HISTORY
 import { Kysely } from "kysely";
-import * as initialTables from "./20191125_initial_tables";
-import * as initialUser from "./20191126_initial_user";
-import * as patientExternalIdsAndAttributes from "./20240522_patient_external_ids_and_attributes";
-import * as patientAttributeUuidMigration from "./20240603_patient_attribute_uuid_migration";
-import * as increaseSexTextLength from "./20240821_increase_sex_text_length";
-import * as addAppointmentsTable from "./20240901_add_appointments_table";
-import * as addPrescriptionsTable from "./20240926_add_prescriptions_table";
-import * as createServerVariablesTable from "./20250313_create_server_variables_table";
-import * as createResourcesTable from "./20250320_create_resources_table";
-import * as includeHealthcareProviderSegmentation from "./20250410_include_healthcare_provider_segmentation";
-import * as makeResourcesSyncable from "./20250401_make_resources_syncable";
-import * as restoringPatientAttributeIndicesAndPrimaryKeys from "./20240711_restoring_patient_attribute_indices_and_primary_keys";
+import * as initialTables from "./migrations/20191125_initial_tables";
+import * as initialUser from "./migrations/20191126_initial_user";
+import * as patientExternalIdsAndAttributes from "./migrations/20240522_patient_external_ids_and_attributes";
+import * as patientAttributeUuidMigration from "./migrations/20240603_patient_attribute_uuid_migration";
+import * as increaseSexTextLength from "./migrations/20240821_increase_sex_text_length";
+import * as addAppointmentsTable from "./migrations/20240901_add_appointments_table";
+import * as addPrescriptionsTable from "./migrations/20240926_add_prescriptions_table";
+import * as createServerVariablesTable from "./migrations/20250313_create_server_variables_table";
+import * as createResourcesTable from "./migrations/20250320_create_resources_table";
+import * as includeHealthcareProviderSegmentation from "./migrations/20250410_include_healthcare_provider_segmentation";
+import * as makeResourcesSyncable from "./migrations/20250401_make_resources_syncable";
+import * as restoringPatientAttributeIndicesAndPrimaryKeys from "./migrations/20240711_restoring_patient_attribute_indices_and_primary_keys";
 import { alembicMigrationIds } from "../alembic-migration-mapping";
 
 /**
@@ -103,7 +103,7 @@ export const getMigrations = (
 
   const ignoredMigrationIds = alembicMigrationIds
     .slice(0, latestMigrationIndex + 1)
-    .map(([key, _]) => key);
+    .map(([key]: [string, string]) => key);
 
   const migrationsToRun = {};
 

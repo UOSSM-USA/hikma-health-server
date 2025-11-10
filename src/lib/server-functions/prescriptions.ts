@@ -9,9 +9,9 @@ import User from "@/models/user";
  * @returns {Promise<Prescription.EncodedT[]>} - The list of prescriptions
  */
 const getAllPrescriptions = createServerFn({ method: "GET" }).handler(
-  async (): Promise<Prescription.EncodedT[]> => {
+  async () => {
     const res = await Prescription.API.getAll();
-    return res;
+    return res as any;
   }
 );
 
@@ -22,18 +22,25 @@ const getAllPrescriptions = createServerFn({ method: "GET" }).handler(
 const getAllPrescriptionsWithDetails = createServerFn({
   method: "GET",
 }).handler(
-  async (): Promise<
-    {
-      prescription: Prescription.EncodedT;
-      patient: Patient.EncodedT;
-      clinic: Clinic.EncodedT;
-      provider: User.EncodedT;
-    }[]
-  > => {
+  async () => {
     const res = await Prescription.API.getAllWithDetails();
-    return res;
+    return res as any;
   }
 );
+
+/**
+ * Get all prescriptions by patient ID with patient, provider, and clinic details
+ * @param {string} patientId - The ID of the patient
+ * @returns {Promise<{prescription: Prescription.EncodedT, patient: Patient.EncodedT, clinic: Clinic.EncodedT, provider: User.EncodedT}[]>} - The list of prescriptions with details
+ */
+export const getPrescriptionsByPatientId = createServerFn({ method: "GET" })
+  .validator((data: { patientId: string }) => data)
+  .handler(
+    async ({ data }) => {
+      const res = await Prescription.API.getByPatientIdWithDetails(data.patientId);
+      return res as any;
+    }
+  );
 
 /**
  * Toggle the status of a prescription

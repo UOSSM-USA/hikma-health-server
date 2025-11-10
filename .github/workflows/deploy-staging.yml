@@ -103,7 +103,6 @@ jobs:
         with:
           service-id: ${{ secrets.RENDER_STAGING_SERVICE_ID }}
           api-key: ${{ secrets.RENDER_API_KEY }}
-          wait-for-success: true
           
       - name: Run database migrations
         run: |

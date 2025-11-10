@@ -1,6 +1,8 @@
 import { getPatientById } from "@/lib/server-functions/patients";
 import { getPatientVitals } from "@/lib/server-functions/vitals";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { getEventsByPatientId } from "@/lib/server-functions/events";
+import { getEventForms } from "@/lib/server-functions/event-forms";
+import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   Card,
@@ -52,48 +54,97 @@ export const Route = createFileRoute("/app/patients/$/")({
         clinic: Clinic.EncodedT;
         provider: User.EncodedT;
       }[];
-      prescriptions: Prescription.EncodedT[];
+      prescriptions: {
+        prescription: Prescription.EncodedT;
+        patient: Patient.EncodedT;
+        clinic: Clinic.EncodedT;
+        provider: User.EncodedT;
+      }[];
+      events: any[];
+      eventForms: any[];
     } = {
       patient: null,
       vitals: [],
       appointments: [],
       prescriptions: [],
+      events: [],
+      eventForms: [],
     };
+
     if (!patientId || patientId === "new") {
       return result;
     }
 
     try {
-      const { patient } = await getPatientById({ data: { id: patientId } });
+      // Get patient data
+      const patientResult = (await getPatientById({ data: { id: patientId } })) as {
+        patient: Patient.EncodedT;
+        error: { message: string } | null;
+      };
+      
+      if (patientResult && patientResult.patient && !patientResult.error) {
+        result.patient = patientResult.patient;
 
-      if (!patient) {
-        return result;
-      }
-
-      result.patient = patient;
-
-      const { data, error } = await getAppointmentsByPatientId({
-        data: { patientId },
-      });
-      error && console.error(error);
-      result.appointments = data || [];
-
-      // Get patient vitals
-      try {
-        const fetchedVitals = await getPatientVitals({
+        // Get appointments
+        const appointmentsResult = (await getAppointmentsByPatientId({
           data: { patientId },
-        });
-        console.log({ fetchedVitals });
-        result.vitals = fetchedVitals || [];
-      } catch (error) {
-        console.error("Failed to fetch vitals:", error);
-      }
+        })) as {
+          data: {
+            appointment: Appointment.EncodedT;
+            patient: Patient.EncodedT;
+            clinic: Clinic.EncodedT;
+            provider: User.EncodedT | null;
+          }[];
+          error: Error | null;
+        };
+        
+        if (appointmentsResult) {
+          appointmentsResult.error && console.error(appointmentsResult.error);
+          result.appointments = appointmentsResult.data || [];
+        }
 
-      return result;
+        // Get patient vitals
+        try {
+          const fetchedVitals = (await getPatientVitals({
+            data: { patientId },
+          })) as PatientVital.EncodedT[];
+          result.vitals = Array.isArray(fetchedVitals) ? fetchedVitals : [];
+        } catch (error) {
+          console.error("Failed to fetch vitals:", error);
+        }
+
+        // Get patient events
+        try {
+          const fetchedEvents = (await getEventsByPatientId({
+            data: { patient_id: patientId },
+          })) as any[];
+          result.events = fetchedEvents || [];
+        } catch (error) {
+          console.error("Failed to fetch events:", error);
+        }
+
+        // Get all event forms
+        try {
+          const forms = (await getEventForms()) as any[];
+          result.eventForms = forms || [];
+        } catch (error) {
+          console.error("Failed to fetch event forms:", error);
+        }
+
+        // Get patient prescriptions
+        try {
+          const { getPrescriptionsByPatientId } = await import("@/lib/server-functions/prescriptions");
+          const fetchedPrescriptions = await getPrescriptionsByPatientId({ data: { patientId } });
+          result.prescriptions = fetchedPrescriptions || [];
+        } catch (error) {
+          console.error("Failed to fetch prescriptions:", error);
+        }
+      }
     } catch (error) {
       console.error("Failed to fetch patient:", error);
-      return result;
     }
+
+    return result;
   },
 });
 
@@ -103,6 +154,8 @@ function RouteComponent() {
     vitals: initialVitals,
     appointments,
     prescriptions,
+    events,
+    eventForms,
   } = Route.useLoaderData();
   const params = Route.useParams();
   const navigate = Route.useNavigate();
@@ -397,11 +450,12 @@ function RouteComponent() {
 
       {/* Tabs for Additional Information */}
       <Tabs defaultValue="visits" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="visits">Recent Visits</TabsTrigger>
           <TabsTrigger value="vitals">Vital History</TabsTrigger>
           <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
           <TabsTrigger value="appointments">Appointments</TabsTrigger>
+          <TabsTrigger value="events">Event Forms</TabsTrigger>
         </TabsList>
 
         <TabsContent value="visits">
@@ -480,9 +534,90 @@ function RouteComponent() {
               <CardDescription>Active and past medications</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                No prescriptions recorded
-              </div>
+              {prescriptions.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No prescriptions recorded
+                </div>
+              ) : (
+                prescriptions.map(({ prescription, provider, clinic }) => (
+                  <div
+                    key={prescription.id}
+                    className="border rounded-lg p-4 mb-4 last:mb-0"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <p className="font-medium">
+                            {format(
+                              new Date(prescription.prescribed_at),
+                              "MMM dd, yyyy"
+                            )}
+                          </p>
+                          <Badge
+                            variant={
+                              prescription.status === "picked-up"
+                                ? "default"
+                                : prescription.status === "prepared"
+                                  ? "secondary"
+                                  : prescription.status === "pending"
+                                    ? "outline"
+                                    : "destructive"
+                            }
+                          >
+                            {prescription.status?.replace("-", " ") || "Pending"}
+                          </Badge>
+                        </div>
+                        <div className="space-y-1 text-sm text-muted-foreground">
+                          <p>
+                            <span className="font-medium">Provider:</span>{" "}
+                            {provider?.name || provider?.given_name || ""} {provider?.surname || ""}
+                          </p>
+                          <p>
+                            <span className="font-medium">Pickup Clinic:</span>{" "}
+                            {clinic?.name || "N/A"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right text-sm">
+                        <p className="text-muted-foreground">Prescription ID</p>
+                        <p className="font-mono text-xs">
+                          {prescription.id.slice(0, 8)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {prescription.items && prescription.items.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-sm font-medium mb-1">Items:</p>
+                        <ul className="list-disc list-inside text-sm space-y-1">
+                          {prescription.items.map((item: any, idx: number) => (
+                            <li key={idx}>
+                              {item.medication || item.name}
+                              {item.dosage && ` - ${item.dosage}`}
+                              {item.frequency && ` (${item.frequency})`}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {prescription.notes && (
+                      <div className="pt-2 border-t">
+                        <p className="text-sm">
+                          <span className="font-medium">Notes:</span>{" "}
+                          {prescription.notes}
+                        </p>
+                      </div>
+                    )}
+
+                    {prescription.expiration_date && (
+                      <div className="pt-2 mt-2 border-t text-xs text-muted-foreground">
+                        Expires: {format(new Date(prescription.expiration_date), "MMM dd, yyyy")}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -582,6 +717,100 @@ function RouteComponent() {
                   </div>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="events">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Event Forms</CardTitle>
+                  <CardDescription>
+                    Clinical encounters and documentation
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    window.location.href = `/app/patients-event?patientId=${patientId}`;
+                  }}
+                >
+                  New Encounter
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {events.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p className="mb-2">No event forms recorded for this patient</p>
+                  <p className="text-sm">
+                    Event forms capture clinical encounters and medical documentation
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {events.map((event) => {
+                    // Find the form name
+                    const eventForm = eventForms.find(
+                      (form) => form.id === event.form_id
+                    );
+                    const formName = eventForm?.name || "Unknown Form";
+
+                    return (
+                      <div key={event.id} className="border rounded-lg p-4">
+                        <div className="flex justify-between items-start mb-3">
+                          <div className="space-y-1">
+                            <p className="font-medium">{formName}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {format(
+                                new Date(event.created_at),
+                                "MMM dd, yyyy HH:mm"
+                              )}
+                            </p>
+                          </div>
+                          <div className="text-right text-sm">
+                            <p className="text-muted-foreground">Event ID</p>
+                            <p className="font-mono text-xs">
+                              {event.id.slice(0, 8)}
+                            </p>
+                          </div>
+                        </div>
+
+                        {event.event_type && (
+                          <Badge variant="outline" className="mb-3">
+                            {event.event_type}
+                          </Badge>
+                        )}
+
+                        {event.form_data && event.form_data.length > 0 && (
+                          <div className="mt-3 space-y-2">
+                            <p className="text-sm font-medium mb-2">
+                              Form Data:
+                            </p>
+                            {event.form_data.slice(0, 3).map((field: any, idx: number) => (
+                              <div key={idx} className="text-sm">
+                                <span className="text-muted-foreground">
+                                  {field.fieldName || "Field"}:
+                                </span>{" "}
+                                <span className="font-medium">
+                                  {field.value || "—"}
+                                </span>
+                              </div>
+                            ))}
+                            {event.form_data.length > 3 && (
+                              <p className="text-xs text-muted-foreground mt-2">
+                                +{event.form_data.length - 3} more fields
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
