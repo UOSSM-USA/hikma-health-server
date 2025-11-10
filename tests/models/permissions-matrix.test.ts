@@ -121,10 +121,11 @@ describe("Permission Matrix - Complete Coverage", () => {
     });
 
     describe("Clinics Module", () => {
-      it("should allow managing clinic information", () => {
-        expect(hasPermission(role, Module.CLINICS, PermissionOperation.VIEW)).toBe(true);
-        expect(hasPermission(role, Module.CLINICS, PermissionOperation.ADD)).toBe(true);
-        expect(hasPermission(role, Module.CLINICS, PermissionOperation.EDIT)).toBe(true);
+      it("should NOT have access to clinic management", () => {
+        expect(hasPermission(role, Module.CLINICS, PermissionOperation.VIEW)).toBe(false);
+        expect(hasPermission(role, Module.CLINICS, PermissionOperation.ADD)).toBe(false);
+        expect(hasPermission(role, Module.CLINICS, PermissionOperation.EDIT)).toBe(false);
+        expect(hasPermission(role, Module.CLINICS, PermissionOperation.DELETE)).toBe(false);
       });
     });
 
