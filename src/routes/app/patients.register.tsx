@@ -13,13 +13,26 @@ import { v1 as uuidv1 } from "uuid";
 import PatientAdditionalAttribute from "@/models/patient-additional-attribute";
 import { SelectInput } from "@/components/select-input";
 import { getAllClinics } from "@/lib/server-functions/clinics";
+import { permissionsMiddleware } from "@/middleware/auth";
+import {
+  createPermissionContext,
+  checkPatientPermission,
+} from "@/lib/server-functions/permissions";
+import { PermissionOperation } from "@/models/permissions";
 
 export const createPatient = createServerFn({ method: "POST" })
+  .middleware([permissionsMiddleware])
   .validator<{
     baseFields: Patient.T;
     additionalAttributes: PatientAdditionalAttribute.T[];
   }>((data) => data)
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    // Check permissions using new permission system
+    const permContext = createPermissionContext(context);
+    checkPatientPermission(permContext, PermissionOperation.ADD, {
+      clinicId: Option.getOrNull(data.baseFields.primary_clinic_id),
+    });
+
     return Patient.register(
       data as unknown as {
         baseFields: Patient.T;

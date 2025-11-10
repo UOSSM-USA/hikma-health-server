@@ -95,6 +95,9 @@ export const permissionsMiddleware = createMiddleware({
             userId: null as string | null,
             permissions: {} as Record<ClinicId, UserClinicPermissions.EncodedT>,
             role: null as typeof User.RoleSchema.Type | null,
+            clinicIds: [] as string[],
+            isClinicAdmin: false,
+            isSuperAdmin: false,
           },
         });
       }
@@ -116,6 +119,16 @@ export const permissionsMiddleware = createMiddleware({
         {} as Record<Clinic.EncodedT["id"], UserClinicPermissions.EncodedT>,
       );
 
+      // Extract clinic IDs and admin status
+      const clinicIds = permissionsArray.map((p) => p.clinic_id);
+      const isClinicAdmin = permissionsArray.some((p) => p.is_clinic_admin);
+      const userRole = pipe(
+        caller,
+        Option.map((c) => c.role),
+        Option.getOrNull,
+      );
+      const isSuperAdmin = userRole === User.ROLES.SUPER_ADMIN;
+
       return next({
         context: {
           // userId: Option.getOrNull(caller)?.id || null,
@@ -125,11 +138,10 @@ export const permissionsMiddleware = createMiddleware({
             Option.getOrNull,
           ),
           permissions,
-          role: pipe(
-            caller,
-            Option.map((c) => c.role),
-            Option.getOrNull,
-          ),
+          role: userRole,
+          clinicIds,
+          isClinicAdmin,
+          isSuperAdmin,
         },
       });
     },

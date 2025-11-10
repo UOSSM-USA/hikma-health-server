@@ -44,7 +44,8 @@ describe("User Permission Hierarchy System", () => {
       expect(User.ROLE_HIERARCHY.registrar).toBe(1);
       expect(User.ROLE_HIERARCHY.provider).toBe(2);
       expect(User.ROLE_HIERARCHY.admin).toBe(3);
-      expect(User.ROLE_HIERARCHY.super_admin).toBe(4);
+      expect(User.ROLE_HIERARCHY.super_admin_2).toBe(4);
+      expect(User.ROLE_HIERARCHY.super_admin).toBe(5);
     });
 
     it("should have increasing levels for higher roles", () => {
