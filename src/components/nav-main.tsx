@@ -22,6 +22,7 @@ import { Link } from "@tanstack/react-router";
 export function NavMain({
   items,
   handleSignOut,
+  onBeforeNavigate,
 }: {
   items: {
     title: string;
@@ -34,6 +35,7 @@ export function NavMain({
     }[];
   }[];
   handleSignOut: () => void;
+  onBeforeNavigate?: (url: string) => boolean | void;
 }) {
   return (
     <SidebarGroup>
@@ -61,7 +63,17 @@ export function NavMain({
                       {item.items.map((subItem) => (
                         <SidebarMenuSubItem key={subItem.title}>
                           <SidebarMenuSubButton asChild>
-                            <Link to={subItem.url}>
+                            <Link
+                              to={subItem.url}
+                              onClick={(e) => {
+                                if (onBeforeNavigate) {
+                                  const ok = onBeforeNavigate(subItem.url);
+                                  if (ok === false) {
+                                    e.preventDefault();
+                                  }
+                                }
+                              }}
+                            >
                               <span>{subItem.title}</span>
                             </Link>
                           </SidebarMenuSubButton>
@@ -72,7 +84,17 @@ export function NavMain({
                 </>
               ) : (
                 <SidebarMenuButton asChild tooltip={item.title}>
-                  <Link to={item.url}>
+                  <Link
+                    to={item.url}
+                    onClick={(e) => {
+                      if (onBeforeNavigate) {
+                        const ok = onBeforeNavigate(item.url);
+                        if (ok === false) {
+                          e.preventDefault();
+                        }
+                      }
+                    }}
+                  >
                     {item.icon && <item.icon />}
                     <span>{item.title}</span>
                   </Link>

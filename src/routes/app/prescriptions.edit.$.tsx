@@ -7,6 +7,13 @@ import { Schema } from "effect";
 import { sql } from "kysely";
 import db from "@/db";
 import { toast } from "sonner";
+import { permissionsMiddleware } from "@/middleware/auth";
+import {
+  createPermissionContext,
+  checkPrescriptionPermission,
+} from "@/lib/server-functions/permissions";
+import { PermissionOperation } from "@/models/permissions";
+import Patient from "@/models/patient";
 import {
   Form,
   FormControl,
@@ -35,10 +42,12 @@ import { getCurrentUser } from "@/lib/server-functions/auth";
 import { PatientSearchSelect } from "@/components/patient-search-select";
 import Clinic from "@/models/clinic";
 import User from "@/models/user";
-import type Patient from "@/models/patient";
+import { useEffect, useMemo } from "react";
+import { usePrescriptionPermissions } from "@/hooks/use-permissions";
 
 // Create a save prescription server function
 const savePrescription = createServerFn({ method: "POST" })
+  .middleware([permissionsMiddleware])
   .validator(
     (data: {
       prescription: Prescription.EncodedT;
@@ -47,8 +56,23 @@ const savePrescription = createServerFn({ method: "POST" })
       currentClinicId: string;
     }) => data
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { prescription, id, currentUserName, currentClinicId } = data;
+
+    // Check permissions
+    const permContext = createPermissionContext(context);
+    const operation = id ? PermissionOperation.EDIT : PermissionOperation.ADD;
+    
+    // Get patient to check clinic context
+    const patient = await Patient.API.getById(prescription.patient_id);
+    if (!patient) {
+      throw new Error("Patient not found");
+    }
+
+    checkPrescriptionPermission(permContext, operation, {
+      clinicId: patient.primary_clinic_id,
+      providerId: prescription.provider_id,
+    });
 
     return Prescription.API.save(
       id,
@@ -127,7 +151,21 @@ function RouteComponent() {
   const navigate = Route.useNavigate();
   const params = Route.useParams();
   const prescriptionId = params._splat;
-  const isEditing = !!prescriptionId;
+  const isEditing = !!prescriptionId && prescriptionId !== "new";
+
+  // Permissions
+  const { canAdd, canEdit } = usePrescriptionPermissions(currentUser?.role);
+  const isReadOnly = useMemo(() => {
+    return isEditing ? !canEdit : !canAdd;
+  }, [isEditing, canAdd, canEdit]);
+
+  // If attempting to create but not allowed, redirect away
+  useEffect(() => {
+    if (!isEditing && !canAdd) {
+      toast.error("You do not have permission to create prescriptions.");
+      navigate({ to: "/app/prescriptions", replace: true });
+    }
+  }, [isEditing, canAdd, navigate]);
 
   const form = useForm<Prescription.EncodedT>({
     defaultValues: prescription || {
@@ -158,6 +196,10 @@ function RouteComponent() {
 
   // Handle form submission
   const onSubmit = async (values: Prescription.EncodedT) => {
+    if (isReadOnly) {
+      toast.error("You do not have permission to modify prescriptions.");
+      return;
+    }
     console.log({
       prescription: values,
       id: prescriptionId,
@@ -208,6 +250,7 @@ function RouteComponent() {
                         onChange={(value) => {
                           field.onChange(value?.id || null);
                         }}
+                        isDisabled={isReadOnly}
                       />
                     </FormControl>
                     <FormMessage />
@@ -229,6 +272,7 @@ function RouteComponent() {
                     onChange={field.onChange}
                     placeholder="Select provider"
                     className="w-full"
+                    disabled={isReadOnly}
                   />
                 )}
               />
@@ -247,6 +291,7 @@ function RouteComponent() {
                     onChange={field.onChange}
                     placeholder="Select pickup clinic"
                     className="w-full"
+                    disabled={isReadOnly}
                   />
                 )}
               />
@@ -262,6 +307,7 @@ function RouteComponent() {
                     onChange={field.onChange}
                     placeholder="Select priority"
                     className="w-full"
+                    disabled={isReadOnly}
                   />
                 )}
               />
@@ -281,6 +327,7 @@ function RouteComponent() {
                               "w-full pl-3 text-left font-normal",
                               !field.value && "text-muted-foreground"
                             )}
+                            disabled={isReadOnly}
                           >
                             {field.value ? (
                               format(new Date(field.value), "PPP")
@@ -322,6 +369,7 @@ function RouteComponent() {
                     onChange={field.onChange}
                     placeholder="Select status"
                     className="w-full"
+                    disabled={isReadOnly}
                   />
                 )}
               />
@@ -337,6 +385,7 @@ function RouteComponent() {
                         placeholder="Add prescription notes here"
                         className="resize-none"
                         {...field}
+                        disabled={isReadOnly}
                       />
                     </FormControl>
                     <FormMessage />
@@ -352,9 +401,11 @@ function RouteComponent() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit">
+                {!isReadOnly && (
+                  <Button type="submit">
                   {isEditing ? "Update Prescription" : "Create Prescription"}
-                </Button>
+                  </Button>
+                )}
               </div>
             </form>
           </Form>

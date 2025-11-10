@@ -26,6 +26,14 @@ import {
 } from "@/components/ui/sidebar";
 import type User from "@/models/user";
 import type Clinic from "@/models/clinic";
+import {
+  useEventFormPermissions,
+  useUserPermissions,
+  useClinicPermissions,
+  useDataAnalysisPermissions,
+  useSettingsPermissions,
+} from "@/hooks/use-permissions";
+import { toast } from "sonner";
 
 // This is sample data.
 export const navData = {
@@ -230,6 +238,56 @@ export function AppSidebar({
   handleSignOut,
   ...props
 }: AppSidebarProps) {
+  const { canView: canViewEventForms } = useEventFormPermissions(
+    currentUser?.role,
+  );
+  const { canView: canViewUsers } = useUserPermissions(currentUser?.role);
+  const { canView: canViewClinics } = useClinicPermissions(currentUser?.role);
+  const { canView: canViewDataAnalysis } = useDataAnalysisPermissions(
+    currentUser?.role,
+  );
+  const { canView: canViewSettings } = useSettingsPermissions(
+    currentUser?.role,
+  );
+
+  const onBeforeNavigate = React.useCallback(
+    (url: string) => {
+      // Block Event Forms for users without VIEW permission
+      if (url.startsWith("/app/event-forms") && !canViewEventForms) {
+        toast.error("You do not have permission to access Event Forms.");
+        return false; // prevent navigation
+      }
+      // Block Users for registrars or anyone without VIEW permission
+      if (url.startsWith("/app/users") && !canViewUsers) {
+        toast.error("You do not have permission to access Users.");
+        return false;
+      }
+      // Block Clinics for registrars or anyone without VIEW permission
+      if (url.startsWith("/app/clinics") && !canViewClinics) {
+        toast.error("You do not have permission to access Clinics.");
+        return false;
+      }
+      // Block Data Analysis routes without permission
+      if (url.startsWith("/app/data") && !canViewDataAnalysis) {
+        toast.error("You do not have permission to access Data Analysis.");
+        return false;
+      }
+      // Block Settings routes without permission
+      if (url.startsWith("/app/settings") && !canViewSettings) {
+        toast.error("You do not have permission to access Settings.");
+        return false;
+      }
+      return true;
+    },
+    [
+      canViewEventForms,
+      canViewUsers,
+      canViewClinics,
+      canViewDataAnalysis,
+      canViewSettings,
+    ],
+  );
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -254,7 +312,11 @@ export function AppSidebar({
         />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={navData.navMain} handleSignOut={handleSignOut} />
+        <NavMain
+          items={navData.navMain}
+          handleSignOut={handleSignOut}
+          onBeforeNavigate={onBeforeNavigate}
+        />
         {/* <NavProjects projects={navData.projects} /> */}
       </SidebarContent>
       <SidebarFooter>

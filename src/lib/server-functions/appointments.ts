@@ -1,6 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import Appointment from "@/models/appointment";
 import type User from "@/models/user";
+import { permissionsMiddleware } from "@/middleware/auth";
+import {
+  createPermissionContext,
+  checkAppointmentPermission,
+} from "@/lib/server-functions/permissions";
+import { PermissionOperation } from "@/models/permissions";
 
 /**
  * Get all appointments
@@ -88,7 +94,23 @@ export const getAllAppointmentsWithDetails = createServerFn({
  * @returns {Promise<void>}
  */
 export const toggleAppointmentStatus = createServerFn({ method: "POST" })
+  .middleware([permissionsMiddleware])
   .validator((data: { id: string; status: string }) => data)
-  .handler(async ({ data }): Promise<void> => {
+  .handler(async ({ data, context }): Promise<void> => {
+    // Check permissions - editing appointment requires edit permission
+    const permContext = createPermissionContext(context);
+    
+    // Get appointment to check clinic context
+    const appointment = await Appointment.API.getById(data.id);
+    if (!appointment) {
+      throw new Error("Appointment not found");
+    }
+
+    checkAppointmentPermission(permContext, PermissionOperation.EDIT, {
+      clinicId: appointment.clinic_id,
+      providerId: appointment.provider_id,
+      ownerId: appointment.user_id,
+    });
+
     await Appointment.API.toggleStatus(data.id, data.status);
   });

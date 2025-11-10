@@ -25,6 +25,12 @@ import {
 } from "@/lib/server-functions/users";
 import UserClinicPermissions from "@/models/user-clinic-permissions";
 import { permissionsMiddleware } from "@/middleware/auth";
+import { createPermissionContext } from "@/lib/server-functions/permissions";
+import { PermissionOperation } from "@/models/permissions";
+import { redirect } from "@tanstack/react-router";
+import { checkUserPermission } from "@/lib/server-functions/permissions";
+import { getCurrentUser } from "@/lib/server-functions/auth";
+import { useUserPermissions } from "@/hooks/use-permissions";
 
 // const getCurrentUserId = createServerFn({ method: "GET" }).handler(async () => {
 //   const tokenCookie = getCookieToken();
@@ -88,10 +94,25 @@ const getCurrentUserRole = createServerFn({ method: "GET" })
     return context.role;
   });
 
+// Top-level guard to avoid creating server functions inside the loader
+const ensureCanViewUsers = createServerFn({ method: "GET" })
+  .middleware([permissionsMiddleware])
+  .handler(async ({ context }) => {
+    const permContext = createPermissionContext(context);
+    checkUserPermission(permContext, PermissionOperation.VIEW);
+    return true;
+  });
+
 export const Route = createFileRoute("/app/users/")({
   component: RouteComponent,
 
   loader: async () => {
+    // Guard: deny access to users list if no VIEW permission
+    const ok = await ensureCanViewUsers();
+    if (!ok) {
+      throw redirect({ to: "/app", replace: true });
+    }
+    const currentUser = await getCurrentUser();
     const currentUserId = await getCurrentUserId();
     return {
       users: await getAllUsers(),
@@ -104,15 +125,17 @@ export const Route = createFileRoute("/app/users/")({
         },
       }),
       isSuperAdmin: await currentUserHasRole({ data: { role: "super_admin" } }),
+      currentUser,
     };
   },
 });
 
 function RouteComponent() {
-  const { users, currentUserId, currentUserRole, isSuperAdmin, currentUserAdminClinics } =
+  const { users, currentUserId, currentUserRole, isSuperAdmin, currentUserAdminClinics, currentUser } =
     Route.useLoaderData();
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const { canView } = useUserPermissions(currentUser?.role);
 
   const handleDelete = async (id: string, targetUserRole: User.RoleT) => {
     if (!window.confirm("Are you sure you want to delete this user?")) {

@@ -23,6 +23,13 @@ import {
 import { toast } from "sonner";
 import { getAllClinics } from "@/lib/server-functions/clinics";
 import { Link } from "@tanstack/react-router";
+import { permissionsMiddleware } from "@/middleware/auth";
+import { createPermissionContext } from "@/lib/server-functions/permissions";
+import { checkClinicPermission } from "@/lib/server-functions/permissions";
+import { PermissionOperation } from "@/models/permissions";
+import { redirect } from "@tanstack/react-router";
+import { getCurrentUser } from "@/lib/server-functions/auth";
+import { useClinicPermissions } from "@/hooks/use-permissions";
 
 const deleteClinic = createServerFn({ method: "POST" })
   .validator((data: { id: string }) => data)
@@ -36,18 +43,39 @@ export const archiveClinic = createServerFn({ method: "POST" })
     return Clinic.API.setArchivedStatus(data.id, data.isArchived);
   });
 
+// Top-level guard to avoid creating server functions inside loader
+const ensureCanViewClinics = createServerFn({ method: "GET" })
+  .middleware([permissionsMiddleware])
+  .handler(async ({ context }) => {
+    const permContext = createPermissionContext(context);
+    checkClinicPermission(permContext, PermissionOperation.VIEW);
+    return true;
+  });
+
 export const Route = createFileRoute("/app/clinics/")({
   component: RouteComponent,
   loader: async () => {
+    // Guard: require VIEW permission for clinics
+    const ok = await ensureCanViewClinics();
+    if (!ok) {
+      throw redirect({ to: "/app", replace: true });
+    }
     const clinics = await getAllClinics();
-    return { clinics };
+    const currentUser = await getCurrentUser();
+    return { clinics, currentUser };
   },
 });
 
 function RouteComponent() {
-  const { clinics } = Route.useLoaderData();
+  const { clinics, currentUser } = Route.useLoaderData() as {
+    clinics: Clinic.EncodedT[];
+    currentUser: { role: any } | null;
+  };
   const navigate = useNavigate();
   const router = useRouter();
+  const { canAdd, canEdit, canDelete } = useClinicPermissions(
+    currentUser?.role,
+  );
 
   console.log("Clinics:", clinics);
 
@@ -102,11 +130,13 @@ function RouteComponent() {
     <div className="container py-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Clinics</h1>
-        <Button asChild>
-          <Link to="/app/clinics/edit/$" params={{ _splat: "new" }}>
-            Add Clinic
-          </Link>
-        </Button>
+        {canAdd && (
+          <Button asChild>
+            <Link to="/app/clinics/edit/$" params={{ _splat: "new" }}>
+              Add Clinic
+            </Link>
+          </Button>
+        )}
       </div>
       <div className="rounded-md border">
         <Table>

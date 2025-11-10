@@ -2,6 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { Option, Schema } from "effect";
 import EventForm from "@/models/event-form";
+import { permissionsMiddleware } from "@/middleware/auth";
+import {
+  createPermissionContext,
+  checkEventFormPermission,
+} from "@/lib/server-functions/permissions";
+import { PermissionOperation } from "@/models/permissions";
 import { useSelector } from "@xstate/store/react";
 import eventFormStore from "@/stores/event-form-builder";
 import { Input } from "@/components/ui/input";
@@ -36,6 +42,11 @@ import { MedicineInput } from "@/components/form-builder/MedicineInput";
 import { DiagnosisSelect } from "@/components/form-builder/DiagnosisPicker";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useMemo } from "react";
+import { useEventFormPermissions } from "@/hooks/use-permissions";
+import User from "@/models/user";
+import { getCurrentUser } from "@/lib/server-functions/auth";
+import { redirect } from "@tanstack/react-router";
 
 const getFormById = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
@@ -81,11 +92,17 @@ const getFormById = createServerFn({ method: "GET" })
   });
 
 const saveForm = createServerFn({ method: "POST" })
+  .middleware([permissionsMiddleware])
   .validator(
     (d: { form: EventForm.EncodedT; updateFormId: null | string }) => d,
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { updateFormId, form } = data;
+
+    // Check permissions
+    const permContext = createPermissionContext(context);
+    const operation = updateFormId ? PermissionOperation.EDIT : PermissionOperation.ADD;
+    checkEventFormPermission(permContext, operation);
 
     if (updateFormId) {
       return EventForm.API.update({
@@ -97,26 +114,59 @@ const saveForm = createServerFn({ method: "POST" })
     }
   });
 
+// Top-level guards to avoid creating server functions during loader execution
+const ensureCanAddEventForm = createServerFn({ method: "GET" })
+  .middleware([permissionsMiddleware])
+  .handler(async ({ context }) => {
+    const permContext = createPermissionContext(context);
+    checkEventFormPermission(permContext, PermissionOperation.ADD);
+    return true;
+  });
+
+const ensureCanEditEventForm = createServerFn({ method: "GET" })
+  .middleware([permissionsMiddleware])
+  .handler(async ({ context }) => {
+    const permContext = createPermissionContext(context);
+    checkEventFormPermission(permContext, PermissionOperation.EDIT);
+    return true;
+  });
+
 export const Route = createFileRoute("/app/event-forms/edit/$")({
   // ssr: false,
   component: RouteComponent,
   loader: async ({ params }) => {
+    // Guard: deny access for users without proper permission
+    const isNew = !params._splat || params._splat === "new";
+    const ok = isNew
+      ? await ensureCanAddEventForm()
+      : await ensureCanEditEventForm();
+    if (!ok) {
+      throw redirect({ to: "/app/event-forms", replace: true });
+    }
+    const currentUser = (await getCurrentUser()) as User.EncodedT | null;
     const formId = params._splat;
     if (!formId || formId === "new") {
-      return { form: null };
+      return { form: null, currentUser };
     }
-    return { form: await getFormById({ data: { id: formId } }) };
+    return { form: await getFormById({ data: { id: formId } }), currentUser };
   },
 });
 
 // form title, form language, form description, is editable checkbox, is snapshot checkbox, (inputs custom component)m add form input buttoms
 
 function RouteComponent() {
-  const { form: initialForm } = Route.useLoaderData();
+  const { form: initialForm, currentUser } = Route.useLoaderData() as {
+    form: EventForm.EncodedT | null;
+    currentUser: User.EncodedT | null;
+  };
   console.log({ initialForm });
   const navigate = Route.useNavigate();
   const formId = Route.useParams()._splat;
   const isEditing = !!initialForm?.id;
+  const { canAdd, canEdit } = useEventFormPermissions(currentUser?.role);
+  const isReadOnly = useMemo(() => {
+    return isEditing ? !canEdit : !canAdd;
+  }, [isEditing, canAdd, canEdit]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -288,6 +338,7 @@ function RouteComponent() {
               type="text"
               name="name"
               value={formState.name}
+              disabled={isReadOnly}
               onChange={(e) =>
                 eventFormStore.send({
                   type: "set-form-name",
@@ -299,6 +350,7 @@ function RouteComponent() {
               label="Form Language"
               className="w-full"
               value={formState.language}
+              disabled={isReadOnly}
               onChange={(value) =>
                 value &&
                 eventFormStore.send({
@@ -318,6 +370,7 @@ function RouteComponent() {
               type="textarea"
               name="description"
               value={formState.description}
+              disabled={isReadOnly}
               onChange={(e) =>
                 eventFormStore.send({
                   type: "set-form-description",
@@ -329,6 +382,7 @@ function RouteComponent() {
               label="Is Editable"
               name="is_editable"
               checked={formState.is_editable}
+              disabled={isReadOnly}
               onCheckedChange={(checked) =>
                 eventFormStore.send({ type: "toggle-form-editable" })
               }
@@ -337,6 +391,7 @@ function RouteComponent() {
               label="Is Snapshot"
               name="is_snapshot_form"
               checked={formState.is_snapshot_form}
+              disabled={isReadOnly}
               onCheckedChange={(checked) =>
                 eventFormStore.send({ type: "toggle-form-snapshot" })
               }
@@ -352,10 +407,12 @@ function RouteComponent() {
             />
             <Separator className="my-6" />
 
-            <AddFormInputButtons addField={addField} />
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Saving..." : "Save"}
-            </Button>
+            {!isReadOnly && <AddFormInputButtons addField={addField} />}
+            {!isReadOnly && (
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Save"}
+              </Button>
+            )}
           </form>
         </div>
         {/* Right side - Form preview */}
