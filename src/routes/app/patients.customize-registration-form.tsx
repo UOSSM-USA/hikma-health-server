@@ -21,6 +21,7 @@ import React from "react";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getPatientRegistrationForm } from "@/lib/server-functions/patient-registration-forms";
+import { useLanguage } from "@/lib/i18n/context";
 
 export const saveForm = createServerFn({ method: "POST" })
   .validator((data: PatientRegistrationForm.T) => data)
@@ -394,6 +395,7 @@ const defaultEmptyForm: PatientRegistrationForm.T = {
 
 function RouteComponent() {
   const { patientRegistrationForm } = Route.useLoaderData();
+  const { language: userLanguage, t } = useLanguage();
   // initial state is either loaded from the DB or on first deployment its loaded from a local state
 
   const initialState =
@@ -438,11 +440,11 @@ function RouteComponent() {
       if (result.error.errors.find((err) => err.path.includes("options"))) {
         // ther eis an error with one of the options supported for a select field
         return alert(
-          "Please make sure all select fields have at least one option"
+          t("validation.selectFieldOptionsRequired") || "Please make sure all select fields have at least one option"
         );
       } else {
         ignoreErrors = window.confirm(
-          "Some fields of the form are incomplete or empty. Are you sure you want to continue?"
+          t("messages.formIncompleteConfirm") || "Some fields of the form are incomplete or empty. Are you sure you want to continue?"
         );
       }
     }
@@ -452,10 +454,10 @@ function RouteComponent() {
 
       try {
         const res = await saveForm({ data: state });
-        alert("Form saved successfully!");
+        alert(t("messages.formSaved") || "Form saved successfully!");
       } catch (error) {
         console.error("Failed to save form:", error);
-        alert("Failed to save the form. Please try again later.");
+        alert(t("messages.formSaveError") || "Failed to save the form. Please try again later.");
       } finally {
         setLoading(false);
       }
@@ -467,13 +469,13 @@ function RouteComponent() {
     <div className="mb-14">
       <Select value={formLanguage} onValueChange={setFormLanguage}>
         <SelectTrigger className="w-[180px]">
-          <SelectValue placeholder="Select a language" />
+          <SelectValue placeholder={t("language.selectLanguage")} />
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
-            <SelectLabel>Languages</SelectLabel>
-            <SelectItem value="en">English</SelectItem>
-            <SelectItem value="ar">Arabic</SelectItem>
+            <SelectLabel>{t("language.selectLanguage")}</SelectLabel>
+            <SelectItem value="en">{t("language.english")}</SelectItem>
+            <SelectItem value="ar">{t("language.arabic")}</SelectItem>
             <SelectItem value="es">Spanish</SelectItem>
           </SelectGroup>
         </SelectContent>

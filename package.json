@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 3000",
+    "dev:with-migrations": "pnpm run db:migrate && pnpm run dev",
     "db:migrate": "npx dotenv -e .env -- npx kysely migrate latest",
     "start-only": "node .output/server/index.mjs",
     "start": "pnpm run db:migrate && pnpm run recovery:permissions && pnpm run start-only",

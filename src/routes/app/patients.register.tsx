@@ -19,6 +19,7 @@ import {
   checkPatientPermission,
 } from "@/lib/server-functions/permissions";
 import { PermissionOperation } from "@/models/permissions";
+import { useLanguage } from "@/lib/i18n/context";
 
 export const createPatient = createServerFn({ method: "POST" })
   .middleware([permissionsMiddleware])
@@ -58,6 +59,7 @@ export const Route = createFileRoute("/app/patients/register")({
 
 function RouteComponent() {
   const { patientRegistrationForm, clinicsList } = Route.useLoaderData();
+  const { language } = useLanguage();
 
   const { formState, handleSubmit, register, watch, setValue } = useForm({
     mode: "all",
@@ -182,7 +184,7 @@ function RouteComponent() {
                       htmlFor={field.column}
                       className="text-muted-foreground"
                     >
-                      {Language.getTranslation(field.label, "en")}
+                      {Language.getTranslation(field.label, language)}
                     </Label>
                     <Input
                       data-testid={"register-patient-" + idx}
@@ -201,15 +203,15 @@ function RouteComponent() {
                       className="w-full"
                       data-testid={"register-patient-" + idx}
                       data-inputtype={"select"}
-                      label={Language.getTranslation(field.label, "en")}
+                      label={Language.getTranslation(field.label, language)}
                       data={field.column === "primary_clinic_id" 
                         ? clinicsList.map((clinic) => ({
                             label: clinic.name || "Unknown Clinic",
                             value: clinic.id,
                           }))
                         : field.options?.map((option) => ({
-                            label: Language.getTranslation(option, "en"),
-                            value: Language.getTranslation(option, "en"),
+                            label: Language.getTranslation(option, language),
+                            value: Language.getTranslation(option, language),
                           })) || []
                       }
                       value={watch(field.column)}
@@ -225,7 +227,7 @@ function RouteComponent() {
                       htmlFor={field.column}
                       className="text-muted-foreground"
                     >
-                      {Language.getTranslation(field.label, "en")}
+                      {Language.getTranslation(field.label, language)}
                     </Label>
                     <Input
                       data-inputtype={"number"}
@@ -243,7 +245,7 @@ function RouteComponent() {
                       htmlFor={field.column}
                       className="text-muted-foreground"
                     >
-                      {Language.getTranslation(field.label, "en")}
+                      {Language.getTranslation(field.label, language)}
                     </Label>
                     <DatePickerInput
                       // valueFormat="YYYY MMM DD"

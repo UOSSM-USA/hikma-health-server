@@ -31,6 +31,7 @@ import User from "@/models/user";
 import { getCurrentUser } from "@/lib/server-functions/auth";
 import { useMemo } from "react";
 import { useEventFormPermissions } from "@/hooks/use-permissions";
+import { useTranslation } from "@/lib/i18n/context";
 
 const deleteForm = createServerFn({ method: "POST" })
   .middleware([permissionsMiddleware])
@@ -100,6 +101,7 @@ function RouteComponent() {
     currentUser: User.EncodedT | null;
   };
   const route = useRouter();
+  const t = useTranslation();
   const { canAdd, canEdit, canDelete } = useEventFormPermissions(
     currentUser?.role,
   );
@@ -108,11 +110,11 @@ function RouteComponent() {
   const handleSnapshotToggle = (id: string, isSnapshot: boolean) => {
     toggleFormDetail({ data: { id, field: "snapshot", value: isSnapshot } })
       .then(() => {
-        toast.success("Form snapshot mode toggled successfully");
+        toast.success(t("messages.formSaved") || "Form snapshot mode toggled successfully");
         route.invalidate({ sync: true });
       })
       .catch((error) => {
-        toast.error("Failed to toggle form snapshot mode");
+        toast.error(t("messages.formSaveError") || "Failed to toggle form snapshot mode");
         console.error(error);
       });
   };
@@ -120,11 +122,11 @@ function RouteComponent() {
   const handleEditableToggle = (id: string, isEditable: boolean) => {
     toggleFormDetail({ data: { id, field: "editable", value: isEditable } })
       .then(() => {
-        toast.success("Form editable mode toggled successfully");
+        toast.success(t("messages.formSaved") || "Form editable mode toggled successfully");
         route.invalidate({ sync: true });
       })
       .catch((error) => {
-        toast.error("Failed to toggle form editable mode");
+        toast.error(t("messages.formSaveError") || "Failed to toggle form editable mode");
         console.error(error);
       });
   };
@@ -132,11 +134,11 @@ function RouteComponent() {
   const handleDelete = (id: string) => {
     deleteForm({ data: { id } })
       .then(() => {
-        toast.success("Form deleted successfully");
+        toast.success(t("messages.formDeleted") || "Form deleted successfully");
         route.invalidate({ sync: true });
       })
       .catch((error) => {
-        toast.error("Failed to delete form");
+        toast.error(t("messages.formDeleteError") || "Failed to delete form");
         console.error(error);
       });
   };
@@ -144,10 +146,10 @@ function RouteComponent() {
   return (
     <div className="container py-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Event Forms</h1>
+        <h1 className="text-2xl font-bold">{t("nav.eventForms")}</h1>
         {canAdd && (
           <Link to="/app/event-forms/edit/$" params={{ _splat: "new" }}>
-            <Button>Create New Form</Button>
+            <Button>{t("nav.registerNewForm")}</Button>
           </Link>
         )}
       </div>
@@ -155,23 +157,23 @@ function RouteComponent() {
       <div className="rounded-md border overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
-            <TableCaption>Event Forms</TableCaption>
+            <TableCaption>{t("nav.eventForms")}</TableCaption>
             <TableHeader>
               <TableRow>
-                <TableHead>Snapshot</TableHead>
-                <TableHead>Editable</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Updated</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>{t("table.snapshot")}</TableHead>
+                <TableHead>{t("table.editable")}</TableHead>
+                <TableHead>{t("table.name")}</TableHead>
+                <TableHead>{t("table.description")}</TableHead>
+                <TableHead>{t("table.created")}</TableHead>
+                <TableHead>{t("table.updated")}</TableHead>
+                <TableHead>{t("table.actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {forms.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center">
-                    No forms available
+                    {t("table.noFormsAvailable")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -219,7 +221,7 @@ function RouteComponent() {
                           params={{ _splat: form.id }}
                         >
                           <Button variant="outline" size="sm">
-                            Edit
+                            {t("common.edit")}
                           </Button>
                         </Link>
                       )}
@@ -229,7 +231,7 @@ function RouteComponent() {
                           size="sm"
                           onClick={() => handleDelete(form.id)}
                         >
-                          Delete
+                          {t("common.delete")}
                         </Button>
                       )}
                     </TableCell>

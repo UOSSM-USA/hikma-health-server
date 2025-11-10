@@ -18,6 +18,7 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { Link } from "@tanstack/react-router";
+import { useTranslation } from "@/lib/i18n/context";
 
 export function NavMain({
   items,
@@ -37,6 +38,7 @@ export function NavMain({
   handleSignOut: () => void;
   onBeforeNavigate?: (url: string) => boolean | void;
 }) {
+  const t = useTranslation();
   return (
     <SidebarGroup>
       {/* <SidebarGroupLabel>Platform</SidebarGroupLabel> */}
@@ -105,13 +107,13 @@ export function NavMain({
         ))}
         <SidebarMenuButton
           asChild
-          tooltip="Sign out"
+          tooltip={t("nav.signOut")}
           data-testid="sign-out-button"
           onClick={handleSignOut}
         >
           <div className="flex space-x-2">
             <LucideLogOut className="w-4 h-4" />
-            <span>Sign out</span>
+            <span>{t("nav.signOut")}</span>
           </div>
         </SidebarMenuButton>
       </SidebarMenu>
