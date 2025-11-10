@@ -1,15 +1,52 @@
 // This file is used to set up global test configurations
 // It is automatically imported by Vitest before running tests
 
-// Add any global test setup here
-// For example, you might want to add custom matchers, global mocks, etc.
+import { vi } from "vitest";
 
-// Example of how to extend expect with custom matchers if needed:
-// import { expect } from 'vitest';
-// import { toBeInTheDocument } from '@testing-library/jest-dom/matchers';
-// expect.extend({ toBeInTheDocument });
+// Mock the database config FIRST to prevent environment variable checks
+// This must be mocked before @/db is imported
+vi.mock("@/db/db-config", () => ({
+  getDatabaseConfig: vi.fn(() => ({
+    host: "localhost",
+    database: "test_db",
+    user: "test_user",
+    password: "test_password",
+    port: 5432,
+    ssl: {
+      rejectUnauthorized: false,
+    },
+  })),
+  getDatabaseSSLConfig: vi.fn(() => false),
+}));
 
-// You can set up global mocks here too
-// vi.mock('some-module', () => ({
-//   someFunction: vi.fn(),
-// }));
+// Mock the database module to prevent database connection attempts during tests
+// Tests that need actual database access should override this mock
+vi.mock("@/db", async () => {
+  const { vi } = await import("vitest");
+  return {
+    default: {
+      selectFrom: vi.fn(() => ({
+        selectAll: vi.fn(),
+        select: vi.fn(),
+        where: vi.fn(),
+        execute: vi.fn(),
+      })),
+      insertInto: vi.fn(() => ({
+        values: vi.fn(),
+        returning: vi.fn(),
+        execute: vi.fn(),
+      })),
+      updateTable: vi.fn(() => ({
+        set: vi.fn(),
+        where: vi.fn(),
+        returning: vi.fn(),
+        execute: vi.fn(),
+      })),
+      deleteFrom: vi.fn(() => ({
+        where: vi.fn(),
+        returning: vi.fn(),
+        execute: vi.fn(),
+      })),
+    },
+  };
+});
