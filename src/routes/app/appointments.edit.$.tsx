@@ -40,6 +40,7 @@ import { getPatientById } from "@/lib/server-functions/patients";
 import type Patient from "@/models/patient";
 import If from "@/components/if";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useTranslation } from "@/lib/i18n/context";
 
 const saveAppointment = createServerFn({ method: "POST" })
   .validator(
@@ -89,9 +90,9 @@ export const Route = createFileRoute("/app/appointments/edit/$")({
     result.clinics = (await getAllClinics()) as Clinic.EncodedT[];
     result.currentUser = (await getCurrentUser()) as User.EncodedT | null;
     if (patientId) {
-      const patientResult = await getPatientById({
+      const patientResult = (await getPatientById({
         data: { id: patientId },
-      });
+      })) as { patient?: Patient.EncodedT | null };
       result.patient = patientResult?.patient || null;
     }
     return result;
@@ -99,38 +100,37 @@ export const Route = createFileRoute("/app/appointments/edit/$")({
 });
 
 // Duration options
-const durationOptions = [
-  { label: "Unknown", value: 0 },
-  { label: "15 minutes", value: 15 },
-  { label: "30 minutes", value: 30 },
-  { label: "45 minutes", value: 45 },
-  { label: "1 hour", value: 60 },
-  { label: "2 hours", value: 60 * 2 },
-  { label: "3 hours", value: 60 * 3 },
-  { label: "8 hours", value: 60 * 8 },
+const DURATION_OPTION_DEFS = [
+  { key: "unknown" as const, value: 0 },
+  { key: "minutes15" as const, value: 15 },
+  { key: "minutes30" as const, value: 30 },
+  { key: "minutes45" as const, value: 45 },
+  { key: "hour1" as const, value: 60 },
+  { key: "hours2" as const, value: 60 * 2 },
+  { key: "hours3" as const, value: 60 * 3 },
+  { key: "hours8" as const, value: 60 * 8 },
 ];
 
 // Reason options
-const reasonOptions = [
-  // { label: "Walk-in", value: "walk-in" },
-  { label: "Doctor's Visit", value: "doctor-visit" },
-  { label: "Screening", value: "screening" },
-  { label: "Referral", value: "referral" },
-  { label: "Checkup", value: "checkup" },
-  { label: "Follow-up", value: "follow-up" },
-  { label: "Counselling", value: "counselling" },
-  { label: "Procedure", value: "procedure" },
-  { label: "Investigation", value: "investigation" },
-  { label: "Other", value: "other" },
+const REASON_OPTION_DEFS = [
+  { key: "doctorVisit" as const, value: "doctor-visit" },
+  { key: "screening" as const, value: "screening" },
+  { key: "referral" as const, value: "referral" },
+  { key: "checkup" as const, value: "checkup" },
+  { key: "followUp" as const, value: "follow-up" },
+  { key: "counselling" as const, value: "counselling" },
+  { key: "procedure" as const, value: "procedure" },
+  { key: "investigation" as const, value: "investigation" },
+  { key: "other" as const, value: "other" },
 ];
 
 // Status options
-const statusOptions = [
-  { label: "Pending", value: "pending" },
-  { label: "Confirmed", value: "confirmed" },
-  { label: "Cancelled", value: "cancelled" },
-  { label: "Completed", value: "completed" },
-  { label: "Checked In", value: "checked_in" },
+const STATUS_OPTION_DEFS = [
+  { key: "pending" as const, value: "pending" },
+  { key: "confirmed" as const, value: "confirmed" },
+  { key: "cancelled" as const, value: "cancelled" },
+  { key: "completed" as const, value: "completed" },
+  { key: "checkedIn" as const, value: "checked_in" },
 ];
 
 const DEFAULT_FORM_VALUES: Partial<Appointment.EncodedT> = {
@@ -168,6 +168,7 @@ function RouteComponent() {
   const params = Route.useParams();
   const appointmentId = params._splat;
   const isEditing = !!appointmentId;
+  const t = useTranslation();
 
   console.log({ appointment });
 
@@ -183,6 +184,22 @@ function RouteComponent() {
       provider_id: currentUser?.id || "",
     } as Appointment.EncodedT,
   });
+  const isSubmitting = form.formState.isSubmitting;
+
+  const durationOptions = DURATION_OPTION_DEFS.map((option) => ({
+    label: t(`appointmentForm.durations.${option.key}`),
+    value: option.value,
+  }));
+
+  const reasonOptions = REASON_OPTION_DEFS.map((option) => ({
+    label: t(`appointmentForm.reasons.${option.key}`),
+    value: option.value,
+  }));
+
+  const statusOptions = STATUS_OPTION_DEFS.map((option) => ({
+    label: t(`appointmentForm.statuses.${option.key}`),
+    value: option.value,
+  }));
 
   // Handle form submission
   const onSubmit = async (values: Appointment.EncodedT) => {
@@ -202,13 +219,13 @@ function RouteComponent() {
 
       toast.success(
         isEditing
-          ? "Appointment updated successfully"
-          : "Appointment created successfully",
+          ? t("messages.appointmentUpdated")
+          : t("messages.appointmentCreated"),
       );
       navigate({ to: "/app/appointments" });
     } catch (error) {
       console.error("Error saving appointment:", error);
-      toast.error("Failed to save appointment");
+      toast.error(t("messages.appointmentSaveError"));
     }
   };
 
@@ -222,9 +239,9 @@ function RouteComponent() {
     const handleDepartmentsUpdate = async () => {
       if (selectedClinic) {
         try {
-          const clinicResponse = await getClinicById({
+          const clinicResponse = (await getClinicById({
             data: { id: selectedClinic },
-          });
+          })) as { data?: { departments?: ClinicDepartment.EncodedT[] } };
           if (clinicResponse?.data?.departments) {
             setAvailableDepartments(clinicResponse.data.departments);
 
@@ -257,12 +274,14 @@ function RouteComponent() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl">
           <h1 className="text-xl font-bold mb-2">
-            {isEditing ? "Edit Appointment" : "Create New Appointment"}
+            {isEditing
+              ? t("appointmentForm.titleEdit")
+              : t("appointmentForm.titleCreate")}
           </h1>
           <p className="text-muted-foreground mb-6">
             {isEditing
-              ? "Update the appointment information below"
-              : "Enter the details for the new appointment"}
+              ? t("appointmentForm.subtitleEdit")
+              : t("appointmentForm.subtitleCreate")}
           </p>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -274,8 +293,8 @@ function RouteComponent() {
                     <FormItem>
                       <FormControl>
                         <Checkbox
-                          label="Walk-in"
-                          description="Is this a walk-in appointment?"
+                      label={t("appointmentForm.walkInLabel")}
+                      description={t("appointmentForm.walkInDescription")}
                           checked={field.value}
                           onCheckedChange={field.onChange}
                         />
@@ -291,9 +310,9 @@ function RouteComponent() {
                 value={patient?.id || ""}
                 defaultValue={patient?.id || ""}
                 defaultPatients={patient ? [patient] : []}
-                label="Patient"
+                label={t("appointmentForm.patientLabel")}
                 clearable
-                description="Select the patient for the appointment"
+                description={t("appointmentForm.patientDescription")}
                 withAsterisk
               />
               <FormField
@@ -301,15 +320,16 @@ function RouteComponent() {
                 name="provider_id"
                 render={({ field }) => (
                   <SelectInput
-                    label="Provider"
-                    data={providers.map((provider) => ({
-                      label: provider.name,
-                      value: provider.id,
-                    }))}
-                    value={field.value || ""}
-                    onChange={field.onChange}
-                    clearable
-                    className="w-full"
+                  label={t("appointmentForm.providerLabel")}
+                  data={providers.map((provider) => ({
+                    label: provider.name,
+                    value: provider.id,
+                  }))}
+                  value={field.value || ""}
+                  onChange={field.onChange}
+                  clearable
+                  className="w-full"
+                  placeholder={t("appointmentForm.providerPlaceholder")}
                   />
                 )}
               />
@@ -319,15 +339,16 @@ function RouteComponent() {
                 name="clinic_id"
                 render={({ field }) => (
                   <SelectInput
-                    label="Clinic"
-                    data={clinics.map((clinic) => ({
-                      label: clinic.name || "Unknown",
-                      value: clinic.id,
-                    }))}
-                    value={field.value || ""}
-                    onChange={field.onChange}
-                    clearable
-                    className="w-full"
+                  label={t("appointmentForm.clinicLabel")}
+                  data={clinics.map((clinic) => ({
+                    label: clinic.name || t("common.unknown"),
+                    value: clinic.id,
+                  }))}
+                  value={field.value || ""}
+                  onChange={field.onChange}
+                  clearable
+                  className="w-full"
+                  placeholder={t("appointmentForm.clinicPlaceholder")}
                   />
                 )}
               />
@@ -361,7 +382,9 @@ function RouteComponent() {
 
                     return (
                       <FormItem>
-                        <FormLabel>Departments</FormLabel>
+                        <FormLabel>
+                          {t("appointmentForm.departmentLabel")}
+                        </FormLabel>
                         <Select
                           isMulti
                           options={departmentOptions}
@@ -392,7 +415,7 @@ function RouteComponent() {
 
                             field.onChange(updatedDepartments);
                           }}
-                          placeholder="Select departments..."
+                          placeholder={t("appointmentForm.departmentPlaceholder")}
                           className="basic-multi-select"
                           classNamePrefix="select"
                           // styles={{
@@ -448,8 +471,7 @@ function RouteComponent() {
                           // }}
                         />
                         <FormDescription>
-                          Select the departments this appointment should be
-                          routed through
+                          {t("appointmentForm.departmentDescription")}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -463,10 +485,7 @@ function RouteComponent() {
                 name="timestamp"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                    <FormLabel>
-                      Date and Time (current time is{" "}
-                      {formatDate(new Date(), "PPP HH:mm")})
-                    </FormLabel>
+                    <FormLabel>{t("appointmentForm.dateLabel")}</FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
@@ -477,11 +496,9 @@ function RouteComponent() {
                               !field.value && "text-muted-foreground",
                             )}
                           >
-                            {field.value ? (
-                              format(new Date(field.value), "PPP HH:mm")
-                            ) : (
-                              <span>Pick a date and time</span>
-                            )}
+                            {field.value
+                              ? format(new Date(field.value), "PPP HH:mm")
+                              : t("appointmentForm.datetimePlaceholder")}
                             <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
                         </FormControl>
@@ -519,11 +536,13 @@ function RouteComponent() {
                     </Popover>
                     <If show={form.watch("is_walk_in")}>
                       <FormDescription>
-                        Walk-ins do not require a date time to be set. They are
-                        scheduled on a first-come, first-served basis.
-                        <FormMessage />
+                        {t("appointmentForm.walkInSchedulingNote")}
                       </FormDescription>
                     </If>
+                    <FormDescription>
+                      {t("appointmentForm.currentTimeNote")}{" "}
+                      {formatDate(new Date(), "PPP HH:mm")}
+                    </FormDescription>
                   </FormItem>
                 )}
               />
@@ -539,9 +558,9 @@ function RouteComponent() {
                     }))}
                     value={field.value.toString()}
                     onChange={(value) => field.onChange(Number(value))}
-                    placeholder="Select duration"
+                    placeholder={t("appointmentForm.durationPlaceholder")}
                     className="w-full"
-                    label="Duration"
+                    label={t("appointmentForm.durationLabel")}
                   />
                 )}
               />
@@ -551,14 +570,14 @@ function RouteComponent() {
                 name="reason"
                 render={({ field }) => (
                   <SelectInput
-                    label="Reason"
+                    label={t("appointmentForm.reasonLabel")}
                     data={reasonOptions.map((option) => ({
                       label: option.label,
                       value: option.value,
                     }))}
                     value={field.value || ""}
                     onChange={field.onChange}
-                    placeholder="Select reason"
+                    placeholder={t("appointmentForm.reasonPlaceholder")}
                     className="w-full"
                   />
                 )}
@@ -569,14 +588,14 @@ function RouteComponent() {
                 name="status"
                 render={({ field }) => (
                   <SelectInput
-                    label="Status"
+                    label={t("appointmentForm.statusLabel")}
                     data={statusOptions.map((option) => ({
                       label: option.label,
                       value: option.value,
                     }))}
                     value={field.value || ""}
                     onChange={field.onChange}
-                    placeholder="Select status"
+                    placeholder={t("appointmentForm.statusPlaceholder")}
                     className="w-full"
                   />
                 )}
@@ -587,10 +606,10 @@ function RouteComponent() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel>{t("appointmentForm.notesLabel")}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Add any additional notes here"
+                        placeholder={t("appointmentForm.notesPlaceholder")}
                         className="resize-none"
                         {...field}
                       />
@@ -606,10 +625,14 @@ function RouteComponent() {
                   variant="outline"
                   onClick={() => navigate({ to: "/app/appointments" })}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
-                <Button type="submit">
-                  {isEditing ? "Update Appointment" : "Create Appointment"}
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting
+                    ? t("common.saving")
+                    : isEditing
+                      ? t("appointmentForm.buttons.update")
+                      : t("appointmentForm.buttons.create")}
                 </Button>
               </div>
             </form>

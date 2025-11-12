@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import { v1 as uuidV1 } from "uuid";
 import { Either, Schema, Option } from "effect";
 import { permissionsMiddleware } from "@/middleware/auth";
+import { useTranslation } from "@/lib/i18n/context";
 
 import {
   Tooltip,
@@ -158,6 +159,7 @@ function RouteComponent() {
   const userId = Route.useParams()._splat;
   const isEditMode = Boolean(userId && user);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const t = useTranslation();
 
   // Filter roles that the current user can assign
   const availableRoles = User.roles.filter((role) => {
@@ -181,9 +183,11 @@ function RouteComponent() {
     setIsSubmitting(true);
     try {
       if (isEditMode && userId && typeof userId === "string") {
-        await updateUser({ data: { id: userId, user: data } });
+        await updateUser({
+          data: { id: userId, user: data as any },
+        });
         navigate({ to: "/app/users" });
-        toast.success("User updated successfully");
+        toast.success(t("messages.userUpdated"));
       } else {
         const newUser = User.UserSchema.make({
           id: uuidV1(),
@@ -204,7 +208,7 @@ function RouteComponent() {
         Either.match(res, {
           onLeft: (error) => {
             console.error("Failed to encode user:", error);
-            toast.error("Failed to create user");
+            toast.error(t("messages.userCreateError"));
           },
           onRight: (user) => {
             registerUser({
@@ -214,7 +218,7 @@ function RouteComponent() {
               },
             })
               .then(() => {
-                toast.success("User created successfully");
+                toast.success(t("messages.userCreated"));
                 navigate({ to: "/app/users" });
               })
               .catch((error) => {
@@ -226,7 +230,11 @@ function RouteComponent() {
       }
     } catch (error) {
       console.error("Error submitting form:", error);
-      toast.error("Failed to create user");
+      toast.error(
+        isEditMode
+          ? t("messages.userUpdateError")
+          : t("messages.userCreateError"),
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -236,7 +244,7 @@ function RouteComponent() {
     <div className="container py-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">
-          {isEditMode ? "Edit User" : "Create New User"}
+          {isEditMode ? t("userForm.titleEdit") : t("userForm.titleCreate")}
         </h1>
       </div>
 
@@ -253,12 +261,15 @@ function RouteComponent() {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Name</FormLabel>
+                  <FormLabel>{t("forms.name")}</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter user name" {...field} />
+                    <Input
+                      placeholder={t("userForm.namePlaceholder")}
+                      {...field}
+                    />
                   </FormControl>
                   <FormDescription>
-                    The user's full name as it will appear in the system.
+                    {t("userForm.nameDescription")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -270,7 +281,7 @@ function RouteComponent() {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel>{t("forms.email")}</FormLabel>
                   <FormControl>
                     <Input
                       type="email"
@@ -279,12 +290,12 @@ function RouteComponent() {
                       autoComplete="off"
                       autoCorrect="off"
                       autoSave="off"
-                      placeholder="Enter email address"
+                      placeholder={t("userForm.emailPlaceholder")}
                       {...field}
                     />
                   </FormControl>
                   <FormDescription>
-                    The email address will be used for login and notifications.
+                    {t("userForm.emailDescription")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -296,26 +307,26 @@ function RouteComponent() {
               name="clinic_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Clinic</FormLabel>
+                  <FormLabel>{t("forms.clinic")}</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value || undefined}
                   >
                     <FormControl>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select a clinic" />
+                        <SelectValue placeholder={t("userForm.clinicPlaceholder")} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
                       {clinics?.map((clinic) => (
                         <SelectItem key={clinic.id} value={clinic.id}>
-                          {clinic.name || "Unnamed Clinic"}
+                          {clinic.name || t("userForm.unnamedClinic")}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <FormDescription>
-                    The role determines what permissions the user will have.
+                    {t("userForm.clinicDescription")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -328,32 +339,22 @@ function RouteComponent() {
               disabled={currentUserId === userId}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    Role{" "}
-                    {currentUserId === userId
-                      ? "(Cannot be changed for current user)"
-                      : ""}
+                  <FormLabel className="flex items-center gap-2">
+                    <span>
+                      {t("userForm.roleLabel")}{" "}
+                      {currentUserId === userId
+                        ? t("userForm.roleLockedNote")
+                        : ""}
+                    </span>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Badge variant="outline">?</Badge>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>
-                          <strong>Registrar:</strong> Can only register patients and cannot access
-                          patient records.
-                        </p>
-                        <p>
-                          <strong>Provider:</strong> Can view medical history and access patient
-                          records.
-                        </p>
-                        <p>
-                          <strong>Admin:</strong> Can view medical history, access patient
-                          records, and manage users within their clinic.
-                        </p>
-                        <p>
-                          <strong>Super Admin:</strong> Can perform all actions and have full
-                          access to the system.
-                        </p>
+                        <p>{t("userForm.roleTooltip.registrar")}</p>
+                        <p>{t("userForm.roleTooltip.provider")}</p>
+                        <p>{t("userForm.roleTooltip.admin")}</p>
+                        <p>{t("userForm.roleTooltip.superAdmin")}</p>
                       </TooltipContent>
                     </Tooltip>
                   </FormLabel>
@@ -364,7 +365,7 @@ function RouteComponent() {
                   >
                     <FormControl>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select a role" />
+                        <SelectValue placeholder={t("userForm.rolePlaceholder")} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -376,9 +377,9 @@ function RouteComponent() {
                     </SelectContent>
                   </Select>
                   <FormDescription>
-                    {availableRoles.length === 0 
-                      ? "You don't have permission to assign any roles."
-                      : "The role determines what permissions the user will have. You can only assign roles at or below your permission level."}
+                    {availableRoles.length === 0
+                      ? t("userForm.roleNoAssignable")
+                      : t("userForm.roleDescription")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -392,7 +393,7 @@ function RouteComponent() {
                 disabled={currentUserId === userId}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <FormLabel>{t("forms.password")}</FormLabel>
                     <FormControl>
                       <Input
                         type="password"
@@ -404,8 +405,8 @@ function RouteComponent() {
                         autoSave="off"
                         placeholder={
                           isEditMode
-                            ? "Leave blank to keep current password"
-                            : "Enter password"
+                            ? t("userForm.passwordPlaceholderEdit")
+                            : t("userForm.passwordPlaceholderCreate")
                         }
                         {...field}
                         value={field.value || ""}
@@ -413,8 +414,8 @@ function RouteComponent() {
                     </FormControl>
                     <FormDescription>
                       {isEditMode
-                        ? "Only fill this if you want to change the password."
-                        : "The password must be secure."}
+                        ? t("userForm.passwordDescriptionEdit")
+                        : t("userForm.passwordDescriptionCreate")}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -423,14 +424,14 @@ function RouteComponent() {
             )}
             <div className="flex justify-end gap-4">
               <Button type="button" variant="outline" asChild>
-                <Link to="/app/users/">Cancel</Link>
+                <Link to="/app/users">{t("common.cancel")}</Link>
               </Button>
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting
-                  ? "Saving..."
+                  ? t("common.saving")
                   : isEditMode
-                    ? "Update User"
-                    : "Create User"}
+                    ? t("userForm.buttons.update")
+                    : t("userForm.buttons.create")}
               </Button>
             </div>
           </form>
