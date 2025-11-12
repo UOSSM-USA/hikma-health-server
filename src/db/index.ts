@@ -44,7 +44,7 @@ export type Database = {
   string_content: StringContent.Table.StringContents;
   patients: Patient.Table.T;
   clinics: Clinic.Table.T;
-  users: User.Table.T;
+  users: User.Table.T & { metadata: any }; // metadata is JSONB
   tokens: Token.Table.T;
   visits: Visit.Table.T;
   event_forms: EventForm.Table.T;

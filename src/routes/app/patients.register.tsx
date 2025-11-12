@@ -19,6 +19,8 @@ import {
   checkPatientPermission,
 } from "@/lib/server-functions/permissions";
 import { PermissionOperation } from "@/models/permissions";
+import { useLanguage, useTranslation } from "@/lib/i18n/context";
+import { toast } from "sonner";
 
 export const createPatient = createServerFn({ method: "POST" })
   .middleware([permissionsMiddleware])
@@ -58,6 +60,8 @@ export const Route = createFileRoute("/app/patients/register")({
 
 function RouteComponent() {
   const { patientRegistrationForm, clinicsList } = Route.useLoaderData();
+  const { language } = useLanguage();
+  const t = useTranslation();
 
   const { formState, handleSubmit, register, watch, setValue } = useForm({
     mode: "all",
@@ -65,8 +69,6 @@ function RouteComponent() {
 
     // validate: {},
   });
-
-  console.log({ clinicsList });
 
   const onSubmit = async (data: any) => {
     const patient: Patient.T = {
@@ -143,10 +145,10 @@ function RouteComponent() {
       await createPatient({
         data: { baseFields: patient, additionalAttributes } as any,
       });
-      alert("Patient registered successfully!");
+      toast.success(t("registration.success"));
     } catch (error) {
       console.error("Failed to register patient:", error);
-      alert("Failed to register patient. Please try again.");
+      toast.error(t("registration.error"));
     }
   };
 
@@ -155,13 +157,13 @@ function RouteComponent() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
         <div className="text-center space-y-4">
           <h2 className="text-2xl font-semibold text-gray-800">
-            No Registration Form Available
+            {t("registration.noFormTitle")}
           </h2>
           <p className="text-gray-600">
-            Please create a patient registration form first.
+            {t("registration.noFormDescription")}
           </p>
           <Link to="/app/patients/customize-registration-form" className="mt-4">
-            <Button className="primary">Create Registration Form</Button>
+            <Button className="primary">{t("registration.createFormCta")}</Button>
           </Link>
         </div>
       </div>
@@ -182,7 +184,7 @@ function RouteComponent() {
                       htmlFor={field.column}
                       className="text-muted-foreground"
                     >
-                      {Language.getTranslation(field.label, "en")}
+                      {Language.getTranslation(field.label, language)}
                     </Label>
                     <Input
                       data-testid={"register-patient-" + idx}
@@ -201,15 +203,15 @@ function RouteComponent() {
                       className="w-full"
                       data-testid={"register-patient-" + idx}
                       data-inputtype={"select"}
-                      label={Language.getTranslation(field.label, "en")}
+                      label={Language.getTranslation(field.label, language)}
                       data={field.column === "primary_clinic_id" 
                         ? clinicsList.map((clinic) => ({
-                            label: clinic.name || "Unknown Clinic",
+                            label: clinic.name || t("sidebar.unknownClinic"),
                             value: clinic.id,
                           }))
                         : field.options?.map((option) => ({
-                            label: Language.getTranslation(option, "en"),
-                            value: Language.getTranslation(option, "en"),
+                            label: Language.getTranslation(option, language),
+                            value: Language.getTranslation(option, language),
                           })) || []
                       }
                       value={watch(field.column)}
@@ -225,7 +227,7 @@ function RouteComponent() {
                       htmlFor={field.column}
                       className="text-muted-foreground"
                     >
-                      {Language.getTranslation(field.label, "en")}
+                      {Language.getTranslation(field.label, language)}
                     </Label>
                     <Input
                       data-inputtype={"number"}
@@ -243,14 +245,14 @@ function RouteComponent() {
                       htmlFor={field.column}
                       className="text-muted-foreground"
                     >
-                      {Language.getTranslation(field.label, "en")}
+                      {Language.getTranslation(field.label, language)}
                     </Label>
                     <DatePickerInput
                       // valueFormat="YYYY MMM DD"
                       // description={''}
                       //   label={Language.getTranslation(field.label, "en")}
                       required={field.required}
-                      placeholder="Pick date"
+                      placeholder={t("registration.datePlaceholder")}
                       data-testid={"register-patient-" + idx}
                       data-inputtype="date"
                       {...register(field.column)}
@@ -268,7 +270,9 @@ function RouteComponent() {
             data-testid={"submit-button"}
             className="primary"
           >
-            {formState.isSubmitting ? "Submitting..." : "Submit"}
+            {formState.isSubmitting
+              ? t("registration.submitting")
+              : t("registration.submit")}
           </Button>
         </div>
       </form>

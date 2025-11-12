@@ -9,6 +9,8 @@ import { getPatientById } from "@/lib/server-functions/patients";
 import Event from "@/models/event";
 import EventFormModel from "@/models/event-form";
 import { v1 as uuidV1 } from "uuid";
+import { useLanguage } from "@/lib/i18n/context";
+import Language from "@/models/language";
 
 export const Route = createFileRoute("/app/patients-event")({
   component: RouteComponent,
@@ -22,6 +24,7 @@ export const Route = createFileRoute("/app/patients-event")({
 function RouteComponent() {
   const navigate = useNavigate();
   const { allForms } = Route.useLoaderData();
+  const { language } = useLanguage();
   
   const [patient, setPatient] = useState<any>(null);
   const [selectedFormId, setSelectedFormId] = useState<string | null>(null);
@@ -167,11 +170,22 @@ function RouteComponent() {
     }
   };
 
+  // Helper function to get field label with translation support
+  const getFieldLabel = (field: any): string => {
+    // Check if field.label is a translation object (like patient registration forms)
+    if (field.label && typeof field.label === "object" && !Array.isArray(field.label)) {
+      return Language.getTranslation(field.label, language);
+    }
+    // Otherwise use name or label as string
+    return field.name || field.label || "";
+  };
+
   const renderField = (field: any) => {
     const value = formData[field.id] || "";
     
     // Determine the field type - check multiple possible properties
     const fieldType = field._tag || field.fieldType || field.type;
+    const fieldLabel = getFieldLabel(field);
 
     switch (fieldType) {
       case "text":
@@ -180,7 +194,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {field.name || field.label}
+              {fieldLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input
@@ -198,7 +212,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {field.name || field.label}
+              {fieldLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <textarea
@@ -216,7 +230,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {field.name || field.label}
+              {fieldLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input
@@ -236,7 +250,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {field.name || field.label}
+              {fieldLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <select
@@ -259,7 +273,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {field.name || field.label}
+              {fieldLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <div className="space-y-2">
@@ -287,7 +301,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {field.name || field.label}
+              {fieldLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <div className="space-y-2">
@@ -311,7 +325,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {field.name || field.label}
+              {fieldLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input

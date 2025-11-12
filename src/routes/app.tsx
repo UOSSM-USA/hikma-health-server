@@ -1,5 +1,6 @@
 // import { getCookieToken } from '@/lib/auth/request'
-import { AppSidebar, navData } from "@/components/app-sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
+import { useTranslation } from "@/lib/i18n/context";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -51,8 +52,9 @@ export const Route = createFileRoute("/app")({
 
 function RouteComponent() {
   const { currentUser, clinics } = Route.useLoaderData();
+  const t = useTranslation();
   const handleSignOut = () => {
-    if (window.confirm("Are you sure you want to sign out?")) {
+    if (window.confirm(t("messages.signOutConfirm"))) {
       fetch(`/api/auth/sign-out`, {
         method: "POST",
         headers: {
@@ -70,11 +72,7 @@ function RouteComponent() {
   };
 
   const route = useRouter();
-
-  const breadcrumbs = getBreadcrumbs(
-    route.latestLocation.pathname,
-    navData.navMain,
-  );
+  const breadcrumbs = getBreadcrumbs(route.latestLocation.pathname, t);
 
   return (
     <SidebarProvider>
@@ -124,12 +122,12 @@ function RouteComponent() {
 /**
  * Get friendly named breadcrumbs
  * @param {string} path - current pathname
- * @param {typeof navData.navMain} items - navigation items
+ * @param {Function} t - translation function
  */
-function getBreadcrumbs(path: string, items: typeof navData.navMain) {
+function getBreadcrumbs(path: string, t: (key: string) => string) {
   // If path is just /app, return Dashboard
   if (path === "/app") {
-    return [{ name: "Dashboard", url: "/app" }];
+    return [{ name: t("nav.dashboard"), url: "/app" }];
   }
 
   const breadcrumbs: { name: string; url: string }[] = [];
@@ -144,56 +142,44 @@ function getBreadcrumbs(path: string, items: typeof navData.navMain) {
     return breadcrumbs;
   }
 
-  // First level - find the main section (e.g., "patients")
+  // Map path segments to translation keys
+  const sectionTranslations: Record<string, string> = {
+    patients: t("nav.patients"),
+    "event-forms": t("nav.eventForms"),
+    users: t("nav.users"),
+    clinics: t("nav.clinics"),
+    appointments: t("nav.appointments"),
+    prescriptions: t("nav.prescriptions"),
+    data: t("nav.dataAnalysis"),
+    settings: t("nav.settings"),
+  };
+
+  const subSectionTranslations: Record<string, string> = {
+    register: t("nav.registerNewPatient"),
+    "customize-registration-form": t("nav.registrationForm"),
+    edit: pathParts[0] === "users" ? t("nav.newUser") : pathParts[0] === "clinics" ? t("nav.newClinic") : pathParts[0] === "appointments" ? t("nav.newAppointment") : pathParts[0] === "prescriptions" ? t("nav.newPrescription") : pathParts[0] === "event-forms" ? t("nav.registerNewForm") : "",
+    reports: t("nav.reports"),
+    events: t("nav.exploreEvents"),
+    "register-mobile-app": t("nav.mobileApps"),
+    "file-storage": t("nav.fileStorage"),
+  };
+
+  // First level - main section
   const mainSection = pathParts[0];
-  const mainItem = items.find((item) => {
-    // Check if this main item has a matching URL
-    if (item.url === `/app/${mainSection}`) {
-      return true;
-    }
-
-    // Check if any of its subitems have a matching URL
-    if (
-      item.items &&
-      item.items.some((subItem) =>
-        subItem.url.startsWith(`/app/${mainSection}`),
-      )
-    ) {
-      return true;
-    }
-
-    return false;
+  const mainTitle = sectionTranslations[mainSection] || mainSection;
+  
+  breadcrumbs.push({
+    name: mainTitle,
+    url: `/app/${mainSection}`,
   });
 
-  if (mainItem) {
+  // Second level - sub section if exists
+  if (pathParts.length > 1) {
+    const subSection = pathParts[1];
+    const subTitle = subSectionTranslations[subSection] || subSection;
     breadcrumbs.push({
-      name: mainItem.title,
-      url: mainItem.url !== "#" ? mainItem.url : `/app/${mainSection}`,
-    });
-
-    // If we have a deeper path, look for matching subitems
-    if (pathParts.length > 1 && mainItem.items) {
-      const fullSubPath = `/app/${pathParts.join("/")}`;
-      const subItem = mainItem.items.find((item) => item.url === fullSubPath);
-
-      if (subItem) {
-        breadcrumbs.push({
-          name: subItem.title,
-          url: subItem.url,
-        });
-      } else {
-        // If no exact match found, just add the subpath as is
-        breadcrumbs.push({
-          name: pathParts.slice(1).join("/"),
-          url: fullSubPath,
-        });
-      }
-    }
-  } else {
-    // If no match found in main items, just return the path as is
-    breadcrumbs.push({
-      name: mainSection,
-      url: `/app/${mainSection}`,
+      name: subTitle,
+      url: `/app/${pathParts.join("/")}`,
     });
   }
 

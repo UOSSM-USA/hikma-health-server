@@ -44,6 +44,7 @@ import Clinic from "@/models/clinic";
 import User from "@/models/user";
 import { useEffect, useMemo } from "react";
 import { usePrescriptionPermissions } from "@/hooks/use-permissions";
+import { useTranslation } from "@/lib/i18n/context";
 
 // Create a save prescription server function
 const savePrescription = createServerFn({ method: "POST" })
@@ -123,22 +124,22 @@ export const Route = createFileRoute("/app/prescriptions/edit/$")({
 });
 
 // Priority options
-const priorityOptions = [
-  { label: "Normal", value: "normal" },
-  { label: "Low", value: "low" },
-  { label: "High", value: "high" },
-  { label: "Emergency", value: "emergency" },
+const PRIORITY_OPTION_DEFS = [
+  { key: "normal" as const, value: "normal" },
+  { key: "low" as const, value: "low" },
+  { key: "high" as const, value: "high" },
+  { key: "emergency" as const, value: "emergency" },
 ];
 
 // Status options
-const statusOptions = [
-  { label: "Pending", value: "pending" },
-  { label: "Prepared", value: "prepared" },
-  { label: "Picked Up", value: "picked-up" },
-  { label: "Not Picked Up", value: "not-picked-up" },
-  { label: "Partially Picked Up", value: "partially-picked-up" },
-  { label: "Cancelled", value: "cancelled" },
-  { label: "Other", value: "other" },
+const STATUS_OPTION_DEFS = [
+  { key: "pending" as const, value: "pending" },
+  { key: "prepared" as const, value: "prepared" },
+  { key: "pickedUp" as const, value: "picked-up" },
+  { key: "notPickedUp" as const, value: "not-picked-up" },
+  { key: "partiallyPickedUp" as const, value: "partially-picked-up" },
+  { key: "cancelled" as const, value: "cancelled" },
+  { key: "other" as const, value: "other" },
 ];
 
 function RouteComponent() {
@@ -152,6 +153,7 @@ function RouteComponent() {
   const params = Route.useParams();
   const prescriptionId = params._splat;
   const isEditing = !!prescriptionId && prescriptionId !== "new";
+  const t = useTranslation();
 
   // Permissions
   const { canAdd, canEdit } = usePrescriptionPermissions(currentUser?.role);
@@ -162,10 +164,10 @@ function RouteComponent() {
   // If attempting to create but not allowed, redirect away
   useEffect(() => {
     if (!isEditing && !canAdd) {
-      toast.error("You do not have permission to create prescriptions.");
+      toast.error(t("prescriptionForm.permissionError"));
       navigate({ to: "/app/prescriptions", replace: true });
     }
-  }, [isEditing, canAdd, navigate]);
+  }, [isEditing, canAdd, navigate, t]);
 
   const form = useForm<Prescription.EncodedT>({
     defaultValues: prescription || {
@@ -191,13 +193,24 @@ function RouteComponent() {
       server_created_at: new Date(),
     },
   });
+  const isSubmitting = form.formState.isSubmitting;
+
+  const priorityOptions = PRIORITY_OPTION_DEFS.map((option) => ({
+    label: t(`prescriptionForm.priorities.${option.key}`),
+    value: option.value,
+  }));
+
+  const statusOptions = STATUS_OPTION_DEFS.map((option) => ({
+    label: t(`prescriptionForm.statuses.${option.key}`),
+    value: option.value,
+  }));
 
   console.log({ currentUser });
 
   // Handle form submission
   const onSubmit = async (values: Prescription.EncodedT) => {
     if (isReadOnly) {
-      toast.error("You do not have permission to modify prescriptions.");
+      toast.error(t("prescriptionForm.modifyError"));
       return;
     }
     console.log({
@@ -211,26 +224,30 @@ function RouteComponent() {
         data: {
           prescription: values,
           id: prescriptionId || null,
-          currentUserName: currentUser?.name || "Unknown",
-          currentClinicId: currentUser?.clinic_id || "Unknown",
+          currentUserName: currentUser?.name || t("common.unknown"),
+          currentClinicId: currentUser?.clinic_id || t("common.unknown"),
         },
       });
 
       toast.success(
-        `Prescription ${isEditing ? "updated" : "created"} successfully`
+        isEditing
+          ? t("messages.prescriptionUpdated")
+          : t("messages.prescriptionCreated"),
       );
 
       navigate({ to: "/app/prescriptions" });
     } catch (error) {
       console.error(error);
-      toast.error(`Failed to ${isEditing ? "update" : "create"} prescription`);
+      toast.error(t("messages.prescriptionSaveError"));
     }
   };
 
   return (
     <div className="container py-6">
       <h1 className="text-2xl font-bold mb-6">
-        {isEditing ? "Edit" : "Create"} Prescription
+        {isEditing
+          ? t("prescriptionForm.titleEdit")
+          : t("prescriptionForm.titleCreate")}
       </h1>
 
       <div className="grid grid-cols-1 gap-6 max-w-2xl">
@@ -244,7 +261,7 @@ function RouteComponent() {
                   <FormItem>
                     <FormControl>
                       <PatientSearchSelect
-                        label="Patient"
+                      label={t("prescriptionForm.patientLabel")}
                         value={field.value as Patient.EncodedT["id"] | null}
                         isMulti={false}
                         onChange={(value) => {
@@ -263,14 +280,14 @@ function RouteComponent() {
                 name="provider_id"
                 render={({ field }) => (
                   <SelectInput
-                    label="Provider"
+                  label={t("prescriptionForm.providerLabel")}
                     data={providers.map((provider) => ({
                       label: provider.name,
                       value: provider.id,
                     }))}
                     value={field.value || ""}
                     onChange={field.onChange}
-                    placeholder="Select provider"
+                  placeholder={t("prescriptionForm.providerPlaceholder")}
                     className="w-full"
                     disabled={isReadOnly}
                   />
@@ -282,14 +299,14 @@ function RouteComponent() {
                 name="pickup_clinic_id"
                 render={({ field }) => (
                   <SelectInput
-                    label="Pickup Clinic"
+                  label={t("prescriptionForm.pickupClinicLabel")}
                     data={clinics.map((clinic) => ({
                       label: clinic.name,
                       value: clinic.id,
                     }))}
                     value={field.value || ""}
                     onChange={field.onChange}
-                    placeholder="Select pickup clinic"
+                  placeholder={t("prescriptionForm.pickupClinicPlaceholder")}
                     className="w-full"
                     disabled={isReadOnly}
                   />
@@ -301,11 +318,11 @@ function RouteComponent() {
                 name="priority"
                 render={({ field }) => (
                   <SelectInput
-                    label="Priority"
+                  label={t("prescriptionForm.priorityLabel")}
                     data={priorityOptions}
                     value={field.value || ""}
                     onChange={field.onChange}
-                    placeholder="Select priority"
+                  placeholder={t("prescriptionForm.priorityPlaceholder")}
                     className="w-full"
                     disabled={isReadOnly}
                   />
@@ -317,7 +334,9 @@ function RouteComponent() {
                 name="expiration_date"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                    <FormLabel>Expiration Date</FormLabel>
+                  <FormLabel>
+                    {t("prescriptionForm.expirationDateLabel")}
+                  </FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
@@ -332,7 +351,9 @@ function RouteComponent() {
                             {field.value ? (
                               format(new Date(field.value), "PPP")
                             ) : (
-                              <span>Pick a date</span>
+                            <span>
+                              {t("prescriptionForm.expirationDatePlaceholder")}
+                            </span>
                             )}
                             <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
@@ -363,11 +384,11 @@ function RouteComponent() {
                 name="status"
                 render={({ field }) => (
                   <SelectInput
-                    label="Status"
+                  label={t("prescriptionForm.statusLabel")}
                     data={statusOptions}
                     value={field.value || ""}
                     onChange={field.onChange}
-                    placeholder="Select status"
+                  placeholder={t("prescriptionForm.statusPlaceholder")}
                     className="w-full"
                     disabled={isReadOnly}
                   />
@@ -379,10 +400,10 @@ function RouteComponent() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                  <FormLabel>{t("prescriptionForm.notesLabel")}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Add prescription notes here"
+                      placeholder={t("prescriptionForm.notesPlaceholder")}
                         className="resize-none"
                         {...field}
                         disabled={isReadOnly}
@@ -399,11 +420,15 @@ function RouteComponent() {
                   variant="outline"
                   onClick={() => navigate({ to: "/app/prescriptions" })}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 {!isReadOnly && (
-                  <Button type="submit">
-                  {isEditing ? "Update Prescription" : "Create Prescription"}
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting
+                      ? t("common.saving")
+                      : isEditing
+                        ? t("prescriptionForm.buttons.update")
+                        : t("prescriptionForm.buttons.create")}
                   </Button>
                 )}
               </div>

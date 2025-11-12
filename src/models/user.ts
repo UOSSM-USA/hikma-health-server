@@ -6,6 +6,7 @@ import {
   type Selectable,
   type Insertable,
   type Updateable,
+  type JSONColumnType,
   sql,
 } from "kysely";
 import Token from "./token";
@@ -412,6 +413,7 @@ namespace User {
       instance_url: "instance_url",
       clinic_id: "clinic_id",
       is_deleted: "is_deleted",
+      metadata: "metadata",
       created_at: "created_at",
       updated_at: "updated_at",
       last_modified: "last_modified",
@@ -428,6 +430,7 @@ namespace User {
       instance_url: string | null;
       clinic_id: string | null;
       is_deleted: Generated<boolean>;
+      metadata: JSONColumnType<Record<string, any>>;
       created_at: Generated<ColumnType<Date, string | undefined, never>>;
       updated_at: Generated<
         ColumnType<Date, string | undefined, string | undefined>
