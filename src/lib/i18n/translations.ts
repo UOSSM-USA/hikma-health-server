@@ -75,6 +75,7 @@ export const translations = {
       formSaveError: "Failed to save form",
       formDeleteError: "Failed to delete form",
       formIncompleteConfirm: "Some fields of the form are incomplete or empty. Are you sure you want to continue?",
+      patientCreateError: "Failed to register patient. Please try again.",
     },
     // Language
     language: {
@@ -151,6 +152,23 @@ export const translations = {
       created: "Created",
       updated: "Updated",
       noFormsAvailable: "No forms available",
+    },
+    // Registration
+    registration: {
+      noFormTitle: "No Registration Form Available",
+      noFormDescription: "Please create a patient registration form first.",
+      createFormCta: "Create Registration Form",
+      submit: "Submit",
+      submitting: "Submitting...",
+      success: "Patient registered successfully!",
+      error: "Failed to register patient. Please try again.",
+      datePlaceholder: "Pick date",
+    },
+    // Sidebar
+    sidebar: {
+      organizationName: "Hikma Health",
+      organizationPlan: "Entire Organization",
+      unknownClinic: "Unknown Clinic",
     },
     // Validation Messages
     validation: {
@@ -318,6 +336,7 @@ export const translations = {
       formSaveError: "فشل حفظ النموذج",
       formDeleteError: "فشل حذف النموذج",
       formIncompleteConfirm: "بعض حقول النموذج غير مكتملة أو فارغة. هل أنت متأكد أنك تريد المتابعة؟",
+      patientCreateError: "فشل تسجيل المريض. يرجى المحاولة مرة أخرى.",
     },
     // Language
     language: {
@@ -394,6 +413,23 @@ export const translations = {
       created: "تم الإنشاء",
       updated: "تم التحديث",
       noFormsAvailable: "لا توجد نماذج متاحة",
+    },
+    // Registration
+    registration: {
+      noFormTitle: "لا يوجد نموذج تسجيل متاح",
+      noFormDescription: "يرجى إنشاء نموذج تسجيل للمرضى أولاً.",
+      createFormCta: "إنشاء نموذج تسجيل",
+      submit: "إرسال",
+      submitting: "جاري الإرسال...",
+      success: "تم تسجيل المريض بنجاح!",
+      error: "فشل تسجيل المريض. يرجى المحاولة مرة أخرى.",
+      datePlaceholder: "اختر التاريخ",
+    },
+    // Sidebar
+    sidebar: {
+      organizationName: "حكمة هيلث",
+      organizationPlan: "كامل المؤسسة",
+      unknownClinic: "عيادة غير معروفة",
     },
     // Validation Messages
     validation: {
@@ -503,11 +539,15 @@ export function getTranslation(
   language: Language = "en"
 ): string {
   const translation = translations[language]?.[key];
-  if (!translation) {
-    // Fallback to English if translation not found
-    return translations.en[key] || String(key);
+  if (typeof translation === "string") {
+    return translation;
   }
-  return translation;
+  const fallback = translations.en[key];
+  if (typeof fallback === "string") {
+    return fallback;
+  }
+  // Fallback to key name when translation is missing or nested object was requested.
+  return String(key);
 }
 
 /**

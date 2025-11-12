@@ -43,14 +43,6 @@ type AppSidebarProps = {
   handleSignOut: () => void;
 } & React.ComponentProps<typeof Sidebar>;
 
-const organizationLevelClinic = {
-  id: "organization",
-  name: "Hikma Health",
-  // logo: GalleryVerticalEnd,
-  logo: () => <img src="/logo187.png" alt="Hikma Health" />,
-  plan: "Entire Organization", // Replace with "Top level" or something like that
-};
-
 export function AppSidebar({
   clinics,
   currentUser,
@@ -58,6 +50,15 @@ export function AppSidebar({
   ...props
 }: AppSidebarProps) {
   const t = useTranslation();
+  const organizationLevelClinic = React.useMemo(
+    () => ({
+      id: "organization",
+      name: t("sidebar.organizationName"),
+      logo: () => <img src="/logo187.png" alt={t("sidebar.organizationName")} />,
+      plan: t("sidebar.organizationPlan"),
+    }),
+    [t],
+  );
   const { canView: canViewEventForms } = useEventFormPermissions(
     currentUser?.role,
   );
@@ -263,8 +264,8 @@ export function AppSidebar({
             organizationLevelClinic,
             ...clinics.map((clinic) => ({
               id: clinic.id,
-              name: clinic.name || "",
-              logo: () => <img src="/logo187.png" alt="Hikma Health" />,
+              name: clinic.name || t("sidebar.unknownClinic"),
+              logo: () => <img src="/logo187.png" alt={t("sidebar.organizationName")} />,
               // url: `/app/clinics/${clinic.id}`,
               plan: "",
             })),
