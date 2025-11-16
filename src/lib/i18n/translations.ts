@@ -521,6 +521,21 @@ export const translations = {
       statusUpdatedSuccess: "Appointment status updated successfully",
       statusUpdateError: "Failed to update appointment status",
     },
+    // Prescriptions List
+    prescriptionsList: {
+      title: "Prescriptions",
+      addNewPrescription: "Add New Prescription",
+      patientNameHeader: "Patient Name",
+      providerNameHeader: "Provider Name",
+      clinicHeader: "Clinic",
+      statusHeader: "Status",
+      prescribedAtHeader: "Prescribed At",
+      expirationDateHeader: "Expiration Date",
+      notesHeader: "Notes",
+      notAvailable: "N/A",
+      statusUpdatedSuccess: "Status updated successfully",
+      statusUpdateError: "Failed to update status",
+    },
   },
   ar: {
     // Navigation
@@ -1036,6 +1051,21 @@ export const translations = {
       deptPrefix: "قسم",
       statusUpdatedSuccess: "تم تحديث حالة الموعد بنجاح",
       statusUpdateError: "فشل تحديث حالة الموعد",
+    },
+    // Prescriptions List
+    prescriptionsList: {
+      title: "الوصفات الطبية",
+      addNewPrescription: "إضافة وصفة طبية جديدة",
+      patientNameHeader: "اسم المريض",
+      providerNameHeader: "اسم مقدم الخدمة",
+      clinicHeader: "العيادة",
+      statusHeader: "الحالة",
+      prescribedAtHeader: "تاريخ الوصفة",
+      expirationDateHeader: "تاريخ الانتهاء",
+      notesHeader: "ملاحظات",
+      notAvailable: "غير متاح",
+      statusUpdatedSuccess: "تم تحديث الحالة بنجاح",
+      statusUpdateError: "فشل تحديث الحالة",
     },
   },
 } as const;
