@@ -55,6 +55,8 @@ export const translations = {
       back: "Back",
       next: "Next",
       previous: "Previous",
+      paginationPrevious: "Previous",
+      paginationNext: "Next",
       submit: "Submit",
       reset: "Reset",
       required: "Required",
@@ -436,6 +438,17 @@ export const translations = {
       recentActivity: "Recent Activity",
       activityChartPlaceholder: "Activity chart will go here",
     },
+    // Patients List
+    patientsList: {
+      title: "Patients",
+      searchPlaceholder: "Search patients...",
+      searchButton: "Search",
+      searching: "Searching...",
+      exportButton: "Export All Patient Data",
+      actionsHeader: "Actions",
+      idHeader: "ID",
+      exportError: "Failed to export patients",
+    },
   },
   ar: {
     // Navigation
@@ -486,6 +499,8 @@ export const translations = {
       back: "رجوع",
       next: "التالي",
       previous: "السابق",
+      paginationPrevious: "السابق",
+      paginationNext: "التالي",
       submit: "إرسال",
       reset: "إعادة تعيين",
       required: "مطلوب",
@@ -866,6 +881,17 @@ export const translations = {
       totalFormsDescription: "النماذج المُنشأة في عيادتك",
       recentActivity: "النشاط الأخير",
       activityChartPlaceholder: "سيتم وضع مخطط النشاط هنا",
+    },
+    // Patients List
+    patientsList: {
+      title: "المرضى",
+      searchPlaceholder: "البحث عن المرضى...",
+      searchButton: "بحث",
+      searching: "جاري البحث...",
+      exportButton: "تصدير جميع بيانات المرضى",
+      actionsHeader: "الإجراءات",
+      idHeader: "المعرف",
+      exportError: "فشل تصدير بيانات المرضى",
     },
   },
 } as const;
