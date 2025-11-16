@@ -422,6 +422,20 @@ export const translations = {
         update: "Update Prescription",
       },
     },
+    // Dashboard
+    dashboard: {
+      title: "Dashboard",
+      clinicUsers: "Clinic Users",
+      clinicUsersDescription: "Users in your clinic's account",
+      totalPatients: "Total Patients",
+      totalPatientsDescription: "All patients registered to your clinic",
+      totalVisits: "Total Visits",
+      totalVisitsDescription: "Visits across your clinic",
+      totalForms: "Total Forms",
+      totalFormsDescription: "Forms created in your clinic",
+      recentActivity: "Recent Activity",
+      activityChartPlaceholder: "Activity chart will go here",
+    },
   },
   ar: {
     // Navigation
@@ -838,6 +852,20 @@ export const translations = {
         create: "إنشاء وصفة طبية",
         update: "تحديث وصفة طبية",
       },
+    },
+    // Dashboard
+    dashboard: {
+      title: "لوحة التحكم",
+      clinicUsers: "مستخدمو العيادة",
+      clinicUsersDescription: "المستخدمون في حساب عيادتك",
+      totalPatients: "إجمالي المرضى",
+      totalPatientsDescription: "جميع المرضى المسجلين في عيادتك",
+      totalVisits: "إجمالي الزيارات",
+      totalVisitsDescription: "الزيارات في عيادتك",
+      totalForms: "إجمالي النماذج",
+      totalFormsDescription: "النماذج المُنشأة في عيادتك",
+      recentActivity: "النشاط الأخير",
+      activityChartPlaceholder: "سيتم وضع مخطط النشاط هنا",
     },
   },
 } as const;

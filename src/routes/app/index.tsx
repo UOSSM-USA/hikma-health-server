@@ -6,6 +6,7 @@ import { Users, FileText, Activity, ClipboardList } from "lucide-react";
 import { createServerFn } from "@tanstack/react-start";
 import db from "@/db";
 import { sql } from "kysely";
+import { useTranslation } from "@/lib/i18n/context";
 
 const getSummaryStats = createServerFn({
   method: "GET",
@@ -67,31 +68,33 @@ function StatsCard({ title, value, description, icon }: StatsCardProps) {
 function RouteComponent() {
   const { clinicUsers, totalPatients, totalVisits, totalForms } =
     Route.useLoaderData();
+  const t = useTranslation();
   return (
     <div className="p-6">
+      <h1 className="text-2xl font-bold mb-6">{t("dashboard.title")}</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsCard
-          title="Clinic Users"
+          title={t("dashboard.clinicUsers")}
           value={clinicUsers}
-          description="Users in your clinic's account"
+          description={t("dashboard.clinicUsersDescription")}
           icon={<Users size={20} />}
         />
         <StatsCard
-          title="Total Patients"
+          title={t("dashboard.totalPatients")}
           value={totalPatients}
-          description="All patients registered to your clinic"
+          description={t("dashboard.totalPatientsDescription")}
           icon={<FileText size={20} />}
         />
         <StatsCard
-          title="Total Visits"
+          title={t("dashboard.totalVisits")}
           value={totalVisits}
-          description="Visits across your clinic"
+          description={t("dashboard.totalVisitsDescription")}
           icon={<Activity size={20} />}
         />
         <StatsCard
-          title="Total Forms"
+          title={t("dashboard.totalForms")}
           value={totalForms}
-          description="Forms created in your clinic"
+          description={t("dashboard.totalFormsDescription")}
           icon={<ClipboardList size={20} />}
         />
       </div>
@@ -99,10 +102,10 @@ function RouteComponent() {
       <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="col-span-2">
           <CardHeader>
-            <h3 className="text-lg font-medium">Recent Activity</h3>
+            <h3 className="text-lg font-medium">{t("dashboard.recentActivity")}</h3>
           </CardHeader>
           <CardContent>
-            <p className="text-zinc-400">Activity chart will go here</p>
+            <p className="text-zinc-400">{t("dashboard.activityChartPlaceholder")}</p>
           </CardContent>
         </Card>
       </div>
