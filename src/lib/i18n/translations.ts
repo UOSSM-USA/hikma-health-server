@@ -536,6 +536,13 @@ export const translations = {
       statusUpdatedSuccess: "Status updated successfully",
       statusUpdateError: "Failed to update status",
     },
+    // Settings
+    settings: {
+      title: "Settings",
+      registerMobileApp: "Register Mobile App",
+      scanQRCodeInstruction: "Scan the QR code with the mobile app to register it.",
+      noPermissionToView: "You do not have permission to view Settings.",
+    },
   },
   ar: {
     // Navigation
@@ -1066,6 +1073,13 @@ export const translations = {
       notAvailable: "غير متاح",
       statusUpdatedSuccess: "تم تحديث الحالة بنجاح",
       statusUpdateError: "فشل تحديث الحالة",
+    },
+    // Settings
+    settings: {
+      title: "الإعدادات",
+      registerMobileApp: "تسجيل التطبيق المحمول",
+      scanQRCodeInstruction: "امسح رمز QR باستخدام التطبيق المحمول لتسجيله.",
+      noPermissionToView: "ليس لديك إذن لعرض الإعدادات.",
     },
   },
 } as const;
