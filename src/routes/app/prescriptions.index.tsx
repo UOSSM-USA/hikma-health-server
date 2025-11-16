@@ -19,6 +19,7 @@ import upperFirst from "lodash/upperFirst";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
+import { useTranslation } from "@/lib/i18n/context";
 
 export const Route = createFileRoute("/app/prescriptions/")({
   component: RouteComponent,
@@ -33,25 +34,36 @@ export const Route = createFileRoute("/app/prescriptions/")({
 function RouteComponent() {
   const router = useRouter();
   const { prescriptions } = Route.useLoaderData();
+  const t = useTranslation();
+
+  // Map status value (with hyphens) to translation key (camelCase)
+  const getStatusTranslationKey = (status: string): string => {
+    const statusMap: Record<string, string> = {
+      "picked-up": "pickedUp",
+      "not-picked-up": "notPickedUp",
+      "partially-picked-up": "partiallyPickedUp",
+    };
+    return statusMap[status] || status;
+  };
 
   const handleStatusChange = async (id: string, status: string) => {
     togglePrescriptionStatus({ data: { id, status } })
       .then(() => {
-        toast.success("Status updated successfully");
+        toast.success(t("prescriptionsList.statusUpdatedSuccess"));
         router.invalidate({ sync: true });
       })
       .catch(() => {
-        toast.error("Failed to update status");
+        toast.error(t("prescriptionsList.statusUpdateError"));
       });
   };
 
   return (
     <div className="container py-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Prescriptions</h1>
+        <h1 className="text-2xl font-bold">{t("prescriptionsList.title")}</h1>
         <Button asChild>
           <Link to="/app/prescriptions/edit/$" params={{ _splat: "new" }}>
-            Add New Prescription
+            {t("prescriptionsList.addNewPrescription")}
           </Link>
         </Button>
       </div>
@@ -61,13 +73,13 @@ function RouteComponent() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Patient Name</TableHead>
-                <TableHead>Provider Name</TableHead>
-                <TableHead>Clinic</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Prescribed At</TableHead>
-                <TableHead>Expiration Date</TableHead>
-                <TableHead>Notes</TableHead>
+                <TableHead>{t("prescriptionsList.patientNameHeader")}</TableHead>
+                <TableHead>{t("prescriptionsList.providerNameHeader")}</TableHead>
+                <TableHead>{t("prescriptionsList.clinicHeader")}</TableHead>
+                <TableHead>{t("prescriptionsList.statusHeader")}</TableHead>
+                <TableHead>{t("prescriptionsList.prescribedAtHeader")}</TableHead>
+                <TableHead>{t("prescriptionsList.expirationDateHeader")}</TableHead>
+                <TableHead>{t("prescriptionsList.notesHeader")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -85,13 +97,16 @@ function RouteComponent() {
                     <TableCell>
                       {provider.name || (provider as any).given_name || ""} {(provider as any).surname || ""}
                     </TableCell>
-                    <TableCell>{clinic.name || "N/A"}</TableCell>
+                    <TableCell>{clinic.name || t("prescriptionsList.notAvailable")}</TableCell>
                     <TableCell>
                       <SelectInput
-                        data={Prescription.statusValues.map((status) => ({
-                          value: status,
-                          label: upperFirst(status),
-                        }))}
+                        data={Prescription.statusValues.map((status) => {
+                          const translationKey = getStatusTranslationKey(status);
+                          return {
+                            value: status,
+                            label: t(`prescriptionForm.statuses.${translationKey}` as any) || upperFirst(status),
+                          };
+                        })}
                         value={prescription.status}
                         onChange={(value) =>
                           handleStatusChange(prescription.id, value || "")
@@ -103,12 +118,12 @@ function RouteComponent() {
                     <TableCell>
                       {prescription.prescribed_at
                         ? format(new Date(prescription.prescribed_at), "PPP")
-                        : "N/A"}
+                        : t("prescriptionsList.notAvailable")}
                     </TableCell>
                     <TableCell>
                       {prescription.expiration_date
                         ? format(new Date(prescription.expiration_date), "PPP")
-                        : "N/A"}
+                        : t("prescriptionsList.notAvailable")}
                     </TableCell>
                     <TableCell className="max-w-xs truncate">
                       {prescription.notes}

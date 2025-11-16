@@ -21,6 +21,7 @@ import {
   LucideView,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n/context";
 import { getAllClinics } from "@/lib/server-functions/clinics";
 import { Link } from "@tanstack/react-router";
 import { permissionsMiddleware } from "@/middleware/auth";
@@ -76,6 +77,7 @@ function RouteComponent() {
   const { canAdd, canEdit, canDelete } = useClinicPermissions(
     currentUser?.role,
   );
+  const t = useTranslation();
 
   console.log("Clinics:", clinics);
 
@@ -89,17 +91,17 @@ function RouteComponent() {
 
   const handleDelete = (id: string) => {
     return;
-    if (!window.confirm("Are you sure you want to delete this clinic?")) {
+    if (!window.confirm(t("clinicsList.deleteConfirm"))) {
       return;
     }
 
     deleteClinic({ data: { id } })
       .catch((error) => {
         console.error(error);
-        toast.error(error.message);
+        toast.error(error.message || t("clinicsList.clinicDeleteError"));
       })
       .then(() => {
-        toast.success("Clinic deleted successfully");
+        toast.success(t("clinicsList.clinicDeletedSuccess"));
         router.invalidate({ sync: true });
       });
   };
@@ -108,20 +110,20 @@ function RouteComponent() {
     const usersCount =
       clinics.find((clinic) => clinic.id === id)?.users?.length || 0;
     if (usersCount > 0) {
-      toast.error("Cannot archive a clinic with users");
+      toast.error(t("clinicsList.cannotArchiveWithUsers"));
       return;
     }
-    if (!window.confirm("Are you sure you want to archive this clinic?")) {
+    if (!window.confirm(t("clinicsList.archiveConfirm"))) {
       return;
     }
 
     archiveClinic({ data: { id, isArchived: true } })
       .catch((error) => {
         console.error(error);
-        toast.error(error.message);
+        toast.error(error.message || t("clinicsList.clinicArchiveError"));
       })
       .then(() => {
-        toast.success("Clinic archived successfully");
+        toast.success(t("clinicsList.clinicArchivedSuccess"));
         router.invalidate({ sync: true });
       });
   };
@@ -129,11 +131,11 @@ function RouteComponent() {
   return (
     <div className="container py-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Clinics</h1>
+        <h1 className="text-2xl font-bold">{t("clinicsList.title")}</h1>
         {canAdd && (
           <Button asChild>
             <Link to="/app/clinics/edit/$" params={{ _splat: "new" }}>
-              Add Clinic
+              {t("clinicsList.addClinic")}
             </Link>
           </Button>
         )}
@@ -142,9 +144,9 @@ function RouteComponent() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Users</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead>{t("clinicsList.nameHeader")}</TableHead>
+              <TableHead>{t("clinicsList.usersHeader")}</TableHead>
+              <TableHead>{t("clinicsList.actionsHeader")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -160,14 +162,14 @@ function RouteComponent() {
                     onClick={() => handleOpen(clinic.id)}
                   >
                     <LucideView className="mr-2" />
-                    Open
+                    {t("clinicsList.openButton")}
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => handleEdit(clinic.id)}
                   >
                     <LucideEdit className="mr-2" />
-                    Edit
+                    {t("clinicsList.editButton")}
                   </Button>
                   {/* DELETE IS NOT ALLOWED */}
                   {/*<Button
@@ -184,7 +186,7 @@ function RouteComponent() {
                     onClick={() => handleArchive(clinic.id)}
                   >
                     <LucideArchive className="mr-2" />
-                    Archive
+                    {t("clinicsList.archiveButton")}
                   </Button>
                 </TableCell>
               </TableRow>

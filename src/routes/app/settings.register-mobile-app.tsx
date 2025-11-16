@@ -7,6 +7,7 @@ import { PermissionOperation } from "@/models/permissions";
 import { redirect } from "@tanstack/react-router";
 import { getCurrentUser } from "@/lib/server-functions/auth";
 import { useSettingsPermissions } from "@/hooks/use-permissions";
+import { useTranslation } from "@/lib/i18n/context";
 
 const ensureCanViewSettings = createServerFn({ method: "GET" })
   .middleware([permissionsMiddleware])
@@ -33,12 +34,13 @@ function RouteComponent() {
     currentUser: Awaited<ReturnType<typeof getCurrentUser>>;
   };
   const { canView } = useSettingsPermissions(currentUser?.role);
+  const t = useTranslation();
   if (!canView) {
     return (
       <div>
-        <h1 className="text-2xl font-bold mb-6">Register Mobile App</h1>
+        <h1 className="text-2xl font-bold mb-6">{t("settings.registerMobileApp")}</h1>
         <p className="text-muted-foreground">
-          You do not have permission to view Settings.
+          {t("settings.noPermissionToView")}
         </p>
       </div>
     );
@@ -49,9 +51,9 @@ function RouteComponent() {
   const code = origin;
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Register Mobile App</h1>
+      <h1 className="text-2xl font-bold mb-6">{t("settings.registerMobileApp")}</h1>
       <p className="mb-6">
-        Scan the QR code with the mobile app to register it.
+        {t("settings.scanQRCodeInstruction")}
       </p>
       <QRCodeSVG
         style={{ padding: 20 }}

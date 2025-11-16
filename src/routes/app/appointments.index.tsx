@@ -22,6 +22,7 @@ import { SelectInput } from "@/components/select-input";
 import { toggleAppointmentStatus } from "@/lib/server-functions/appointments";
 import { toast } from "sonner";
 import { useRouter } from "@tanstack/react-router";
+import { useTranslation } from "@/lib/i18n/context";
 
 export const Route = createFileRoute("/app/appointments/")({
   component: RouteComponent,
@@ -64,10 +65,11 @@ export const Route = createFileRoute("/app/appointments/")({
 function RouteComponent() {
   const { appointments, departmentNames } = Route.useLoaderData();
   const router = useRouter();
+  const t = useTranslation();
 
   // Function to calculate age from date of birth
   const calculateAge = (dateOfBirth: Date | string | null | undefined) => {
-    if (!dateOfBirth) return "N/A";
+    if (!dateOfBirth) return t("appointmentsList.notAvailable");
     const today = new Date();
     const birthDate = new Date(dateOfBirth);
     let age = today.getFullYear() - birthDate.getFullYear();
@@ -89,36 +91,36 @@ function RouteComponent() {
   const handleStatusChange = (appointmentId: string, newStatus: string) => {
     toggleAppointmentStatus({ data: { id: appointmentId, status: newStatus } })
       .then(() => {
-        toast.success("Appointment status updated successfully");
+        toast.success(t("appointmentsList.statusUpdatedSuccess"));
         router.invalidate({ sync: true });
       })
       .catch((error) => {
-        toast.error("Failed to update appointment status");
+        toast.error(t("appointmentsList.statusUpdateError"));
       });
   };
 
   return (
     <TooltipProvider>
       <div className="container py-6">
-        <h1 className="text-2xl font-bold mb-6">Appointments</h1>
+        <h1 className="text-2xl font-bold mb-6">{t("appointmentsList.title")}</h1>
 
         <div className="rounded-md border overflow-hidden">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Patient ID</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Appointment Time</TableHead>
-                  <TableHead>Given Name</TableHead>
-                  <TableHead>Last Name</TableHead>
-                  <TableHead>Age</TableHead>
-                  <TableHead>Clinic</TableHead>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Departments</TableHead>
-                  <TableHead>Duration (min)</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("appointmentsList.patientIdHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.typeHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.appointmentTimeHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.givenNameHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.lastNameHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.ageHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.clinicHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.providerHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.departmentsHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.durationHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.notesHeader")}</TableHead>
+                  <TableHead>{t("appointmentsList.statusHeader")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -129,9 +131,9 @@ function RouteComponent() {
                     </TableCell>
                     <TableCell>
                       {appt?.appointment?.is_walk_in ? (
-                        <Badge variant="secondary">Walk-in</Badge>
+                        <Badge variant="secondary">{t("appointmentsList.walkIn")}</Badge>
                       ) : (
-                        <Badge variant="outline">Scheduled</Badge>
+                        <Badge variant="outline">{t("appointmentsList.scheduled")}</Badge>
                       )}
                     </TableCell>
                     <TableCell>
@@ -169,7 +171,7 @@ function RouteComponent() {
                           {appt.appointment.departments.map((dept: any) => {
                             const deptName = String(
                               departmentNames[dept.id] ||
-                                `Dept ${dept.id.substring(0, 8)}`,
+                                `${t("appointmentsList.deptPrefix")} ${dept.id.substring(0, 8)}`,
                             );
                             const statusIcon =
                               dept.status === "completed"
@@ -198,21 +200,21 @@ function RouteComponent() {
                                   <div className="space-y-1 text-xs">
                                     <p className="font-semibold">{deptName}</p>
                                     <p>
-                                      Status:{" "}
+                                      {t("appointmentsList.statusLabel")}{" "}
                                       <span className="capitalize">
                                         {dept.status.replace("_", " ")}
                                       </span>
                                     </p>
                                     {dept.seen_at && (
                                       <p>
-                                        Seen at:{" "}
+                                        {t("appointmentsList.seenAtLabel")}{" "}
                                         {new Date(
                                           dept.seen_at,
                                         ).toLocaleString()}
                                       </p>
                                     )}
                                     {dept.seen_by && (
-                                      <p>Seen by: {String(dept.seen_by)}</p>
+                                      <p>{t("appointmentsList.seenByLabel")} {String(dept.seen_by)}</p>
                                     )}
                                   </div>
                                 </TooltipContent>
@@ -222,7 +224,7 @@ function RouteComponent() {
                         </div>
                       ) : (
                         <span className="text-muted-foreground text-xs">
-                          No departments
+                          {t("appointmentsList.noDepartments")}
                         </span>
                       )}
                     </TableCell>
@@ -234,11 +236,11 @@ function RouteComponent() {
                       <SelectInput
                         value={appt?.appointment?.status}
                         data={[
-                          { label: "Pending", value: "pending" },
-                          { label: "Confirmed", value: "confirmed" },
-                          { label: "Cancelled", value: "cancelled" },
-                          { label: "Completed", value: "completed" },
-                          { label: "Checked In", value: "checked_in" },
+                          { label: t("appointmentForm.statuses.pending"), value: "pending" },
+                          { label: t("appointmentForm.statuses.confirmed"), value: "confirmed" },
+                          { label: t("appointmentForm.statuses.cancelled"), value: "cancelled" },
+                          { label: t("appointmentForm.statuses.completed"), value: "completed" },
+                          { label: t("appointmentForm.statuses.checkedIn"), value: "checked_in" },
                         ]}
                         onChange={(value) =>
                           handleStatusChange(
