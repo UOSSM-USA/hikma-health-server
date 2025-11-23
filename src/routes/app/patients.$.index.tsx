@@ -1,9 +1,11 @@
 import { getPatientById } from "@/lib/server-functions/patients";
-import { getPatientVitals } from "@/lib/server-functions/vitals";
+import { getPatientVitals, createPatientVital } from "@/lib/server-functions/vitals";
 import { getEventsByPatientId } from "@/lib/server-functions/events";
 import { getEventForms } from "@/lib/server-functions/event-forms";
+import { getVisitsByPatientId } from "@/lib/server-functions/visits";
 import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n/context";
 import {
   Card,
   CardContent,
@@ -35,10 +37,15 @@ import type PatientVital from "@/models/patient-vital";
 import type Patient from "@/models/patient";
 import Appointment from "@/models/appointment";
 import type Prescription from "@/models/prescription";
+import type Visit from "@/models/visit";
 import { useEffect, useState } from "react";
 import { getAppointmentsByPatientId } from "@/lib/server-functions/appointments";
 import type Clinic from "@/models/clinic";
 import type User from "@/models/user";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Plus } from "lucide-react";
 
 export const Route = createFileRoute("/app/patients/$/")({
   component: RouteComponent,
@@ -48,6 +55,7 @@ export const Route = createFileRoute("/app/patients/$/")({
     const result: {
       patient: Patient.EncodedT | null;
       vitals: PatientVital.EncodedT[];
+      visits: Visit.EncodedT[];
       appointments: {
         appointment: Appointment.EncodedT;
         patient: Patient.EncodedT;
@@ -65,6 +73,7 @@ export const Route = createFileRoute("/app/patients/$/")({
     } = {
       patient: null,
       vitals: [],
+      visits: [],
       appointments: [],
       prescriptions: [],
       events: [],
@@ -139,6 +148,14 @@ export const Route = createFileRoute("/app/patients/$/")({
         } catch (error) {
           console.error("Failed to fetch prescriptions:", error);
         }
+
+        // Get patient visits
+        try {
+          const fetchedVisits = await getVisitsByPatientId({ data: { patientId } });
+          result.visits = Array.isArray(fetchedVisits) ? fetchedVisits : [];
+        } catch (error) {
+          console.error("Failed to fetch visits:", error);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch patient:", error);
@@ -152,6 +169,7 @@ function RouteComponent() {
   const {
     patient,
     vitals: initialVitals,
+    visits,
     appointments,
     prescriptions,
     events,
@@ -161,9 +179,23 @@ function RouteComponent() {
   const navigate = Route.useNavigate();
   const patientId = params._splat;
   const isEditing = !!patientId && patientId !== "new";
+  const t = useTranslation();
   const [mostRecentVital, setMostRecentVital] = useState<
     typeof PatientVital.PatientVitalSchema.Encoded | null
   >(null);
+  const [showVitalForm, setShowVitalForm] = useState(false);
+  const [vitalFormData, setVitalFormData] = useState({
+    systolic_bp: "",
+    diastolic_bp: "",
+    heart_rate: "",
+    temperature_celsius: "",
+    oxygen_saturation: "",
+    respiratory_rate: "",
+    weight_kg: "",
+    height_cm: "",
+    pain_level: "",
+  });
+  const [isSavingVitals, setIsSavingVitals] = useState(false);
 
   useEffect(() => {
     if (initialVitals && initialVitals.length > 0) {
@@ -210,10 +242,97 @@ function RouteComponent() {
     return `${value} ${unit}`;
   };
 
+  // Calculate BMI from weight and height if BMI is not present
+  const calculateBMI = (weight: number | null | undefined, height: number | null | undefined, existingBMI: number | string | null | undefined): number | null => {
+    // If BMI already exists, return it
+    if (existingBMI !== null && existingBMI !== undefined) {
+      const bmiNum = typeof existingBMI === 'string' ? parseFloat(existingBMI) : existingBMI;
+      if (!isNaN(bmiNum) && bmiNum > 0) {
+        return bmiNum;
+      }
+    }
+    
+    // Calculate BMI if both weight and height are available
+    if (weight && height && height > 0) {
+      const heightInMeters = height / 100;
+      const bmi = weight / (heightInMeters * heightInMeters);
+      return Math.round(bmi * 100) / 100;
+    }
+    
+    return null;
+  };
+
   const handleEditAppointment = (appointmentId: Appointment.EncodedT["id"]) => {
     navigate({
       to: `/app/appointments/edit/${appointmentId}`,
     });
+  };
+
+  const handleSaveVitals = async () => {
+    setIsSavingVitals(true);
+    try {
+      // Calculate BMI if both weight and height are provided
+      // BMI = weight (kg) / (height (m))^2
+      // Since height is in cm, we convert: BMI = weight (kg) / ((height (cm) / 100)^2)
+      const weight = vitalFormData.weight_kg ? Number(vitalFormData.weight_kg) : null;
+      const height = vitalFormData.height_cm ? Number(vitalFormData.height_cm) : null;
+      let bmi: number | null = null;
+      
+      if (weight && height && height > 0) {
+        const heightInMeters = height / 100;
+        bmi = weight / (heightInMeters * heightInMeters);
+        // Round to 2 decimal places
+        bmi = Math.round(bmi * 100) / 100;
+      }
+
+      const vitalData: PatientVital.Table.NewPatientVitals = {
+        id: undefined,
+        patient_id: patientId,
+        visit_id: null,
+        timestamp: new Date(),
+        systolic_bp: vitalFormData.systolic_bp ? Number(vitalFormData.systolic_bp) : null,
+        diastolic_bp: vitalFormData.diastolic_bp ? Number(vitalFormData.diastolic_bp) : null,
+        heart_rate: vitalFormData.heart_rate ? Number(vitalFormData.heart_rate) : null,
+        temperature_celsius: vitalFormData.temperature_celsius ? Number(vitalFormData.temperature_celsius) : null,
+        oxygen_saturation: vitalFormData.oxygen_saturation ? Number(vitalFormData.oxygen_saturation) : null,
+        respiratory_rate: vitalFormData.respiratory_rate ? Number(vitalFormData.respiratory_rate) : null,
+        weight_kg: weight,
+        height_cm: height,
+        pain_level: vitalFormData.pain_level ? Number(vitalFormData.pain_level) : null,
+        bp_position: null,
+        bmi: bmi,
+        waist_circumference_cm: null,
+        pulse_rate: null,
+        recorded_by_user_id: null,
+        metadata: {},
+        is_deleted: false,
+        created_at: new Date(),
+        updated_at: new Date(),
+        deleted_at: null,
+      };
+
+      await createPatientVital({ data: vitalData });
+      toast.success(t("patientDetail.vitalsSaved"));
+      setShowVitalForm(false);
+      setVitalFormData({
+        systolic_bp: "",
+        diastolic_bp: "",
+        heart_rate: "",
+        temperature_celsius: "",
+        oxygen_saturation: "",
+        respiratory_rate: "",
+        weight_kg: "",
+        height_cm: "",
+        pain_level: "",
+      });
+      // Reload the page to refresh vitals
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to save vitals:", error);
+      toast.error(t("patientDetail.vitalsSaveError"));
+    } finally {
+      setIsSavingVitals(false);
+    }
   };
 
   return (
@@ -261,7 +380,7 @@ function RouteComponent() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Demographics</CardTitle>
+            <CardTitle className="text-lg">{t("patientDetail.demographics")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex justify-between">
@@ -294,7 +413,7 @@ function RouteComponent() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Contact Information</CardTitle>
+            <CardTitle className="text-lg">{t("patientDetail.contactInformation")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
@@ -325,16 +444,124 @@ function RouteComponent() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Current Vitals</CardTitle>
-            {mostRecentVital && (
-              <span className="text-sm text-muted-foreground">
-                Last recorded:{" "}
-                {format(
-                  new Date(mostRecentVital.timestamp),
-                  "MMM dd, yyyy HH:mm",
-                )}
-              </span>
-            )}
+            <CardTitle className="text-lg">{t("patientDetail.currentVitals")}</CardTitle>
+            <div className="flex items-center gap-2">
+              {mostRecentVital && (
+                <span className="text-sm text-muted-foreground">
+                  {t("patientDetail.lastRecorded")}{" "}
+                  {format(
+                    new Date(mostRecentVital.timestamp),
+                    "MMM dd, yyyy HH:mm",
+                  )}
+                </span>
+              )}
+              <Dialog open={showVitalForm} onOpenChange={setShowVitalForm}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Plus className="h-4 w-4 mr-2" />
+                    {t("patientDetail.addVitals")}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>{t("patientDetail.quickEntryVitals")}</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div className="space-y-2">
+                      <Label>{t("patientDetail.systolic")}</Label>
+                      <Input
+                        type="number"
+                        placeholder="120"
+                        value={vitalFormData.systolic_bp}
+                        onChange={(e) => setVitalFormData({ ...vitalFormData, systolic_bp: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("patientDetail.diastolic")}</Label>
+                      <Input
+                        type="number"
+                        placeholder="80"
+                        value={vitalFormData.diastolic_bp}
+                        onChange={(e) => setVitalFormData({ ...vitalFormData, diastolic_bp: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("patientDetail.heartRate")}</Label>
+                      <Input
+                        type="number"
+                        placeholder="72"
+                        value={vitalFormData.heart_rate}
+                        onChange={(e) => setVitalFormData({ ...vitalFormData, heart_rate: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("patientDetail.temperature")} (°C)</Label>
+                      <Input
+                        type="number"
+                        placeholder="37.0"
+                        value={vitalFormData.temperature_celsius}
+                        onChange={(e) => setVitalFormData({ ...vitalFormData, temperature_celsius: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("patientDetail.oxygenSaturation")} (%)</Label>
+                      <Input
+                        type="number"
+                        placeholder="98"
+                        value={vitalFormData.oxygen_saturation}
+                        onChange={(e) => setVitalFormData({ ...vitalFormData, oxygen_saturation: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("patientDetail.respiratoryRate")}</Label>
+                      <Input
+                        type="number"
+                        placeholder="16"
+                        value={vitalFormData.respiratory_rate}
+                        onChange={(e) => setVitalFormData({ ...vitalFormData, respiratory_rate: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("patientDetail.weight")} (kg)</Label>
+                      <Input
+                        type="number"
+                        placeholder="70"
+                        value={vitalFormData.weight_kg}
+                        onChange={(e) => setVitalFormData({ ...vitalFormData, weight_kg: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("patientDetail.height")} (cm)</Label>
+                      <Input
+                        type="number"
+                        placeholder="170"
+                        value={vitalFormData.height_cm}
+                        onChange={(e) => setVitalFormData({ ...vitalFormData, height_cm: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("patientDetail.painLevel")} (1-10)</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="10"
+                        placeholder="0"
+                        value={vitalFormData.pain_level}
+                        onChange={(e) => setVitalFormData({ ...vitalFormData, pain_level: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 mt-6">
+                    <Button variant="outline" onClick={() => setShowVitalForm(false)}>
+                      {t("patientDetail.cancel")}
+                    </Button>
+                    <Button onClick={handleSaveVitals} disabled={isSavingVitals}>
+                      {isSavingVitals ? t("common.saving") : t("patientDetail.saveVitals")}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -344,7 +571,7 @@ function RouteComponent() {
               <div className="p-4 border rounded-lg">
                 <div className="flex items-center mb-2">
                   <Heart className="h-4 w-4 text-red-500 mr-2" />
-                  <span className="text-sm font-medium">Blood Pressure</span>
+                  <span className="text-sm font-medium">{t("patientDetail.bloodPressure")}</span>
                 </div>
                 <p className="text-2xl font-bold">
                   {mostRecentVital.systolic_bp && mostRecentVital.diastolic_bp
@@ -358,7 +585,7 @@ function RouteComponent() {
               <div className="p-4 border rounded-lg">
                 <div className="flex items-center mb-2">
                   <Activity className="h-4 w-4 text-pink-500 mr-2" />
-                  <span className="text-sm font-medium">Heart Rate</span>
+                  <span className="text-sm font-medium">{t("patientDetail.heartRate")}</span>
                 </div>
                 <p className="text-2xl font-bold">
                   {formatVitalValue(mostRecentVital.heart_rate, "")}
@@ -370,7 +597,7 @@ function RouteComponent() {
               <div className="p-4 border rounded-lg">
                 <div className="flex items-center mb-2">
                   <Thermometer className="h-4 w-4 text-orange-500 mr-2" />
-                  <span className="text-sm font-medium">Temperature</span>
+                  <span className="text-sm font-medium">{t("patientDetail.temperature")}</span>
                 </div>
                 <p className="text-2xl font-bold">
                   {formatVitalValue(mostRecentVital.temperature_celsius, "")}
@@ -382,7 +609,7 @@ function RouteComponent() {
               <div className="p-4 border rounded-lg">
                 <div className="flex items-center mb-2">
                   <Droplets className="h-4 w-4 text-blue-500 mr-2" />
-                  <span className="text-sm font-medium">O₂ Saturation</span>
+                  <span className="text-sm font-medium">{t("patientDetail.oxygenSaturation")}</span>
                 </div>
                 <p className="text-2xl font-bold">
                   {formatVitalValue(mostRecentVital.oxygen_saturation, "")}
@@ -394,7 +621,7 @@ function RouteComponent() {
               <div className="p-4 border rounded-lg">
                 <div className="flex items-center mb-2">
                   <Wind className="h-4 w-4 text-teal-500 mr-2" />
-                  <span className="text-sm font-medium">Respiratory Rate</span>
+                  <span className="text-sm font-medium">{t("patientDetail.respiratoryRate")}</span>
                 </div>
                 <p className="text-2xl font-bold">
                   {formatVitalValue(mostRecentVital.respiratory_rate, "")}
@@ -406,7 +633,7 @@ function RouteComponent() {
               <div className="p-4 border rounded-lg">
                 <div className="flex items-center mb-2">
                   <Weight className="h-4 w-4 text-purple-500 mr-2" />
-                  <span className="text-sm font-medium">Weight</span>
+                  <span className="text-sm font-medium">{t("patientDetail.weight")}</span>
                 </div>
                 <p className="text-2xl font-bold">
                   {formatVitalValue(mostRecentVital.weight_kg, "")}
@@ -418,7 +645,7 @@ function RouteComponent() {
               <div className="p-4 border rounded-lg">
                 <div className="flex items-center mb-2">
                   <Ruler className="h-4 w-4 text-green-500 mr-2" />
-                  <span className="text-sm font-medium">Height</span>
+                  <span className="text-sm font-medium">{t("patientDetail.height")}</span>
                 </div>
                 <p className="text-2xl font-bold">
                   {formatVitalValue(mostRecentVital.height_cm, "")}
@@ -430,19 +657,24 @@ function RouteComponent() {
               <div className="p-4 border rounded-lg">
                 <div className="flex items-center mb-2">
                   <Brain className="h-4 w-4 text-indigo-500 mr-2" />
-                  <span className="text-sm font-medium">BMI</span>
+                  <span className="text-sm font-medium">{t("patientDetail.bmi")}</span>
                 </div>
                 <p className="text-2xl font-bold">
-                  {mostRecentVital.bmi
-                    ? parseFloat(mostRecentVital.bmi)?.toFixed(1)
-                    : "—"}
+                  {(() => {
+                    const bmi = calculateBMI(
+                      mostRecentVital.weight_kg,
+                      mostRecentVital.height_cm,
+                      mostRecentVital.bmi
+                    );
+                    return bmi ? bmi.toFixed(1) : "—";
+                  })()}
                 </p>
                 <p className="text-xs text-muted-foreground">kg/m²</p>
               </div>
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              No vitals recorded yet
+              {t("patientDetail.noVitalsRecorded")}
             </div>
           )}
         </CardContent>
@@ -451,23 +683,52 @@ function RouteComponent() {
       {/* Tabs for Additional Information */}
       <Tabs defaultValue="visits" className="w-full">
         <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="visits">Recent Visits</TabsTrigger>
-          <TabsTrigger value="vitals">Vital History</TabsTrigger>
-          <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
-          <TabsTrigger value="appointments">Appointments</TabsTrigger>
-          <TabsTrigger value="events">Event Forms</TabsTrigger>
+          <TabsTrigger value="visits">{t("patientDetail.recentVisits")}</TabsTrigger>
+          <TabsTrigger value="vitals">{t("patientDetail.vitalHistory")}</TabsTrigger>
+          <TabsTrigger value="prescriptions">{t("patientDetail.prescriptions")}</TabsTrigger>
+          <TabsTrigger value="appointments">{t("patientDetail.appointments")}</TabsTrigger>
+          <TabsTrigger value="events">{t("patientDetail.eventForms")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="visits">
           <Card>
             <CardHeader>
-              <CardTitle>Recent Visits</CardTitle>
-              <CardDescription>Patient's visit history</CardDescription>
+              <CardTitle>{t("patientDetail.recentVisits")}</CardTitle>
+              <CardDescription>{t("patientDetail.recentVisitsDescription")}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                No recent visits recorded
-              </div>
+              {visits && visits.length > 0 ? (
+                <div className="space-y-4">
+                  {visits.map((visit) => (
+                    <div key={visit.id} className="border rounded-lg p-4">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="space-y-1">
+                          <p className="font-medium">
+                            {visit.check_in_timestamp
+                              ? format(new Date(visit.check_in_timestamp), "MMM dd, yyyy HH:mm")
+                              : format(new Date(visit.created_at), "MMM dd, yyyy HH:mm")}
+                          </p>
+                          <div className="space-y-1 text-sm text-muted-foreground">
+                            {visit.provider_name && (
+                              <p>
+                                <span className="font-medium">{t("patientDetail.provider")}:</span> {visit.provider_name}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right text-sm">
+                          <p className="text-muted-foreground">{t("patientDetail.visitId")}</p>
+                          <p className="font-mono text-xs">{visit.id.slice(0, 8)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  {t("patientDetail.noVisitsRecorded")}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -475,42 +736,57 @@ function RouteComponent() {
         <TabsContent value="vitals">
           <Card>
             <CardHeader>
-              <CardTitle>Vital Signs History</CardTitle>
-              <CardDescription>Historical vital measurements</CardDescription>
+              <CardTitle>{t("patientDetail.vitalHistory")}</CardTitle>
+              <CardDescription>{t("patientDetail.vitalHistoryDescription")}</CardDescription>
             </CardHeader>
             <CardContent>
               {initialVitals && initialVitals.length > 0 ? (
                 <div className="space-y-4">
-                  {initialVitals.slice(0, 5).map((vital) => (
+                  {initialVitals.map((vital) => (
                     <div key={vital.id} className="border rounded-lg p-4">
                       <div className="flex justify-between items-start">
-                        <div className="space-y-1">
+                        <div className="space-y-1 flex-1">
                           <p className="text-sm font-medium">
                             {format(
                               new Date(vital.timestamp),
                               "MMM dd, yyyy HH:mm",
                             )}
                           </p>
-                          <div className="flex gap-4 text-sm text-muted-foreground">
+                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 text-sm text-muted-foreground mt-2">
                             {vital.systolic_bp && vital.diastolic_bp && (
                               <span>
-                                BP: {vital.systolic_bp}/{vital.diastolic_bp}
+                                {t("patientDetail.bloodPressure")}: {vital.systolic_bp}/{vital.diastolic_bp} mmHg
                               </span>
                             )}
                             {vital.heart_rate && (
-                              <span>HR: {vital.heart_rate}</span>
+                              <span>{t("patientDetail.heartRate")}: {vital.heart_rate} bpm</span>
                             )}
                             {vital.pulse_rate && (
-                              <span>PR: {vital.pulse_rate}</span>
+                              <span>PR: {vital.pulse_rate} bpm</span>
                             )}
                             {vital.temperature_celsius && (
-                              <span>Temp: {vital.temperature_celsius}°C</span>
+                              <span>{t("patientDetail.temperature")}: {vital.temperature_celsius}°C</span>
                             )}
                             {vital.oxygen_saturation && (
-                              <span>O₂: {vital.oxygen_saturation}%</span>
+                              <span>{t("patientDetail.oxygenSaturation")}: {vital.oxygen_saturation}%</span>
                             )}
+                            {vital.respiratory_rate && (
+                              <span>{t("patientDetail.respiratoryRate")}: {vital.respiratory_rate} breaths/min</span>
+                            )}
+                            {vital.weight_kg && (
+                              <span>{t("patientDetail.weight")}: {vital.weight_kg} kg</span>
+                            )}
+                            {vital.height_cm && (
+                              <span>{t("patientDetail.height")}: {vital.height_cm} cm</span>
+                            )}
+                            {(() => {
+                              const bmi = calculateBMI(vital.weight_kg, vital.height_cm, vital.bmi);
+                              return bmi ? (
+                                <span>{t("patientDetail.bmi")}: {bmi.toFixed(1)}</span>
+                              ) : null;
+                            })()}
                             {vital.pain_level && (
-                              <span>Pain: {vital.pain_level}/10</span>
+                              <span>{t("patientDetail.painLevel")}: {vital.pain_level}/10</span>
                             )}
                           </div>
                         </div>
@@ -520,7 +796,7 @@ function RouteComponent() {
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
-                  No vital history available
+                  {t("patientDetail.noVitalHistory")}
                 </div>
               )}
             </CardContent>
@@ -530,13 +806,13 @@ function RouteComponent() {
         <TabsContent value="prescriptions">
           <Card>
             <CardHeader>
-              <CardTitle>Prescriptions</CardTitle>
-              <CardDescription>Active and past medications</CardDescription>
+              <CardTitle>{t("patientDetail.prescriptions")}</CardTitle>
+              <CardDescription>{t("patientDetail.prescriptionsDescription")}</CardDescription>
             </CardHeader>
             <CardContent>
               {prescriptions.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  No prescriptions recorded
+                  {t("patientDetail.noPrescriptions")}
                 </div>
               ) : (
                 prescriptions.map(({ prescription, provider, clinic }) => (
@@ -569,17 +845,17 @@ function RouteComponent() {
                         </div>
                         <div className="space-y-1 text-sm text-muted-foreground">
                           <p>
-                            <span className="font-medium">Provider:</span>{" "}
+                            <span className="font-medium">{t("patientDetail.provider")}:</span>{" "}
                             {provider?.name || provider?.given_name || ""} {provider?.surname || ""}
                           </p>
                           <p>
-                            <span className="font-medium">Pickup Clinic:</span>{" "}
-                            {clinic?.name || "N/A"}
+                            <span className="font-medium">{t("patientDetail.clinic")}:</span>{" "}
+                            {clinic?.name || t("common.unknown")}
                           </p>
                         </div>
                       </div>
                       <div className="text-right text-sm">
-                        <p className="text-muted-foreground">Prescription ID</p>
+                        <p className="text-muted-foreground">{t("patientDetail.prescriptionId")}</p>
                         <p className="font-mono text-xs">
                           {prescription.id.slice(0, 8)}
                         </p>
@@ -588,7 +864,7 @@ function RouteComponent() {
 
                     {prescription.items && prescription.items.length > 0 && (
                       <div className="mb-3">
-                        <p className="text-sm font-medium mb-1">Items:</p>
+                        <p className="text-sm font-medium mb-1">{t("patientDetail.prescriptionItems")}</p>
                         <ul className="list-disc list-inside text-sm space-y-1">
                           {prescription.items.map((item: any, idx: number) => (
                             <li key={idx}>
@@ -604,7 +880,7 @@ function RouteComponent() {
                     {prescription.notes && (
                       <div className="pt-2 border-t">
                         <p className="text-sm">
-                          <span className="font-medium">Notes:</span>{" "}
+                          <span className="font-medium">{t("patientDetail.prescriptionNotes")}</span>{" "}
                           {prescription.notes}
                         </p>
                       </div>
@@ -612,7 +888,7 @@ function RouteComponent() {
 
                     {prescription.expiration_date && (
                       <div className="pt-2 mt-2 border-t text-xs text-muted-foreground">
-                        Expires: {format(new Date(prescription.expiration_date), "MMM dd, yyyy")}
+                        {t("patientDetail.expires")} {format(new Date(prescription.expiration_date), "MMM dd, yyyy")}
                       </div>
                     )}
                   </div>
@@ -625,13 +901,13 @@ function RouteComponent() {
         <TabsContent value="appointments">
           <Card>
             <CardHeader>
-              <CardTitle>Appointments</CardTitle>
-              <CardDescription>Upcoming and past appointments</CardDescription>
+              <CardTitle>{t("patientDetail.appointments")}</CardTitle>
+              <CardDescription>{t("patientDetail.appointmentsDescription")}</CardDescription>
             </CardHeader>
             <CardContent>
               {appointments.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
-                  No appointments scheduled
+                  {t("patientDetail.noAppointments")}
                 </div>
               )}
               {appointments.map(({ appointment, provider, clinic }) => (
@@ -679,7 +955,7 @@ function RouteComponent() {
                       </div>
                     </div>
                     <div className="text-right text-sm">
-                      <p className="text-muted-foreground">Appointment ID</p>
+                      <p className="text-muted-foreground">{t("patientDetail.appointmentId")}</p>
                       <p className="font-mono text-xs">
                         {appointment.id.slice(0, 8)}
                       </p>
@@ -689,7 +965,7 @@ function RouteComponent() {
                   {appointment.notes && (
                     <div className="mb-3">
                       <p className="text-sm text-muted-foreground mb-1">
-                        Notes
+                        {t("appointmentForm.notesLabel")}
                       </p>
                       <p className="text-sm">{appointment.notes}</p>
                     </div>
@@ -698,19 +974,19 @@ function RouteComponent() {
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     {appointment.clinic_id && (
                       <div>
-                        <span className="text-muted-foreground">Clinic: </span>
+                        <span className="text-muted-foreground">{t("patientDetail.clinic")}: </span>
                         <span className="font-medium">
-                          {clinic.name || "Unknown"}
+                          {clinic.name || t("common.unknown")}
                         </span>
                       </div>
                     )}
                     {appointment.provider_id && (
                       <div>
                         <span className="text-muted-foreground">
-                          Provider:{" "}
+                          {t("patientDetail.provider")}:{" "}
                         </span>
                         <span className="font-medium">
-                          {provider.name || "Unknown"}
+                          {provider.name || t("common.unknown")}
                         </span>
                       </div>
                     )}
@@ -726,9 +1002,9 @@ function RouteComponent() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Event Forms</CardTitle>
+                  <CardTitle>{t("patientDetail.eventForms")}</CardTitle>
                   <CardDescription>
-                    Clinical encounters and documentation
+                    {t("patientDetail.eventFormsDescription")}
                   </CardDescription>
                 </div>
                 <Button
@@ -737,16 +1013,16 @@ function RouteComponent() {
                     window.location.href = `/app/patients-event?patientId=${patientId}`;
                   }}
                 >
-                  New Encounter
+                  {t("patientDetail.newEncounter")}
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
               {events.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  <p className="mb-2">No event forms recorded for this patient</p>
+                  <p className="mb-2">{t("patientDetail.noEventForms")}</p>
                   <p className="text-sm">
-                    Event forms capture clinical encounters and medical documentation
+                    {t("patientDetail.eventFormsInfo")}
                   </p>
                 </div>
               ) : (
@@ -756,7 +1032,7 @@ function RouteComponent() {
                     const eventForm = eventForms.find(
                       (form) => form.id === event.form_id
                     );
-                    const formName = eventForm?.name || "Unknown Form";
+                    const formName = eventForm?.name || t("common.unknown");
 
                     return (
                       <div key={event.id} className="border rounded-lg p-4">
@@ -771,7 +1047,7 @@ function RouteComponent() {
                             </p>
                           </div>
                           <div className="text-right text-sm">
-                            <p className="text-muted-foreground">Event ID</p>
+                            <p className="text-muted-foreground">{t("patientDetail.eventId")}</p>
                             <p className="font-mono text-xs">
                               {event.id.slice(0, 8)}
                             </p>
@@ -787,12 +1063,12 @@ function RouteComponent() {
                         {event.form_data && event.form_data.length > 0 && (
                           <div className="mt-3 space-y-2">
                             <p className="text-sm font-medium mb-2">
-                              Form Data:
+                              {t("patientDetail.formData")}
                             </p>
                             {event.form_data.slice(0, 3).map((field: any, idx: number) => (
                               <div key={idx} className="text-sm">
                                 <span className="text-muted-foreground">
-                                  {field.fieldName || "Field"}:
+                                  {field.fieldName || t("common.unknown")}:
                                 </span>{" "}
                                 <span className="font-medium">
                                   {field.value || "—"}
@@ -801,7 +1077,7 @@ function RouteComponent() {
                             ))}
                             {event.form_data.length > 3 && (
                               <p className="text-xs text-muted-foreground mt-2">
-                                +{event.form_data.length - 3} more fields
+                                +{event.form_data.length - 3} {t("patientDetail.moreFields")}
                               </p>
                             )}
                           </div>

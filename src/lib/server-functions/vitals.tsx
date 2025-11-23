@@ -103,8 +103,11 @@ export const createPatientVital = createServerFn({
   .validator((data: PatientVital.Table.NewPatientVitals) => data)
   .handler(async ({ data }) => {
     return Sentry.startSpan({ name: "createPatientVital" }, async () => {
+      // Check for UPDATE_PATIENT capability since adding vitals is part of updating patient records
+      // Providers, admins, and registrars all have this capability
       const authorized = await userRoleTokenHasCapability([
-        User.CAPABILITIES.CREATE_VITALS,
+        User.CAPABILITIES.UPDATE_PATIENT,
+        User.CAPABILITIES.UPDATE_ALL_PATIENT,
       ]);
 
       if (!authorized) {
