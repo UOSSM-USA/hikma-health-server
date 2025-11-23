@@ -126,6 +126,26 @@ namespace Visit {
           .executeTakeFirst();
       },
     );
+
+    /**
+     * Get all visits for a patient
+     * @param patientId - The patient ID
+     * @returns {Promise<EncodedT[]>} - List of visit records
+     */
+    export const getByPatientId = serverOnly(
+      async (patientId: string): Promise<EncodedT[]> => {
+        const result = await db
+          .selectFrom(Visit.Table.name)
+          .where("patient_id", "=", patientId)
+          .where("is_deleted", "=", false)
+          .orderBy("check_in_timestamp", "desc")
+          .orderBy("created_at", "desc")
+          .selectAll()
+          .execute();
+
+        return result;
+      },
+    );
     /**
      * Upsert a patient record without the additional patient attributes
      */
