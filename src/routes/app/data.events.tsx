@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 import { getEventForms } from "@/lib/server-functions/event-forms";
 import { SelectInput } from "@/components/select-input";
 import { Fragment, useEffect, useState } from "react";
@@ -25,18 +26,53 @@ import { getEventsByFormId } from "@/lib/server-functions/events";
 import { Option } from "effect";
 import type EventForm from "@/models/event-form";
 import { format } from "date-fns";
+import { createPermissionContext } from "@/lib/server-functions/permissions";
+import { PermissionOperation } from "@/models/permissions";
+import { checkDataAnalysisPermission } from "@/lib/server-functions/permissions";
+import { permissionsMiddleware } from "@/middleware/auth";
+import { redirect } from "@tanstack/react-router";
+import { getCurrentUser } from "@/lib/server-functions/auth";
+import { useDataAnalysisPermissions } from "@/hooks/use-permissions";
+
+const ensureCanViewDataAnalysis = createServerFn({ method: "GET" })
+  .middleware([permissionsMiddleware])
+  .handler(async ({ context }) => {
+    const permContext = createPermissionContext(context);
+    checkDataAnalysisPermission(permContext, PermissionOperation.VIEW);
+    return true;
+  });
 
 export const Route = createFileRoute("/app/data/events")({
   component: RouteComponent,
   loader: async () => {
+    const ok = await ensureCanViewDataAnalysis();
+    if (!ok) {
+      throw redirect({ to: "/app", replace: true });
+    }
+    const currentUser = await getCurrentUser();
     return {
       forms: await getEventForms(),
+      currentUser,
     };
   },
 });
 
 function RouteComponent() {
-  const { forms } = Route.useLoaderData();
+  const { forms, currentUser } = Route.useLoaderData() as {
+    forms: Awaited<ReturnType<typeof getEventForms>>;
+    currentUser: Awaited<ReturnType<typeof getCurrentUser>>;
+  };
+  const { canView } = useDataAnalysisPermissions(currentUser?.role);
+  if (!canView) {
+    return (
+      <div className="container py-6">
+        <h1 className="text-2xl font-bold">Events Explorer</h1>
+        <p className="mt-4 text-muted-foreground">
+          You do not have permission to view Data Analysis.
+        </p>
+      </div>
+    );
+  }
 
   console.log({ forms });
 

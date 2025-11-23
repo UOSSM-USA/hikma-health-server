@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { useTranslation } from "@/lib/i18n/context";
 // import { getCookieToken } from "@/lib/auth/request";
 // import Token from "@/models/token";
 // import { Option } from "effect";
@@ -25,6 +26,12 @@ import {
 } from "@/lib/server-functions/users";
 import UserClinicPermissions from "@/models/user-clinic-permissions";
 import { permissionsMiddleware } from "@/middleware/auth";
+import { createPermissionContext } from "@/lib/server-functions/permissions";
+import { PermissionOperation } from "@/models/permissions";
+import { redirect } from "@tanstack/react-router";
+import { checkUserPermission } from "@/lib/server-functions/permissions";
+import { getCurrentUser } from "@/lib/server-functions/auth";
+import { useUserPermissions } from "@/hooks/use-permissions";
 
 // const getCurrentUserId = createServerFn({ method: "GET" }).handler(async () => {
 //   const tokenCookie = getCookieToken();
@@ -88,10 +95,25 @@ const getCurrentUserRole = createServerFn({ method: "GET" })
     return context.role;
   });
 
+// Top-level guard to avoid creating server functions inside the loader
+const ensureCanViewUsers = createServerFn({ method: "GET" })
+  .middleware([permissionsMiddleware])
+  .handler(async ({ context }) => {
+    const permContext = createPermissionContext(context);
+    checkUserPermission(permContext, PermissionOperation.VIEW);
+    return true;
+  });
+
 export const Route = createFileRoute("/app/users/")({
   component: RouteComponent,
 
   loader: async () => {
+    // Guard: deny access to users list if no VIEW permission
+    const ok = await ensureCanViewUsers();
+    if (!ok) {
+      throw redirect({ to: "/app", replace: true });
+    }
+    const currentUser = await getCurrentUser();
     const currentUserId = await getCurrentUserId();
     return {
       users: await getAllUsers(),
@@ -104,40 +126,44 @@ export const Route = createFileRoute("/app/users/")({
         },
       }),
       isSuperAdmin: await currentUserHasRole({ data: { role: "super_admin" } }),
+      currentUser,
     };
   },
 });
 
 function RouteComponent() {
-  const { users, currentUserId, currentUserRole, isSuperAdmin, currentUserAdminClinics } =
+  const { users, currentUserId, currentUserRole, isSuperAdmin, currentUserAdminClinics, currentUser } =
     Route.useLoaderData();
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const { canView } = useUserPermissions(currentUser?.role);
+  const t = useTranslation();
 
   const handleDelete = async (id: string, targetUserRole: User.RoleT) => {
-    if (!window.confirm("Are you sure you want to delete this user?")) {
+    if (!window.confirm(t("usersList.deleteConfirm"))) {
       return;
     }
 
     if (!isSuperAdmin) {
-      toast.error("Only Super Admins can delete users.");
+      toast.error(t("usersList.onlySuperAdminCanDelete"));
       return;
     }
 
     // Additional check for role hierarchy
     if (currentUserRole && !User.canDeleteRole(currentUserRole, targetUserRole)) {
-      toast.error(`You cannot delete ${targetUserRole} users.`);
+      const translatedRole = t(`roles.${targetUserRole}` as any) || targetUserRole;
+      toast.error(t("usersList.cannotDeleteRole").replace("{role}", translatedRole));
       return;
     }
 
     setIsDeleting(id);
     try {
       await deleteUser({ data: { id } });
-      toast.success("User deleted successfully");
+      toast.success(t("usersList.userDeletedSuccess"));
       router.invalidate({ sync: true });
     } catch (error: any) {
       console.error("Failed to delete user:", error);
-      toast.error(error?.message || "Failed to delete user");
+      toast.error(error?.message || t("usersList.userDeleteError"));
     } finally {
       setIsDeleting(null);
     }
@@ -172,10 +198,10 @@ function RouteComponent() {
   return (
     <div className="container py-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Users</h1>
+        <h1 className="text-2xl font-bold">{t("usersList.title")}</h1>
         <Button asChild>
           <Link to="/app/users/edit/$" params={{ _splat: "new" }}>
-            Add New User
+            {t("usersList.addNewUser")}
           </Link>
         </Button>
       </div>
@@ -184,11 +210,11 @@ function RouteComponent() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Created At</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{t("usersList.nameHeader")}</TableHead>
+              <TableHead>{t("usersList.emailHeader")}</TableHead>
+              <TableHead>{t("usersList.roleHeader")}</TableHead>
+              <TableHead>{t("usersList.createdAtHeader")}</TableHead>
+              <TableHead className="text-right">{t("usersList.actionsHeader")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -196,7 +222,7 @@ function RouteComponent() {
               <TableRow key={user.id}>
                 <TableCell>{user.name}</TableCell>
                 <TableCell>{user.email}</TableCell>
-                <TableCell>{user.role}</TableCell>
+                <TableCell>{t(`roles.${user.role}` as any) || user.role}</TableCell>
                 <TableCell>
                   {new Date(user.created_at).toLocaleDateString()}
                 </TableCell>
@@ -214,7 +240,7 @@ function RouteComponent() {
                   >
                     <Button variant="outline" size="sm" asChild>
                       <Link to="/app/users/edit/$" params={{ _splat: user.id }}>
-                        Edit
+                        {t("usersList.editButton")}
                       </Link>
                     </Button>
                   </If>
@@ -225,7 +251,7 @@ function RouteComponent() {
                         to="/app/users/manage-permissions/$"
                         params={{ _splat: user.id }}
                       >
-                        Permissions
+                        {t("usersList.permissionsButton")}
                       </Link>
                     </Button>
                   </If>
@@ -237,7 +263,7 @@ function RouteComponent() {
                       onClick={() => handleDelete(user.id, user.role)}
                       disabled={isDeleting === user.id}
                     >
-                      {isDeleting === user.id ? "Deleting..." : "Delete"}
+                      {isDeleting === user.id ? t("usersList.deleting") : t("usersList.deleteButton")}
                     </Button>
                   </If>
                 </TableCell>
@@ -246,7 +272,7 @@ function RouteComponent() {
             {users.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="text-center py-4">
-                  No users found
+                  {t("usersList.noUsersFound")}
                 </TableCell>
               </TableRow>
             )}

@@ -1,6 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
-import { Option, Schema } from "effect";
 import EventForm from "@/models/event-form";
 import { useSelector } from "@xstate/store/react";
 import eventFormStore from "@/stores/event-form-builder";
@@ -8,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import Language from "@/models/language";
-import { v1 as uuidV1 } from "uuid";
 import { nanoid } from "nanoid";
 import {
   LucideBox,
@@ -20,12 +17,8 @@ import {
   LucideStethoscope,
 } from "lucide-react";
 import {
-  deduplicateOptions,
-  fieldOptionsUnion,
   findDuplicatesStrings,
   isValidUUID,
-  listToFieldOptions,
-  safeJSONParse,
 } from "@/lib/utils";
 import { DatePickerInput } from "@/components/date-picker-input";
 import { Separator } from "@/components/ui/separator";
@@ -36,91 +29,61 @@ import { MedicineInput } from "@/components/form-builder/MedicineInput";
 import { DiagnosisSelect } from "@/components/form-builder/DiagnosisPicker";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-
-const getFormById = createServerFn({ method: "GET" })
-  .validator((data: { id: string }) => data)
-  .handler(async ({ data }) => {
-    const res = await EventForm.API.getById(data.id);
-
-    // For some users migrating from old old version, where the "form_fields" is a JSON string;
-    const formFields = (() => {
-      let data;
-      if (typeof res.form_fields === "string") {
-        data = safeJSONParse(res.form_fields, []);
-        // on error, just return the original string. usually we would return an empty []. But I want to allow the client side code one more chance to fix without throwing an error.
-        if (data.length === 0) {
-          data = res.form_fields;
-        }
-      } else {
-        data = res.form_fields;
-      }
-
-      // process the array to make sure all fields are formatted from older versions of data to new ones.
-      // also act as an ongoing robustness measure
-      if (Array.isArray(data)) {
-        data.forEach((field) => {
-          // migrate text area to text input with long length
-          if (field.inputType === "textarea") {
-            field.inputType = "text";
-            field.length = "long";
-          }
-          // Add a _tag to each field
-          field._tag = EventForm.getFieldTag(field.fieldType);
-        });
-      }
-
-      return data;
-    })();
-
-    console.log({ formFields });
-
-    return {
-      ...res,
-      form_fields: formFields,
-    };
-  });
-
-const saveForm = createServerFn({ method: "POST" })
-  .validator(
-    (d: { form: EventForm.EncodedT; updateFormId: null | string }) => d,
-  )
-  .handler(async ({ data }) => {
-    const { updateFormId, form } = data;
-
-    if (updateFormId) {
-      return EventForm.API.update({
-        id: updateFormId,
-        form,
-      });
-    } else {
-      return EventForm.API.insert(form);
-    }
-  });
+import { useMemo } from "react";
+import { useEventFormPermissions } from "@/hooks/use-permissions";
+import User from "@/models/user";
+import { getCurrentUser } from "@/lib/server-functions/auth";
+import { redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/app/event-forms/edit/$")({
   // ssr: false,
   component: RouteComponent,
   loader: async ({ params }) => {
+    const {
+      ensureCanAddEventForm,
+      ensureCanEditEventForm,
+      getEventFormForEditor,
+    } = await import("@/lib/server-functions/event-form-editor");
+    // Guard: deny access for users without proper permission
+    const isNew = !params._splat || params._splat === "new";
+    const ok = isNew
+      ? await ensureCanAddEventForm()
+      : await ensureCanEditEventForm();
+    if (!ok) {
+      throw redirect({ to: "/app/event-forms", replace: true });
+    }
+    const currentUser = (await getCurrentUser()) as User.EncodedT | null;
     const formId = params._splat;
     if (!formId || formId === "new") {
-      return { form: null };
+      return { form: null, currentUser };
     }
-    return { form: await getFormById({ data: { id: formId } }) };
+    return {
+      form: await getEventFormForEditor({ data: { id: formId } }),
+      currentUser,
+    };
   },
 });
 
 // form title, form language, form description, is editable checkbox, is snapshot checkbox, (inputs custom component)m add form input buttoms
 
 function RouteComponent() {
-  const { form: initialForm } = Route.useLoaderData();
+  const { form: initialForm, currentUser } = Route.useLoaderData() as {
+    form: EventForm.EncodedT | null;
+    currentUser: User.EncodedT | null;
+  };
   console.log({ initialForm });
   const navigate = Route.useNavigate();
   const formId = Route.useParams()._splat;
   const isEditing = !!initialForm?.id;
+  const { canAdd, canEdit } = useEventFormPermissions(currentUser?.role);
+  const isReadOnly = useMemo(() => {
+    return isEditing ? !canEdit : !canAdd;
+  }, [isEditing, canAdd, canEdit]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const formState = useSelector(eventFormStore, (state) => state.context);
+  const InputsConfigurationComponent = InputsConfiguration as any;
 
   useEffect(() => {
     // Scroll to top and prevent scrolling.
@@ -165,50 +128,42 @@ function RouteComponent() {
       return;
     }
 
-    // for the medicine fields, remove the empty strings that might be added or after the semicolon
-    formState.form_fields = formState.form_fields.map((field) => {
-      if (field.options) {
-        let cleanedOptions = field.options.map(
-          (
-            option:
-              | { label: string; value: string; __isNew__?: boolean }
-              | string,
-          ) => {
-            console.log({ option }); // Object { label: "Damas", value: "Damas", __isNew__: true }
-            if (typeof option === "string") {
-              return option?.trim();
-            } else if (typeof option === "object") {
-              return {
-                ...option,
-                label: option.label?.trim(),
-                value: option.value?.trim(),
-                __isNew__: option.__isNew__,
-              };
-            } else if (
-              Array.isArray(option) &&
-              option.length > 0 &&
-              option[0]?.value
-            ) {
-              return option.map((subOption) => subOption.value?.trim());
-            }
-            return option?.trim();
-          },
-        );
-        if (field._tag === "medicine") {
-          cleanedOptions = cleanedOptions.filter(
-            (value) => value?.trim() !== "",
-          );
-        }
+    // For medicine fields, remove empty strings that might be added after semicolon separation
+    // This cleaning happens at submission time as noted in InputsConfiguration component
+    const cleanedFormFields = formState.form_fields.map((field) => {
+      if (field._tag === "medicine") {
+        const medicineField = field as any as EventForm.MedicineField;
+        if (medicineField.options) {
+          const cleanedOptions = (Array.isArray(medicineField.options) ? medicineField.options : [])
+            .map((option: any) => {
+              if (typeof option === "string") {
+                return option.trim();
+              } else if (typeof option === "object" && option !== null) {
+                return {
+                  ...option,
+                  label: option.label?.trim() || "",
+                  value: option.value?.trim() || "",
+                };
+              }
+              return option;
+            })
+            .filter((value: any) => {
+              if (typeof value === "string") {
+                return value.trim() !== "";
+              } else if (typeof value === "object" && value !== null) {
+                return (value.value?.trim() || value.label?.trim() || "") !== "";
+              }
+              return true;
+            });
 
-        return {
-          ...field,
-          options: cleanedOptions,
-        };
+          return {
+            ...medicineField,
+            options: cleanedOptions,
+          };
+        }
       }
       return field;
     });
-
-    console.log(formState.form_fields);
 
     const updateFormId = (() => {
       if (typeof formId === "string" && isValidUUID(formId)) {
@@ -218,8 +173,11 @@ function RouteComponent() {
     })();
     try {
       setIsSubmitting(true);
-      await saveForm({
-        data: { form: formState, updateFormId },
+      const { saveEventForm } = await import(
+        "@/lib/server-functions/event-form-editor"
+      );
+      await saveEventForm({
+        data: { form: { ...formState, form_fields: cleanedFormFields }, updateFormId },
       });
       toast.success("Form saved successfully");
       navigate({ to: "/app/event-forms" });
@@ -288,6 +246,7 @@ function RouteComponent() {
               type="text"
               name="name"
               value={formState.name}
+              disabled={isReadOnly}
               onChange={(e) =>
                 eventFormStore.send({
                   type: "set-form-name",
@@ -299,6 +258,7 @@ function RouteComponent() {
               label="Form Language"
               className="w-full"
               value={formState.language}
+              disabled={isReadOnly}
               onChange={(value) =>
                 value &&
                 eventFormStore.send({
@@ -318,6 +278,7 @@ function RouteComponent() {
               type="textarea"
               name="description"
               value={formState.description}
+              disabled={isReadOnly}
               onChange={(e) =>
                 eventFormStore.send({
                   type: "set-form-description",
@@ -329,7 +290,8 @@ function RouteComponent() {
               label="Is Editable"
               name="is_editable"
               checked={formState.is_editable}
-              onCheckedChange={(checked) =>
+              disabled={isReadOnly}
+            onCheckedChange={() =>
                 eventFormStore.send({ type: "toggle-form-editable" })
               }
             />
@@ -337,13 +299,14 @@ function RouteComponent() {
               label="Is Snapshot"
               name="is_snapshot_form"
               checked={formState.is_snapshot_form}
-              onCheckedChange={(checked) =>
+              disabled={isReadOnly}
+            onCheckedChange={() =>
                 eventFormStore.send({ type: "toggle-form-snapshot" })
               }
             />
             <Separator className="my-6" />
-            <InputsConfiguration
-              fields={formState.form_fields}
+            <InputsConfigurationComponent
+              fields={formState.form_fields as any}
               onRemoveField={handleFieldRemove}
               onFieldChange={handleFieldChange}
               onFieldOptionChange={handleFieldOptionChange}
@@ -352,10 +315,12 @@ function RouteComponent() {
             />
             <Separator className="my-6" />
 
-            <AddFormInputButtons addField={addField} />
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Saving..." : "Save"}
-            </Button>
+            {!isReadOnly && <AddFormInputButtons addField={addField} />}
+            {!isReadOnly && (
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Save"}
+              </Button>
+            )}
           </form>
         </div>
         {/* Right side - Form preview */}
@@ -451,7 +416,7 @@ function RouteComponent() {
                       description={field.description}
                       withAsterisk={field.required}
                       required={field.required}
-                      multi={field.multi}
+                      multi={(field as any).multi}
                     />
                   </div>
                 );
@@ -614,9 +579,9 @@ const ComponentRegistry = [
           frequency: "",
           intervals: "",
           dose: "",
-          doseUnits: EventForm.doseUnits,
+          doseUnits: EventForm.doseUnits as unknown as EventForm.DoseUnit[],
           duration: "",
-          durationUnits: EventForm.durationUnits,
+          durationUnits: EventForm.durationUnits as unknown as EventForm.DurationUnit[],
         },
       }),
     {

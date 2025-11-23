@@ -1,9 +1,4 @@
-import {
-  createFileRoute,
-  useNavigate,
-  useParams,
-} from "@tanstack/react-router";
-import { useEffect } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -23,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import db from "@/db";
 import Clinic from "@/models/clinic";
+import { useTranslation } from "@/lib/i18n/context";
 
 // Define the form schema
 const formSchema = z.object({
@@ -70,6 +66,7 @@ function RouteComponent() {
   const params = Route.useParams();
   const clinicId = params._splat;
   const isEditing = !!clinicId && clinicId !== "new";
+  const t = useTranslation();
 
   // Initialize form
   const form = useForm<FormValues>({
@@ -91,13 +88,13 @@ function RouteComponent() {
 
       toast.success(
         isEditing
-          ? "Clinic updated successfully"
-          : "Clinic created successfully"
+          ? t("messages.clinicUpdated")
+          : t("messages.clinicCreated"),
       );
       navigate({ to: "/app/clinics" });
     } catch (error) {
       console.error("Error saving clinic:", error);
-      toast.error("Failed to save clinic");
+      toast.error(t("messages.clinicSaveError"));
     }
   };
 
@@ -105,12 +102,12 @@ function RouteComponent() {
     <div className="container py-4">
       <div className="max-w-md">
         <h1 className="text-xl font-bold mb-2">
-          {isEditing ? "Edit Clinic" : "Register New Clinic"}
+          {isEditing ? t("clinicForm.titleEdit") : t("clinicForm.titleCreate")}
         </h1>
         <p className="text-muted-foreground mb-6">
           {isEditing
-            ? "Update the clinic information below"
-            : "Enter the details for the new clinic"}
+            ? t("clinicForm.subtitleEdit")
+            : t("clinicForm.subtitleCreate")}
         </p>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -119,12 +116,15 @@ function RouteComponent() {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Clinic Name</FormLabel>
+                  <FormLabel>{t("clinic.clinicName")}</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter clinic name" {...field} />
+                    <Input
+                      placeholder={t("clinicForm.namePlaceholder")}
+                      {...field}
+                    />
                   </FormControl>
                   <FormDescription>
-                    The name of the clinic as it will appear in the system
+                    {t("clinicForm.nameDescription")}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -136,10 +136,12 @@ function RouteComponent() {
                 variant="outline"
                 onClick={() => navigate({ to: "/app/clinics" })}
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button type="submit">
-                {isEditing ? "Update Clinic" : "Create Clinic"}
+                {isEditing
+                  ? t("clinicForm.buttons.update")
+                  : t("clinicForm.buttons.create")}
               </Button>
             </div>
           </form>

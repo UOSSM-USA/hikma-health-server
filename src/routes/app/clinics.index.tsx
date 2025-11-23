@@ -21,8 +21,16 @@ import {
   LucideView,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n/context";
 import { getAllClinics } from "@/lib/server-functions/clinics";
 import { Link } from "@tanstack/react-router";
+import { permissionsMiddleware } from "@/middleware/auth";
+import { createPermissionContext } from "@/lib/server-functions/permissions";
+import { checkClinicPermission } from "@/lib/server-functions/permissions";
+import { PermissionOperation } from "@/models/permissions";
+import { redirect } from "@tanstack/react-router";
+import { getCurrentUser } from "@/lib/server-functions/auth";
+import { useClinicPermissions } from "@/hooks/use-permissions";
 
 const deleteClinic = createServerFn({ method: "POST" })
   .validator((data: { id: string }) => data)
@@ -36,18 +44,40 @@ export const archiveClinic = createServerFn({ method: "POST" })
     return Clinic.API.setArchivedStatus(data.id, data.isArchived);
   });
 
+// Top-level guard to avoid creating server functions inside loader
+const ensureCanViewClinics = createServerFn({ method: "GET" })
+  .middleware([permissionsMiddleware])
+  .handler(async ({ context }) => {
+    const permContext = createPermissionContext(context);
+    checkClinicPermission(permContext, PermissionOperation.VIEW);
+    return true;
+  });
+
 export const Route = createFileRoute("/app/clinics/")({
   component: RouteComponent,
   loader: async () => {
+    // Guard: require VIEW permission for clinics
+    const ok = await ensureCanViewClinics();
+    if (!ok) {
+      throw redirect({ to: "/app", replace: true });
+    }
     const clinics = await getAllClinics();
-    return { clinics };
+    const currentUser = await getCurrentUser();
+    return { clinics, currentUser };
   },
 });
 
 function RouteComponent() {
-  const { clinics } = Route.useLoaderData();
+  const { clinics, currentUser } = Route.useLoaderData() as {
+    clinics: Clinic.EncodedT[];
+    currentUser: { role: any } | null;
+  };
   const navigate = useNavigate();
   const router = useRouter();
+  const { canAdd, canEdit, canDelete } = useClinicPermissions(
+    currentUser?.role,
+  );
+  const t = useTranslation();
 
   console.log("Clinics:", clinics);
 
@@ -61,17 +91,17 @@ function RouteComponent() {
 
   const handleDelete = (id: string) => {
     return;
-    if (!window.confirm("Are you sure you want to delete this clinic?")) {
+    if (!window.confirm(t("clinicsList.deleteConfirm"))) {
       return;
     }
 
     deleteClinic({ data: { id } })
       .catch((error) => {
         console.error(error);
-        toast.error(error.message);
+        toast.error(error.message || t("clinicsList.clinicDeleteError"));
       })
       .then(() => {
-        toast.success("Clinic deleted successfully");
+        toast.success(t("clinicsList.clinicDeletedSuccess"));
         router.invalidate({ sync: true });
       });
   };
@@ -80,20 +110,20 @@ function RouteComponent() {
     const usersCount =
       clinics.find((clinic) => clinic.id === id)?.users?.length || 0;
     if (usersCount > 0) {
-      toast.error("Cannot archive a clinic with users");
+      toast.error(t("clinicsList.cannotArchiveWithUsers"));
       return;
     }
-    if (!window.confirm("Are you sure you want to archive this clinic?")) {
+    if (!window.confirm(t("clinicsList.archiveConfirm"))) {
       return;
     }
 
     archiveClinic({ data: { id, isArchived: true } })
       .catch((error) => {
         console.error(error);
-        toast.error(error.message);
+        toast.error(error.message || t("clinicsList.clinicArchiveError"));
       })
       .then(() => {
-        toast.success("Clinic archived successfully");
+        toast.success(t("clinicsList.clinicArchivedSuccess"));
         router.invalidate({ sync: true });
       });
   };
@@ -101,20 +131,22 @@ function RouteComponent() {
   return (
     <div className="container py-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Clinics</h1>
-        <Button asChild>
-          <Link to="/app/clinics/edit/$" params={{ _splat: "new" }}>
-            Add Clinic
-          </Link>
-        </Button>
+        <h1 className="text-2xl font-bold">{t("clinicsList.title")}</h1>
+        {canAdd && (
+          <Button asChild>
+            <Link to="/app/clinics/edit/$" params={{ _splat: "new" }}>
+              {t("clinicsList.addClinic")}
+            </Link>
+          </Button>
+        )}
       </div>
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Users</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead>{t("clinicsList.nameHeader")}</TableHead>
+              <TableHead>{t("clinicsList.usersHeader")}</TableHead>
+              <TableHead>{t("clinicsList.actionsHeader")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -130,14 +162,14 @@ function RouteComponent() {
                     onClick={() => handleOpen(clinic.id)}
                   >
                     <LucideView className="mr-2" />
-                    Open
+                    {t("clinicsList.openButton")}
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => handleEdit(clinic.id)}
                   >
                     <LucideEdit className="mr-2" />
-                    Edit
+                    {t("clinicsList.editButton")}
                   </Button>
                   {/* DELETE IS NOT ALLOWED */}
                   {/*<Button
@@ -154,7 +186,7 @@ function RouteComponent() {
                     onClick={() => handleArchive(clinic.id)}
                   >
                     <LucideArchive className="mr-2" />
-                    Archive
+                    {t("clinicsList.archiveButton")}
                   </Button>
                 </TableCell>
               </TableRow>

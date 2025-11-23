@@ -18,10 +18,12 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { Link } from "@tanstack/react-router";
+import { useTranslation } from "@/lib/i18n/context";
 
 export function NavMain({
   items,
   handleSignOut,
+  onBeforeNavigate,
 }: {
   items: {
     title: string;
@@ -34,7 +36,9 @@ export function NavMain({
     }[];
   }[];
   handleSignOut: () => void;
+  onBeforeNavigate?: (url: string) => boolean | void;
 }) {
+  const t = useTranslation();
   return (
     <SidebarGroup>
       {/* <SidebarGroupLabel>Platform</SidebarGroupLabel> */}
@@ -61,7 +65,17 @@ export function NavMain({
                       {item.items.map((subItem) => (
                         <SidebarMenuSubItem key={subItem.title}>
                           <SidebarMenuSubButton asChild>
-                            <Link to={subItem.url}>
+                            <Link
+                              to={subItem.url}
+                              onClick={(e) => {
+                                if (onBeforeNavigate) {
+                                  const ok = onBeforeNavigate(subItem.url);
+                                  if (ok === false) {
+                                    e.preventDefault();
+                                  }
+                                }
+                              }}
+                            >
                               <span>{subItem.title}</span>
                             </Link>
                           </SidebarMenuSubButton>
@@ -72,7 +86,17 @@ export function NavMain({
                 </>
               ) : (
                 <SidebarMenuButton asChild tooltip={item.title}>
-                  <Link to={item.url}>
+                  <Link
+                    to={item.url}
+                    onClick={(e) => {
+                      if (onBeforeNavigate) {
+                        const ok = onBeforeNavigate(item.url);
+                        if (ok === false) {
+                          e.preventDefault();
+                        }
+                      }
+                    }}
+                  >
                     {item.icon && <item.icon />}
                     <span>{item.title}</span>
                   </Link>
@@ -83,13 +107,13 @@ export function NavMain({
         ))}
         <SidebarMenuButton
           asChild
-          tooltip="Sign out"
+          tooltip={t("nav.signOut")}
           data-testid="sign-out-button"
           onClick={handleSignOut}
         >
           <div className="flex space-x-2">
             <LucideLogOut className="w-4 h-4" />
-            <span>Sign out</span>
+            <span>{t("nav.signOut")}</span>
           </div>
         </SidebarMenuButton>
       </SidebarMenu>

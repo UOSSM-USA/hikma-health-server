@@ -11,6 +11,7 @@ import { Option } from "effect";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTranslation, useLanguage } from "@/lib/i18n/context";
 import {
   Table,
   TableBody,
@@ -82,6 +83,8 @@ export const Route = createFileRoute("/app/patients/")({
 function RouteComponent() {
   const { currentUser, patients, pagination, patientRegistrationForm } =
     Route.useLoaderData();
+  const t = useTranslation();
+  const { language } = useLanguage();
 
   const [patientsList, setPatientsList] =
     React.useState<(typeof Patient.PatientWithAttributesSchema.Encoded)[]>(
@@ -103,7 +106,14 @@ function RouteComponent() {
   const [loading, setLoading] = React.useState(false);
 
   const fields = patientRegistrationForm?.fields.filter((f) => !f.deleted);
-  const headers = fields?.map((f) => f.label.en) || [];
+  // Use current language for field labels instead of always English
+  const headers = fields?.map((f) => {
+    if (typeof f.label === 'object' && f.label !== null && !Array.isArray(f.label)) {
+      const labelObj = f.label as Record<string, string>;
+      return labelObj[language] || labelObj.en || '';
+    }
+    return typeof f.label === 'string' ? f.label : '';
+  }) || [];
 
   // Calculate pagination values using functional approach
   const pageSize = Option.getOrElse(
@@ -358,7 +368,7 @@ function RouteComponent() {
       document.body.removeChild(link);
     } catch (error: any) {
       console.error("Error exporting patients:", error, error.message);
-      toast.error("Failed to export patients", error.message);
+      toast.error(t("patientsList.exportError"), error.message);
     }
   };
 
@@ -382,13 +392,13 @@ function RouteComponent() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
         <div className="text-center space-y-4">
           <h2 className="text-2xl font-semibold text-gray-800">
-            No Registration Form Available
+            {t("registration.noFormTitle")}
           </h2>
           <p className="text-gray-600">
-            Please create a patient registration form first.
+            {t("registration.noFormDescription")}
           </p>
           <Link to="/app/patients/customize-registration-form" className="mt-4">
-            <Button className="primary">Create Registration Form</Button>
+            <Button className="primary">{t("registration.createFormCta")}</Button>
           </Link>
         </div>
       </div>
@@ -397,10 +407,11 @@ function RouteComponent() {
 
   return (
     <div>
+      <h1 className="text-2xl font-bold mb-6">{t("patientsList.title")}</h1>
       <div className="w-full flex items-center max-w-2xl gap-4 py-4">
         <Input
           className="pl-4 pr-4 md:w-lg"
-          placeholder="Search patients..."
+          placeholder={t("patientsList.searchPlaceholder")}
           type="search"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -411,14 +422,14 @@ function RouteComponent() {
           onClick={() => handleSearch(1)}
           disabled={loading}
         >
-          {loading ? "Searching..." : "Search"}
+          {loading ? t("patientsList.searching") : t("patientsList.searchButton")}
         </Button>
       </div>
 
       <div>
         <Button type="button" onClick={handleExport}>
           <LucideDownload className="mr-2 h-4 w-4" />
-          Export All Patient Data
+          {t("patientsList.exportButton")}
         </Button>
       </div>
 
@@ -427,10 +438,10 @@ function RouteComponent() {
           <TableHeader>
             <TableRow>
               <TableHead className="px-6" key={"actions"}>
-                Actions
+                {t("patientsList.actionsHeader")}
               </TableHead>
               <TableHead className="px-6" key={"id"}>
-                ID
+                {t("patientsList.idHeader")}
               </TableHead>
               {headers.map((header) => (
                 <TableHead className="px-6" key={header}>
@@ -485,6 +496,7 @@ function RouteComponent() {
           <PaginationContent>
             <PaginationItem>
               <PaginationPrevious
+                label={t("common.paginationPrevious")}
                 onClick={() => handlePageChange(currentPage - 1)}
                 className={
                   currentPage <= 1
@@ -521,6 +533,7 @@ function RouteComponent() {
 
             <PaginationItem>
               <PaginationNext
+                label={t("common.paginationNext")}
                 onClick={() => handlePageChange(currentPage + 1)}
                 className={
                   currentPage >= totalPages

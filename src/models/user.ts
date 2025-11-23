@@ -6,6 +6,7 @@ import {
   type Selectable,
   type Insertable,
   type Updateable,
+  type JSONColumnType,
   sql,
 } from "kysely";
 import Token from "./token";
@@ -35,6 +36,7 @@ namespace User {
     REGISTRAR: "registrar",
     PROVIDER: "provider",
     ADMIN: "admin",
+    SUPER_ADMIN_2: "super_admin_2",
     SUPER_ADMIN: "super_admin",
   };
 
@@ -42,6 +44,7 @@ namespace User {
     ROLES.REGISTRAR,
     ROLES.PROVIDER,
     ROLES.ADMIN,
+    ROLES.SUPER_ADMIN_2,
     ROLES.SUPER_ADMIN,
   ] as const;
 
@@ -49,6 +52,7 @@ namespace User {
     Schema.Literal(ROLES.REGISTRAR),
     Schema.Literal(ROLES.PROVIDER),
     Schema.Literal(ROLES.ADMIN),
+    Schema.Literal(ROLES.SUPER_ADMIN_2),
     Schema.Literal(ROLES.SUPER_ADMIN),
   );
 
@@ -59,10 +63,11 @@ namespace User {
    * This hierarchy prevents lower-level users from managing higher-level users
    */
   export const ROLE_HIERARCHY: Record<typeof RoleSchema.Type, number> = {
-    registrar: 1,    // Can only register patients
-    provider: 2,     // Can manage patients
-    admin: 3,        // Can manage clinic users and patients
-    super_admin: 4,  // Can manage all users and system
+    registrar: 1,      // Can only register patients
+    provider: 2,       // Can manage patients
+    admin: 3,          // Can manage clinic users and patients
+    super_admin_2: 4,  // Full system access (no delete)
+    super_admin: 5,    // Full system access with delete
   };
 
   /**
@@ -75,8 +80,12 @@ namespace User {
     actorRole: typeof RoleSchema.Type,
     targetRole: typeof RoleSchema.Type,
   ): boolean {
-    // Only admins and super_admins can manage users
-    if (actorRole !== ROLES.ADMIN && actorRole !== ROLES.SUPER_ADMIN) {
+    // Only admins, super_admin_2, and super_admins can manage users
+    if (
+      actorRole !== ROLES.ADMIN &&
+      actorRole !== ROLES.SUPER_ADMIN_2 &&
+      actorRole !== ROLES.SUPER_ADMIN
+    ) {
       return false;
     }
     
@@ -85,8 +94,17 @@ namespace User {
       return true;
     }
     
-    // Admins can manage everyone except super_admins
-    if (actorRole === ROLES.ADMIN && targetRole !== ROLES.SUPER_ADMIN) {
+    // Super Admin 2 can manage everyone except super_admin
+    if (actorRole === ROLES.SUPER_ADMIN_2 && targetRole !== ROLES.SUPER_ADMIN) {
+      return true;
+    }
+    
+    // Admins can manage everyone except super_admin_2 and super_admins
+    if (
+      actorRole === ROLES.ADMIN &&
+      targetRole !== ROLES.SUPER_ADMIN &&
+      targetRole !== ROLES.SUPER_ADMIN_2
+    ) {
       return true;
     }
     
@@ -128,8 +146,17 @@ namespace User {
       return true;
     }
     
-    // Admins can create roles lower than super_admin
-    if (actorRole === ROLES.ADMIN && targetRole !== ROLES.SUPER_ADMIN) {
+    // Super Admin 2 can create any role except super_admin
+    if (actorRole === ROLES.SUPER_ADMIN_2 && targetRole !== ROLES.SUPER_ADMIN) {
+      return true;
+    }
+    
+    // Admins can create roles lower than super_admin_2
+    if (
+      actorRole === ROLES.ADMIN &&
+      targetRole !== ROLES.SUPER_ADMIN &&
+      targetRole !== ROLES.SUPER_ADMIN_2
+    ) {
       return true;
     }
     
@@ -317,6 +344,11 @@ namespace User {
     typeof User.RoleSchema.Type,
     (typeof CapabilitySchema.Type)[]
   > = {
+    registrar: [
+      CAPABILITIES.CREATE_PATIENT,
+      CAPABILITIES.READ_PATIENT,
+      CAPABILITIES.UPDATE_PATIENT,
+    ],
     admin: [...ADMIN_CAPABILITIES],
     provider: [
       CAPABILITIES.READ_USER,
@@ -328,6 +360,7 @@ namespace User {
       CAPABILITIES.READ_REPORT,
       CAPABILITIES.UPDATE_REPORT,
     ],
+    super_admin_2: [...ADMIN_CAPABILITIES],
     super_admin: [...ADMIN_CAPABILITIES],
   };
 
@@ -380,6 +413,7 @@ namespace User {
       instance_url: "instance_url",
       clinic_id: "clinic_id",
       is_deleted: "is_deleted",
+      metadata: "metadata",
       created_at: "created_at",
       updated_at: "updated_at",
       last_modified: "last_modified",
@@ -396,6 +430,7 @@ namespace User {
       instance_url: string | null;
       clinic_id: string | null;
       is_deleted: Generated<boolean>;
+      metadata: JSONColumnType<Record<string, any>>;
       created_at: Generated<ColumnType<Date, string | undefined, never>>;
       updated_at: Generated<
         ColumnType<Date, string | undefined, string | undefined>
