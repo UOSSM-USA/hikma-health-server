@@ -89,8 +89,7 @@ export const Route = createFileRoute("/app/event-forms/")({
     }
     const currentUser = (await getCurrentUser()) as User.EncodedT | null;
     return {
-      forms: await getEventForms(),
-      currentUser,
+      forms: await getEventForms({ data: { includeDeleted: false } }),
     };
   },
 });
