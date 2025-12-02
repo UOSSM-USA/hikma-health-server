@@ -1,5 +1,5 @@
 import { getPatientById } from "@/lib/server-functions/patients";
-import { getPatientVitals, createPatientVital } from "@/lib/server-functions/vitals";
+import { getPatientVitals, createPatientVital, updatePatientVital } from "@/lib/server-functions/vitals";
 import { getEventsByPatientId } from "@/lib/server-functions/events";
 import { getEventForms } from "@/lib/server-functions/event-forms";
 import { getVisitsByPatientId } from "@/lib/server-functions/visits";
@@ -32,13 +32,13 @@ import {
   Weight,
   LucideUser,
 } from "lucide-react";
-import { format } from "date-fns";
+import { differenceInDays, format } from "date-fns";
 import type PatientVital from "@/models/patient-vital";
 import type Patient from "@/models/patient";
 import Appointment from "@/models/appointment";
 import type Prescription from "@/models/prescription";
 import type Visit from "@/models/visit";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getAppointmentsByPatientId } from "@/lib/server-functions/appointments";
 import type Clinic from "@/models/clinic";
 import type User from "@/models/user";
@@ -196,6 +196,80 @@ function RouteComponent() {
     pain_level: "",
   });
   const [isSavingVitals, setIsSavingVitals] = useState(false);
+  const [editingVital, setEditingVital] = useState<PatientVital.EncodedT | null>(null);
+  const [vitalRange, setVitalRange] = useState<"7d" | "30d" | "90d" | "all">("90d");
+
+  const filteredVitals = useMemo(() => {
+    if (!initialVitals || initialVitals.length === 0) return [];
+    if (vitalRange === "all") return initialVitals;
+
+    const days =
+      vitalRange === "7d" ? 7 : vitalRange === "30d" ? 30 : 90;
+    const now = new Date();
+
+    return initialVitals.filter((v) => {
+      const ts = new Date(v.timestamp);
+      const diff = differenceInDays(now, ts);
+      return diff <= days;
+    });
+  }, [initialVitals, vitalRange]);
+
+  const sortedVitalsAsc = useMemo(
+    () =>
+      [...filteredVitals].sort(
+        (a, b) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      ),
+    [filteredVitals],
+  );
+
+  const visitVitalsMap = useMemo(() => {
+    const map: Record<string, PatientVital.EncodedT[]> = {};
+    for (const vital of initialVitals) {
+      if (vital.visit_id) {
+        if (!map[vital.visit_id]) {
+          map[vital.visit_id] = [];
+        }
+        map[vital.visit_id].push(vital);
+      }
+    }
+    return map;
+  }, [initialVitals]);
+
+  const visitPrescriptionsMap = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        prescription: Prescription.EncodedT;
+        patient: Patient.EncodedT;
+        clinic: Clinic.EncodedT;
+        provider: User.EncodedT;
+      }[]
+    > = {};
+    for (const item of prescriptions) {
+      const visitId = item.prescription.visit_id;
+      if (visitId) {
+        if (!map[visitId]) {
+          map[visitId] = [];
+        }
+        map[visitId].push(item);
+      }
+    }
+    return map;
+  }, [prescriptions]);
+
+  const visitEventsMap = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    for (const event of events) {
+      if (event.visit_id) {
+        if (!map[event.visit_id]) {
+          map[event.visit_id] = [];
+        }
+        map[event.visit_id].push(event);
+      }
+    }
+    return map;
+  }, [events]);
 
   useEffect(() => {
     if (initialVitals && initialVitals.length > 0) {
@@ -228,6 +302,72 @@ function RouteComponent() {
     }
     return age;
   };
+
+  type SparklinePoint = { x: number; y: number };
+
+  function VitalTrendSparkline({
+    label,
+    vitals,
+    getValue,
+    unit,
+  }: {
+    label: string;
+    vitals: PatientVital.EncodedT[];
+    getValue: (v: PatientVital.EncodedT) => number | null;
+    unit: string;
+  }) {
+    const values = vitals
+      .map((v) => {
+        const raw = getValue(v);
+        if (raw === null || raw === undefined) return null;
+        const num = Number(raw);
+        return Number.isFinite(num) ? num : null;
+      })
+      .filter((v): v is number => v !== null);
+
+    if (values.length < 2) {
+      return null;
+    }
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const width = 160;
+    const height = 40;
+
+    const points: SparklinePoint[] = values.map((value, index) => ({
+      x: (index / (values.length - 1)) * width,
+      y: height - ((value - min) / range) * height,
+    }));
+
+    const path = points
+      .map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`)
+      .join(" ");
+
+    const latest = values[values.length - 1];
+
+    return (
+      <div className="border rounded-lg p-3">
+        <div className="flex items-baseline justify-between mb-2">
+          <span className="text-xs font-medium text-muted-foreground">
+            {label}
+          </span>
+          <span className="text-sm font-semibold">
+            {typeof latest === "number" ? latest.toFixed(1) : "—"} {unit}
+          </span>
+        </div>
+        <svg width={width} height={height} className="text-primary">
+          <path
+            d={path}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+      </div>
+    );
+  }
 
   // Get patient initials for avatar
   const getInitials = (givenName?: string, surname?: string) => {
@@ -271,49 +411,100 @@ function RouteComponent() {
   const handleSaveVitals = async () => {
     setIsSavingVitals(true);
     try {
-      // Calculate BMI if both weight and height are provided
-      // BMI = weight (kg) / (height (m))^2
-      // Since height is in cm, we convert: BMI = weight (kg) / ((height (cm) / 100)^2)
-      const weight = vitalFormData.weight_kg ? Number(vitalFormData.weight_kg) : null;
-      const height = vitalFormData.height_cm ? Number(vitalFormData.height_cm) : null;
+      const weight = vitalFormData.weight_kg
+        ? Number(vitalFormData.weight_kg)
+        : null;
+      const height = vitalFormData.height_cm
+        ? Number(vitalFormData.height_cm)
+        : null;
       let bmi: number | null = null;
-      
-      if (weight && height && height > 0) {
+
+      if (weight !== null && height !== null && height > 0) {
         const heightInMeters = height / 100;
-        bmi = weight / (heightInMeters * heightInMeters);
-        // Round to 2 decimal places
-        bmi = Math.round(bmi * 100) / 100;
+        bmi = parseFloat(
+          (weight / (heightInMeters * heightInMeters)).toFixed(2),
+        );
       }
 
-      const vitalData: PatientVital.Table.NewPatientVitals = {
-        id: undefined,
-        patient_id: patientId,
-        visit_id: null,
-        timestamp: new Date(),
-        systolic_bp: vitalFormData.systolic_bp ? Number(vitalFormData.systolic_bp) : null,
-        diastolic_bp: vitalFormData.diastolic_bp ? Number(vitalFormData.diastolic_bp) : null,
-        heart_rate: vitalFormData.heart_rate ? Number(vitalFormData.heart_rate) : null,
-        temperature_celsius: vitalFormData.temperature_celsius ? Number(vitalFormData.temperature_celsius) : null,
-        oxygen_saturation: vitalFormData.oxygen_saturation ? Number(vitalFormData.oxygen_saturation) : null,
-        respiratory_rate: vitalFormData.respiratory_rate ? Number(vitalFormData.respiratory_rate) : null,
-        weight_kg: weight,
-        height_cm: height,
-        pain_level: vitalFormData.pain_level ? Number(vitalFormData.pain_level) : null,
-        bp_position: null,
-        bmi: bmi,
-        waist_circumference_cm: null,
-        pulse_rate: null,
-        recorded_by_user_id: null,
-        metadata: {},
-        is_deleted: false,
-        created_at: new Date(),
-        updated_at: new Date(),
-        deleted_at: null,
-      };
+      if (editingVital) {
+        await updatePatientVital({
+          data: {
+            id: editingVital.id,
+            updates: {
+              systolic_bp: vitalFormData.systolic_bp
+                ? Number(vitalFormData.systolic_bp)
+                : null,
+              diastolic_bp: vitalFormData.diastolic_bp
+                ? Number(vitalFormData.diastolic_bp)
+                : null,
+              heart_rate: vitalFormData.heart_rate
+                ? Number(vitalFormData.heart_rate)
+                : null,
+              temperature_celsius: vitalFormData.temperature_celsius
+                ? Number(vitalFormData.temperature_celsius)
+                : null,
+              oxygen_saturation: vitalFormData.oxygen_saturation
+                ? Number(vitalFormData.oxygen_saturation)
+                : null,
+              respiratory_rate: vitalFormData.respiratory_rate
+                ? Number(vitalFormData.respiratory_rate)
+                : null,
+              weight_kg: weight,
+              height_cm: height,
+              pain_level: vitalFormData.pain_level
+                ? Number(vitalFormData.pain_level)
+                : null,
+              bmi,
+            },
+          },
+        });
+      } else {
+        const vitalData: PatientVital.Table.NewPatientVitals = {
+          id: undefined,
+          patient_id: patientId,
+          visit_id: null,
+          timestamp: new Date(),
+          systolic_bp: vitalFormData.systolic_bp
+            ? Number(vitalFormData.systolic_bp)
+            : null,
+          diastolic_bp: vitalFormData.diastolic_bp
+            ? Number(vitalFormData.diastolic_bp)
+            : null,
+          heart_rate: vitalFormData.heart_rate
+            ? Number(vitalFormData.heart_rate)
+            : null,
+          temperature_celsius: vitalFormData.temperature_celsius
+            ? Number(vitalFormData.temperature_celsius)
+            : null,
+          oxygen_saturation: vitalFormData.oxygen_saturation
+            ? Number(vitalFormData.oxygen_saturation)
+            : null,
+          respiratory_rate: vitalFormData.respiratory_rate
+            ? Number(vitalFormData.respiratory_rate)
+            : null,
+          weight_kg: weight,
+          height_cm: height,
+          pain_level: vitalFormData.pain_level
+            ? Number(vitalFormData.pain_level)
+            : null,
+          bp_position: null,
+          bmi,
+          waist_circumference_cm: null,
+          pulse_rate: null,
+          recorded_by_user_id: null,
+          metadata: {},
+          is_deleted: false,
+          created_at: new Date(),
+          updated_at: new Date(),
+          deleted_at: null,
+        };
 
-      await createPatientVital({ data: vitalData });
+        await createPatientVital({ data: vitalData });
+      }
+
       toast.success(t("patientDetail.vitalsSaved"));
       setShowVitalForm(false);
+      setEditingVital(null);
       setVitalFormData({
         systolic_bp: "",
         diastolic_bp: "",
@@ -325,7 +516,6 @@ function RouteComponent() {
         height_cm: "",
         pain_level: "",
       });
-      // Reload the page to refresh vitals
       window.location.reload();
     } catch (error) {
       console.error("Failed to save vitals:", error);
@@ -550,17 +740,34 @@ function RouteComponent() {
                         onChange={(e) => setVitalFormData({ ...vitalFormData, pain_level: e.target.value })}
                       />
                     </div>
-                  </div>
-                  <div className="flex justify-end gap-2 mt-6">
-                    <Button variant="outline" onClick={() => setShowVitalForm(false)}>
-                      {t("patientDetail.cancel")}
-                    </Button>
-                    <Button onClick={handleSaveVitals} disabled={isSavingVitals}>
-                      {isSavingVitals ? t("common.saving") : t("patientDetail.saveVitals")}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
+              </div>
+              <div className="flex justify-end gap-2 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowVitalForm(false);
+                    setEditingVital(null);
+                    setVitalFormData({
+                      systolic_bp: "",
+                      diastolic_bp: "",
+                      heart_rate: "",
+                      temperature_celsius: "",
+                      oxygen_saturation: "",
+                      respiratory_rate: "",
+                      weight_kg: "",
+                      height_cm: "",
+                      pain_level: "",
+                    });
+                  }}
+                >
+                  {t("patientDetail.cancel")}
+                </Button>
+                <Button onClick={handleSaveVitals} disabled={isSavingVitals}>
+                  {isSavingVitals ? t("common.saving") : t("patientDetail.saveVitals")}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
             </div>
           </div>
         </CardHeader>
@@ -721,6 +928,90 @@ function RouteComponent() {
                           <p className="font-mono text-xs">{visit.id.slice(0, 8)}</p>
                         </div>
                       </div>
+
+                      {/* Linked vitals for this visit */}
+                      {visitVitalsMap[visit.id] && visitVitalsMap[visit.id].length > 0 && (
+                        <div className="mt-3 border-t pt-3">
+                          <p className="text-xs font-semibold mb-2 text-muted-foreground">
+                            {t("patientDetail.vitalHistory")}
+                          </p>
+                          <div className="space-y-2 text-xs text-muted-foreground">
+                            {visitVitalsMap[visit.id].map((vital) => (
+                              <div key={vital.id} className="flex justify-between">
+                                <span>
+                                  {format(new Date(vital.timestamp), "MMM dd, yyyy HH:mm")}
+                                </span>
+                                <span>
+                                  {vital.systolic_bp && vital.diastolic_bp
+                                    ? `${vital.systolic_bp}/${vital.diastolic_bp} mmHg`
+                                    : ""}
+                                  {vital.heart_rate
+                                    ? ` • ${t("patientDetail.heartRate")}: ${vital.heart_rate} bpm`
+                                    : ""}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Linked prescriptions for this visit */}
+                      {visitPrescriptionsMap[visit.id] &&
+                        visitPrescriptionsMap[visit.id].length > 0 && (
+                          <div className="mt-3 border-t pt-3">
+                            <p className="text-xs font-semibold mb-2 text-muted-foreground">
+                              {t("patientDetail.prescriptions")}
+                            </p>
+                            <div className="space-y-2 text-xs text-muted-foreground">
+                              {visitPrescriptionsMap[visit.id].map(
+                                ({ prescription }) => (
+                                  <div key={prescription.id} className="flex justify-between">
+                                    <span>
+                                      {format(
+                                        new Date(prescription.prescribed_at),
+                                        "MMM dd, yyyy",
+                                      )}
+                                    </span>
+                                    <span className="truncate max-w-[200px]">
+                                      {prescription.items && prescription.items.length > 0
+                                        ? (prescription.items[0] as any).medication ||
+                                          (prescription.items[0] as any).name
+                                        : ""}
+                                    </span>
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Linked events for this visit */}
+                      {visitEventsMap[visit.id] &&
+                        visitEventsMap[visit.id].length > 0 && (
+                          <div className="mt-3 border-t pt-3">
+                            <p className="text-xs font-semibold mb-2 text-muted-foreground">
+                              {t("patientDetail.eventForms")}
+                            </p>
+                            <div className="space-y-2 text-xs text-muted-foreground">
+                              {visitEventsMap[visit.id].map((event) => (
+                                <div
+                                  key={event.id}
+                                  className="flex justify-between items-center"
+                                >
+                                  <span>
+                                    {event.event_type || t("common.unknown")}
+                                  </span>
+                                  <span>
+                                    {format(
+                                      new Date(event.created_at),
+                                      "MMM dd, yyyy HH:mm",
+                                    )}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                     </div>
                   ))}
                 </div>
@@ -736,15 +1027,100 @@ function RouteComponent() {
         <TabsContent value="vitals">
           <Card>
             <CardHeader>
-              <CardTitle>{t("patientDetail.vitalHistory")}</CardTitle>
-              <CardDescription>{t("patientDetail.vitalHistoryDescription")}</CardDescription>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <CardTitle>{t("patientDetail.vitalHistory")}</CardTitle>
+                  <CardDescription>{t("patientDetail.vitalHistoryDescription")}</CardDescription>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">
+                    {t("common.dateRange") ?? "Range"}
+                  </span>
+                  <div className="inline-flex rounded-md border bg-background p-1">
+                    {[
+                      { key: "7d", label: "7d" },
+                      { key: "30d", label: "30d" },
+                      { key: "90d", label: "90d" },
+                      { key: "all", label: t("common.all") ?? "All" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        className={[
+                          "px-2 py-1 rounded-md",
+                          vitalRange === opt.key
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:bg-muted",
+                        ].join(" ")}
+                        onClick={() =>
+                          setVitalRange(opt.key as "7d" | "30d" | "90d" | "all")
+                        }
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
-              {initialVitals && initialVitals.length > 0 ? (
+              {sortedVitalsAsc.length > 1 && (
+                <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {/* Simple trend “charts” using SVG sparklines */}
+                  <VitalTrendSparkline
+                    label={t("patientDetail.bloodPressure")}
+                    vitals={sortedVitalsAsc}
+                    getValue={(v) =>
+                      v.systolic_bp && v.diastolic_bp
+                        ? (v.systolic_bp + v.diastolic_bp) / 2
+                        : null
+                    }
+                    unit="mmHg"
+                  />
+                  <VitalTrendSparkline
+                    label={t("patientDetail.heartRate")}
+                    vitals={sortedVitalsAsc}
+                    getValue={(v) => v.heart_rate ?? null}
+                    unit="bpm"
+                  />
+                  <VitalTrendSparkline
+                    label={t("patientDetail.weight")}
+                    vitals={sortedVitalsAsc}
+                    getValue={(v) => v.weight_kg ?? null}
+                    unit="kg"
+                  />
+                  <VitalTrendSparkline
+                    label={t("patientDetail.temperature")}
+                    vitals={sortedVitalsAsc}
+                    getValue={(v) => v.temperature_celsius ?? null}
+                    unit="°C"
+                  />
+                  <VitalTrendSparkline
+                    label={t("patientDetail.oxygenSaturation")}
+                    vitals={sortedVitalsAsc}
+                    getValue={(v) => v.oxygen_saturation ?? null}
+                    unit="%"
+                  />
+                  <VitalTrendSparkline
+                    label={t("patientDetail.bmi")}
+                    vitals={sortedVitalsAsc}
+                    getValue={(v) => {
+                      if (!v.weight_kg || !v.height_cm) return null;
+                      const h = v.height_cm / 100;
+                      if (!h) return null;
+                      const bmi = v.weight_kg / (h * h);
+                      return Number.isFinite(bmi) ? bmi : null;
+                    }}
+                    unit=""
+                  />
+                </div>
+              )}
+
+              {filteredVitals && filteredVitals.length > 0 ? (
                 <div className="space-y-4">
-                  {initialVitals.map((vital) => (
+                  {filteredVitals.map((vital) => (
                     <div key={vital.id} className="border rounded-lg p-4">
-                      <div className="flex justify-between items-start">
+                      <div className="flex justify-between items-start gap-4">
                         <div className="space-y-1 flex-1">
                           <p className="text-sm font-medium">
                             {format(
@@ -789,6 +1165,29 @@ function RouteComponent() {
                               <span>{t("patientDetail.painLevel")}: {vital.pain_level}/10</span>
                             )}
                           </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingVital(vital);
+                              setVitalFormData({
+                                systolic_bp: vital.systolic_bp?.toString() ?? "",
+                                diastolic_bp: vital.diastolic_bp?.toString() ?? "",
+                                heart_rate: vital.heart_rate?.toString() ?? "",
+                                temperature_celsius: vital.temperature_celsius?.toString() ?? "",
+                                oxygen_saturation: vital.oxygen_saturation?.toString() ?? "",
+                                respiratory_rate: vital.respiratory_rate?.toString() ?? "",
+                                weight_kg: vital.weight_kg?.toString() ?? "",
+                                height_cm: vital.height_cm?.toString() ?? "",
+                                pain_level: vital.pain_level?.toString() ?? "",
+                              });
+                              setShowVitalForm(true);
+                            }}
+                          >
+                            {t("common.edit")}
+                          </Button>
                         </div>
                       </div>
                     </div>

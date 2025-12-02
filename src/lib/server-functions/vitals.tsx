@@ -128,3 +128,52 @@ export const createPatientVital = createServerFn({
       }
     });
   });
+
+export const updatePatientVital = createServerFn({
+  method: "POST",
+})
+  .validator(
+    (data: {
+      id: string;
+      updates: {
+        systolic_bp?: number | null;
+        diastolic_bp?: number | null;
+        heart_rate?: number | null;
+        temperature_celsius?: number | null;
+        oxygen_saturation?: number | null;
+        respiratory_rate?: number | null;
+        weight_kg?: number | null;
+        height_cm?: number | null;
+        pain_level?: number | null;
+        bmi?: number | null;
+      };
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    return Sentry.startSpan({ name: "updatePatientVital" }, async () => {
+      const authorized = await userRoleTokenHasCapability([
+        User.CAPABILITIES.UPDATE_PATIENT,
+        User.CAPABILITIES.UPDATE_ALL_PATIENT,
+      ]);
+
+      if (!authorized) {
+        return Promise.reject({
+          message: "Unauthorized: Insufficient permissions",
+          source: "updatePatientVital",
+        });
+      }
+
+      try {
+        const vital = await PatientVital.API.update(
+          data.id,
+          data.updates as PatientVital.Table.PatientVitalsUpdate,
+        );
+        return vital;
+      } catch (error) {
+        console.error("Failed to update patient vital:", error);
+        return Promise.reject({
+          message: "Failed to update patient vital",
+        });
+      }
+    });
+  });
