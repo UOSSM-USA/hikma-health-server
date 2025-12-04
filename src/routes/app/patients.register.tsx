@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Input } from "@/components/ui/input";
 import { DatePickerInput } from "@/components/date-picker-input";
 import { Button } from "@/components/ui/button";
@@ -60,8 +60,7 @@ export const Route = createFileRoute("/app/patients/register")({
 
 function RouteComponent() {
   const { patientRegistrationForm, clinicsList } = Route.useLoaderData();
-  const { language } = useLanguage();
-  const t = useTranslation();
+  const navigate = Route.useNavigate();
 
   const { formState, handleSubmit, register, watch, setValue } = useForm({
     mode: "all",
@@ -94,8 +93,7 @@ function RouteComponent() {
       government_id: Option.fromNullable(data.government_id),
       external_patient_id: Option.fromNullable(data.external_patient_id),
       primary_clinic_id: Option.fromNullable(data.primary_clinic_id),
-      last_modified_by: Option.none(),
-      additional_attributes: {},
+      last_modified_by: Option.fromNullable(data.last_modified_by),
     };
 
     const patientBaseData: Record<string, any> = {};
@@ -142,10 +140,10 @@ function RouteComponent() {
       });
 
     try {
-      await createPatient({
-        data: { baseFields: patient, additionalAttributes } as any,
+      const result = await createPatient({
+        data: { baseFields: patient, additionalAttributes },
       });
-      toast.success(t("registration.success"));
+      navigate({ to: `/app/patients/${result.patientId}` });
     } catch (error) {
       console.error("Failed to register patient:", error);
       toast.error(t("registration.error"));

@@ -1,6 +1,6 @@
 import {
   getPatientById,
-  softDeletePatientById,
+  softDeletePatientsByIds,
 } from "@/lib/server-functions/patients";
 import { getPatientVitals } from "@/lib/server-functions/vitals";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
@@ -220,8 +220,8 @@ function RouteComponent() {
 
   const handleDeletePatient = async (patientId: string) => {
     if (confirm("Are you sure you want to delete this patient?")) {
-      const { error, success } = await softDeletePatientById({
-        data: { id: patientId },
+      const { error, success } = await softDeletePatientsByIds({
+        data: { ids: [patientId] },
       });
 
       if (!error && success) {
@@ -455,7 +455,7 @@ function RouteComponent() {
                 </div>
                 <p className="text-2xl font-bold">
                   {mostRecentVital.bmi
-                    ? parseFloat(mostRecentVital.bmi)?.toFixed(1)
+                    ? parseFloat(mostRecentVital?.bmi)?.toFixed(1)
                     : "—"}
                 </p>
                 <p className="text-xs text-muted-foreground">kg/m²</p>
