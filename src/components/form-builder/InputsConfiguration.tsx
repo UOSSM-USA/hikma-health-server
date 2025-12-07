@@ -26,6 +26,7 @@ import uniq from "lodash/uniq";
 import If from "@/components/if";
 import EventForm from "@/models/event-form";
 import { Textarea } from "../ui/textarea";
+import { ValidationConfig } from "./ValidationConfig";
 
 let YesNoOptions: { value: string; label: string }[] = [
   { value: "yes", label: "Yes" },
@@ -64,6 +65,7 @@ type InputConfigProps = {
     units: EventForm.DoseUnit[] | false,
   ) => void;
   onRemoveField: (fieldId: string) => void;
+  onValidationChange?: (fieldId: string, validation: EventForm.ValidationRule[] | undefined) => void;
 };
 
 export function InputsConfiguration({
@@ -72,6 +74,7 @@ export function InputsConfiguration({
   onFieldOptionChange,
   onFieldUnitChange,
   onRemoveField,
+  onValidationChange,
 }: InputConfigProps) {
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -236,6 +239,15 @@ export function InputsConfiguration({
                       checked={field.required}
                       label="Required Field"
                     />
+
+                    {onValidationChange && (
+                      <ValidationConfig
+                        field={field}
+                        onValidationChange={(validation) =>
+                          onValidationChange(field.id, validation)
+                        }
+                      />
+                    )}
 
                     <div className="pt-4">
                       <Button
