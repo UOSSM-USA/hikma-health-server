@@ -1,5 +1,5 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,11 @@ import { getEventForms, getEventFormById } from "@/lib/server-functions/event-fo
 import { saveEvent } from "@/lib/server-functions/events";
 import { getPatientById } from "@/lib/server-functions/patients";
 import Event from "@/models/event";
-import EventFormModel from "@/models/event-form";
 import { v1 as uuidV1 } from "uuid";
-import { useLanguage } from "@/lib/i18n/context";
+import { useLanguage, useTranslation } from "@/lib/i18n/context";
 import Language from "@/models/language";
+import { shouldShowField, trackSkippedFields } from "@/lib/form-utils/skip-logic";
+import { validateForm, validateFieldRealTime } from "@/lib/form-utils/validation";
 
 export const Route = createFileRoute("/app/patients-event")({
   component: RouteComponent,
@@ -22,9 +23,9 @@ export const Route = createFileRoute("/app/patients-event")({
 });
 
 function RouteComponent() {
-  const navigate = useNavigate();
   const { allForms } = Route.useLoaderData();
   const { language } = useLanguage();
+  const t = useTranslation();
   
   const [patient, setPatient] = useState<any>(null);
   const [selectedFormId, setSelectedFormId] = useState<string | null>(null);
@@ -32,6 +33,8 @@ function RouteComponent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentForm, setCurrentForm] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
 
   // Load patient on mount
   useEffect(() => {
@@ -77,6 +80,14 @@ function RouteComponent() {
       loadForm();
     }
   }, [selectedFormId]);
+
+  // Get visible fields based on skip logic - MUST be called before any early returns
+  const visibleFields = useMemo(() => {
+    if (!currentForm?.form_fields) return [];
+    return currentForm.form_fields.filter((field: any) => 
+      shouldShowField(field, formData)
+    );
+  }, [currentForm, formData]);
   
   if (loading) {
     return <div>Loading...</div>;
@@ -85,14 +96,49 @@ function RouteComponent() {
   if (!patient) {
     return <div>Patient not found</div>;
   }
-  
-  const patientId = patient.id;
 
   const handleFieldChange = (fieldId: string, value: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      [fieldId]: value,
-    }));
+    setFormData((prev) => {
+      const newData = {
+        ...prev,
+        [fieldId]: value,
+      };
+      
+      // Real-time validation for touched fields
+      if (touchedFields.has(fieldId)) {
+        const field = currentForm?.form_fields?.find((f: any) => f.id === fieldId);
+        if (field) {
+          const error = validateFieldRealTime(field, value, newData);
+          setValidationErrors((prev) => {
+            if (error) {
+              return { ...prev, [fieldId]: error };
+            } else {
+              const { [fieldId]: _, ...rest } = prev;
+              return rest;
+            }
+          });
+        }
+      }
+      
+      return newData;
+    });
+  };
+
+  const handleFieldBlur = (fieldId: string) => {
+    setTouchedFields((prev) => new Set(prev).add(fieldId));
+    const field = currentForm?.form_fields?.find((f: any) => f.id === fieldId);
+    if (field) {
+      const value = formData[fieldId];
+      const error = validateFieldRealTime(field, value, formData);
+      setValidationErrors((prev) => {
+        if (error) {
+          return { ...prev, [fieldId]: error };
+        } else {
+          const { [fieldId]: _, ...rest } = prev;
+          return rest;
+        }
+      });
+    }
   };
 
   const handleSubmit = async () => {
@@ -106,27 +152,60 @@ function RouteComponent() {
       return;
     }
 
-    // Validate required fields
-    const requiredFields = currentForm.form_fields.filter((f: any) => f.required);
-    for (const field of requiredFields) {
-      if (!formData[field.id]) {
-        toast.error(`Please fill in required field: ${field.label || field.name}`);
-        return;
+    // Mark all visible fields as touched for validation
+    const allVisibleFieldIds = visibleFields.map((f: any) => f.id);
+    setTouchedFields(new Set(allVisibleFieldIds));
+
+    // Validate all visible fields
+    const errors = validateForm(visibleFields, formData);
+    if (errors.length > 0) {
+      const errorMap: Record<string, string> = {};
+      errors.forEach((error) => {
+        // Get translated error message with parameter support
+        let message = error.message;
+        if (error.message.startsWith("validation.")) {
+          const [key, param] = error.message.split("|");
+          const translated = t(key as any) || key;
+          message = param 
+            ? translated.replace(/\{min\}/g, param).replace(/\{max\}/g, param)
+            : translated;
+        }
+        errorMap[error.fieldId] = message;
+      });
+      setValidationErrors(errorMap);
+      
+      // Show first error
+      const firstError = errors[0];
+      const field = visibleFields.find((f: any) => f.id === firstError.fieldId);
+      const fieldLabel = field ? getFieldLabel(field) : "Field";
+      let firstErrorMessage = firstError.message;
+      if (firstError.message.startsWith("validation.")) {
+        const [key, param] = firstError.message.split("|");
+        const translated = t(key as any) || key;
+        firstErrorMessage = param 
+          ? translated.replace(/\{min\}/g, param).replace(/\{max\}/g, param)
+          : translated;
       }
+      toast.error(`${fieldLabel}: ${firstErrorMessage}`);
+      return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // Create event data
-      const formFieldsData = currentForm.form_fields.map((field: any) => {
+      // Track skipped fields for analytics
+      const skippedFields = trackSkippedFields(currentForm.form_fields, formData);
+      
+      // Create event data - only include visible fields
+      const formFieldsData = visibleFields.map((field: any) => {
         const value = formData[field.id];
         return {
           fieldId: field.id,
-          fieldName: field.label || field.name,
-          fieldType: field.fieldType || field.type,
+          fieldName: getFieldLabel(field),
+          fieldType: field._tag || field.fieldType || field.type,
           value: value,
           required: field.required,
+          skipped: skippedFields[field.id] || false,
         };
       });
 
@@ -140,6 +219,8 @@ function RouteComponent() {
         metadata: {
           submitted_at: new Date().toISOString(),
           form_name: currentForm.name,
+          skipped_fields: skippedFields,
+          validation_passed: true,
         },
         is_deleted: false,
         created_at: new Date(),
@@ -155,6 +236,8 @@ function RouteComponent() {
       
       // Clear form data to prevent duplicate submissions
       setFormData({});
+      setValidationErrors({});
+      setTouchedFields(new Set());
       setSelectedFormId(null);
       setCurrentForm(null);
       setIsSubmitting(false);
@@ -171,21 +254,47 @@ function RouteComponent() {
   };
 
   // Helper function to get field label with translation support
+  // Event forms store field names in the form's language, so we use the form's language
+  // rather than the user's current language preference
   const getFieldLabel = (field: any): string => {
     // Check if field.label is a translation object (like patient registration forms)
     if (field.label && typeof field.label === "object" && !Array.isArray(field.label)) {
-      return Language.getTranslation(field.label, language);
+      // Use form's language if available, otherwise use user's language
+      const formLanguage = (currentForm?.language || language) as "en" | "ar";
+      return Language.getTranslation(field.label, formLanguage);
     }
-    // Otherwise use name or label as string
+    // For event forms, field names are stored in the form's language
+    // The field name is already in the form's language, so we return it as-is
     return field.name || field.label || "";
   };
 
+  // Get form language for display
+  const isFormInDifferentLanguage = currentForm?.language && currentForm.language !== language;
+
   const renderField = (field: any) => {
+    // Check if field should be visible based on skip logic
+    if (!shouldShowField(field, formData)) {
+      return null; // Don't render hidden fields
+    }
+
     const value = formData[field.id] || "";
+    const error = validationErrors[field.id];
+    const hasError = !!error;
     
     // Determine the field type - check multiple possible properties
     const fieldType = field._tag || field.fieldType || field.type;
     const fieldLabel = getFieldLabel(field);
+
+    // Get error message (translate if it's a translation key)
+    let errorMessage = error;
+    if (error && error.startsWith("validation.")) {
+      const [key, param] = error.split("|");
+      const translated = t(key as any) || key;
+      // Replace {min}, {max} placeholders with actual values
+      errorMessage = param 
+        ? translated.replace(/\{min\}/g, param).replace(/\{max\}/g, param)
+        : translated;
+    }
 
     switch (fieldType) {
       case "text":
@@ -199,12 +308,18 @@ function RouteComponent() {
             </label>
             <input
               type="text"
-              className="w-full px-3 py-2 border rounded-md"
+              className={`w-full px-3 py-2 border rounded-md ${
+                hasError ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""
+              }`}
               placeholder={field.placeholder || ""}
               value={value}
               onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              onBlur={() => handleFieldBlur(field.id)}
               required={field.required}
             />
+            {hasError && (
+              <p className="text-sm text-red-500 mt-1">{errorMessage}</p>
+            )}
           </div>
         );
 
@@ -216,17 +331,26 @@ function RouteComponent() {
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <textarea
-              className="w-full px-3 py-2 border rounded-md"
+              className={`w-full px-3 py-2 border rounded-md ${
+                hasError ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""
+              }`}
               placeholder={field.placeholder || ""}
               value={value}
               onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              onBlur={() => handleFieldBlur(field.id)}
               rows={3}
               required={field.required}
             />
+            {hasError && (
+              <p className="text-sm text-red-500 mt-1">{errorMessage}</p>
+            )}
           </div>
         );
 
       case "number":
+        // Get min/max from validation rules
+        const minRule = field.validation?.find((r: any) => r.type === "min");
+        const maxRule = field.validation?.find((r: any) => r.type === "max");
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
@@ -235,14 +359,20 @@ function RouteComponent() {
             </label>
             <input
               type="number"
-              className="w-full px-3 py-2 border rounded-md"
+              className={`w-full px-3 py-2 border rounded-md ${
+                hasError ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""
+              }`}
               placeholder={field.placeholder || ""}
               value={value}
-              onChange={(e) => handleFieldChange(field.id, parseFloat(e.target.value))}
-              min={field.validation?.min}
-              max={field.validation?.max}
+              onChange={(e) => handleFieldChange(field.id, parseFloat(e.target.value) || "")}
+              onBlur={() => handleFieldBlur(field.id)}
+              min={minRule?.value}
+              max={maxRule?.value}
               required={field.required}
             />
+            {hasError && (
+              <p className="text-sm text-red-500 mt-1">{errorMessage}</p>
+            )}
           </div>
         );
 
@@ -254,9 +384,12 @@ function RouteComponent() {
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <select
-              className="w-full px-3 py-2 border rounded-md"
+              className={`w-full px-3 py-2 border rounded-md ${
+                hasError ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""
+              }`}
               value={value}
               onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              onBlur={() => handleFieldBlur(field.id)}
               required={field.required}
             >
               <option value="">Select an option</option>
@@ -266,6 +399,9 @@ function RouteComponent() {
                 </option>
               ))}
             </select>
+            {hasError && (
+              <p className="text-sm text-red-500 mt-1">{errorMessage}</p>
+            )}
           </div>
         );
 
@@ -289,11 +425,15 @@ function RouteComponent() {
                         : currentValues.filter((v: any) => v !== opt.value);
                       handleFieldChange(field.id, newValues);
                     }}
+                    onBlur={() => handleFieldBlur(field.id)}
                   />
                   <span>{opt.label || opt.value}</span>
                 </label>
               ))}
             </div>
+            {hasError && (
+              <p className="text-sm text-red-500 mt-1">{errorMessage}</p>
+            )}
           </div>
         );
 
@@ -313,11 +453,15 @@ function RouteComponent() {
                     value={opt.value}
                     checked={value === opt.value}
                     onChange={(e) => handleFieldChange(field.id, e.target.value)}
+                    onBlur={() => handleFieldBlur(field.id)}
                   />
                   <span>{opt.label || opt.value}</span>
                 </label>
               ))}
             </div>
+            {hasError && (
+              <p className="text-sm text-red-500 mt-1">{errorMessage}</p>
+            )}
           </div>
         );
 
@@ -330,11 +474,17 @@ function RouteComponent() {
             </label>
             <input
               type="date"
-              className="w-full px-3 py-2 border rounded-md"
+              className={`w-full px-3 py-2 border rounded-md ${
+                hasError ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""
+              }`}
               value={value}
               onChange={(e) => handleFieldChange(field.id, e.target.value)}
+              onBlur={() => handleFieldBlur(field.id)}
               required={field.required}
             />
+            {hasError && (
+              <p className="text-sm text-red-500 mt-1">{errorMessage}</p>
+            )}
           </div>
         );
 
@@ -382,9 +532,9 @@ function RouteComponent() {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Submit Event Form</h1>
+            <h1 className="text-2xl font-bold">{t("eventForm.submitEventForm")}</h1>
             <p className="text-muted-foreground mt-1">
-              Patient: {patient.given_name || ""} {patient.surname || ""}
+              {t("nav.patients")}: {patient.given_name || ""} {patient.surname || ""}
             </p>
           </div>
           <Button
@@ -393,7 +543,7 @@ function RouteComponent() {
               window.location.href = `/app/patients/${patient.id}`;
             }}
           >
-            Cancel
+            {t("eventForm.cancel")}
           </Button>
         </div>
       </div>
@@ -401,8 +551,8 @@ function RouteComponent() {
       {/* Form Selection */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Select Event Form</CardTitle>
-          <CardDescription>Choose the form template to use</CardDescription>
+          <CardTitle>{t("eventForm.selectEventForm")}</CardTitle>
+          <CardDescription>{t("eventForm.selectEventFormDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
           <select
@@ -410,7 +560,7 @@ function RouteComponent() {
             value={selectedFormId || ""}
             onChange={(e) => setSelectedFormId(e.target.value || null)}
           >
-            <option value="">Select a form...</option>
+            <option value="">{t("eventForm.selectFormPlaceholder")}</option>
             {allForms.map((form) => (
               <option key={form.id} value={form.id}>
                 {form.name}
@@ -424,19 +574,37 @@ function RouteComponent() {
       {currentForm && (
         <Card>
           <CardHeader>
-            <CardTitle>{currentForm.name}</CardTitle>
-            <CardDescription>{currentForm.description}</CardDescription>
+            <div className="flex items-start justify-between">
+              <div>
+                <CardTitle>{currentForm.name}</CardTitle>
+                <CardDescription>{currentForm.description}</CardDescription>
+              </div>
+              {isFormInDifferentLanguage && (
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium">
+                    {currentForm.language === "ar" ? "عربي" : "English"}
+                  </span>
+                  {" "}{t("eventForm.formLanguageIndicator")}
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {currentForm.form_fields && Array.isArray(currentForm.form_fields) ? (
-              currentForm.form_fields.map((field: any, index: number) => (
-                <div key={field.id || index}>
-                  {renderField(field)}
+              visibleFields.length > 0 ? (
+                visibleFields.map((field: any, index: number) => (
+                  <div key={field.id || index}>
+                    {renderField(field)}
+                  </div>
+                ))
+              ) : (
+                <div className="text-muted-foreground">
+                  {t("eventForm.noFieldsVisible")}
                 </div>
-              ))
+              )
             ) : (
               <div className="text-muted-foreground">
-                No form fields available
+                {t("eventForm.noFieldsAvailable")}
               </div>
             )}
 
@@ -445,10 +613,10 @@ function RouteComponent() {
                 variant="outline"
                 onClick={() => window.location.href = `/app/patients/${patient.id}`}
               >
-                Cancel
+                {t("eventForm.cancel")}
               </Button>
               <Button onClick={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting ? "Submitting..." : "Submit Form"}
+                {isSubmitting ? t("eventForm.submitting") : t("eventForm.submitForm")}
               </Button>
             </div>
           </CardContent>

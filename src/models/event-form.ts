@@ -130,11 +130,45 @@ namespace EventForm {
     | "date"
     | "custom";
 
+  // Skip logic condition types
+  export type SkipConditionOperator = 
+    | "equals"
+    | "notEquals"
+    | "contains"
+    | "notContains"
+    | "greaterThan"
+    | "lessThan"
+    | "greaterThanOrEqual"
+    | "lessThanOrEqual"
+    | "isEmpty"
+    | "isNotEmpty";
+
+  export type SkipCondition = {
+    fieldId: string; // ID of the field to check
+    operator: SkipConditionOperator;
+    value: any; // Value to compare against
+  };
+
+  export type SkipLogic = {
+    showWhen?: SkipCondition[]; // Show field when ALL conditions are met (AND logic)
+    hideWhen?: SkipCondition[]; // Hide field when ANY condition is met (OR logic)
+  };
+
+  // Validation rule types
+  export type ValidationRule = {
+    type: "required" | "min" | "max" | "minLength" | "maxLength" | "pattern" | "email" | "custom";
+    value?: any; // For min, max, minLength, maxLength, pattern
+    message?: string; // Custom error message (optional, will use default translations if not provided)
+    validator?: (value: any, formData: Record<string, any>) => boolean | string; // Custom validator function
+  };
+
   export interface HHFieldBase {
     id: string;
     name: string;
     description: string;
     required: boolean;
+    skipLogic?: SkipLogic; // Conditional field display
+    validation?: ValidationRule[]; // Custom validation rules
   }
 
   export const durationUnits = [

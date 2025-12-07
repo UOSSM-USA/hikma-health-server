@@ -228,6 +228,16 @@ function RouteComponent() {
     });
   };
 
+  const handleValidationChange = (
+    fieldId: string,
+    validation: EventForm.ValidationRule[] | undefined,
+  ) => {
+    eventFormStore.send({
+      type: "set-field-key-value",
+      payload: { fieldId, key: "validation", value: validation },
+    });
+  };
+
   const handleFieldsReorder = (ids: number[]) => {
     eventFormStore.send({ type: "reorder-fields", payload: { indices: ids } });
   };
@@ -312,6 +322,7 @@ function RouteComponent() {
               onFieldOptionChange={handleFieldOptionChange}
               onFieldUnitChange={handleFieldUnitChange}
               onReorder={handleFieldsReorder}
+              onValidationChange={handleValidationChange}
             />
             <Separator className="my-6" />
 
