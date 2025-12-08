@@ -1,5 +1,6 @@
 import { getPatientById } from "@/lib/server-functions/patients";
 import { getPatientVitals, createPatientVital, updatePatientVital } from "@/lib/server-functions/vitals";
+import { getAllClinics } from "@/lib/server-functions/clinics";
 import { getEventsByPatientId } from "@/lib/server-functions/events";
 import { getEventForms } from "@/lib/server-functions/event-forms";
 import { getVisitsByPatientId } from "@/lib/server-functions/visits";
@@ -45,7 +46,8 @@ import type User from "@/models/user";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus } from "lucide-react";
+import { Plus, Download, FileSpreadsheet } from "lucide-react";
+import { exportPatientHistoryToExcel } from "@/lib/export/patient-history";
 
 export const Route = createFileRoute("/app/patients/$/")({
   component: RouteComponent,
@@ -557,11 +559,108 @@ function RouteComponent() {
                 </div>
               </div>
             </div>
-            {/*TODO: add patient actions*/}
-            {/*<div className="flex gap-2">
-              <Button variant="outline">Edit Patient</Button>
-              <Button>New Visit</Button>
-            </div>*/}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const translations = {
+                      patient: t("export.patient"),
+                      demographics: t("export.demographics"),
+                      contactInformation: t("export.contactInformation"),
+                      vitals: t("export.currentVitals") || t("patientDetail.currentVitals"),
+                      currentVitals: t("export.currentVitals") || t("patientDetail.currentVitals"),
+                      appointments: t("patientDetail.appointments"),
+                      prescriptions: t("patientDetail.prescriptions"),
+                      events: t("patientDetail.eventForms"),
+                      visits: t("export.recentVisits") || t("patientDetail.recentVisits"),
+                      recentVisits: t("export.recentVisits") || t("patientDetail.recentVisits"),
+                      visitDate: t("export.visitDate") || t("common.date") || "Date",
+                      date: t("common.date") || "Date",
+                      provider: t("appointmentsList.providerHeader") || "Provider",
+                      clinic: t("export.clinic") || t("appointmentsList.clinicHeader") || "Clinic",
+                      notes: t("appointmentsList.notesHeader") || "Notes",
+                      status: t("appointmentsList.statusHeader") || "Status",
+                      field: t("common.field") || "Field",
+                      value: t("common.value") || "Value",
+                      patientId: t("export.patientId") || "Patient ID",
+                      givenName: t("export.givenName") || "First Name",
+                      surname: t("export.surname") || "Last Name",
+                      dateOfBirth: t("export.dateOfBirth") || "Date of Birth",
+                      sex: t("export.sex") || "Sex",
+                      citizenship: t("export.citizenship") || "Citizenship",
+                      hometown: t("export.hometown") || "Hometown",
+                      camp: t("export.camp") || "Camp",
+                      phone: t("common.phone") || "Phone",
+                      systolic: t("export.systolicBp") || "Systolic BP",
+                      diastolic: t("export.diastolicBp") || "Diastolic BP",
+                      heartRate: t("patientDetail.heartRate") || "Heart Rate",
+                      temperature: t("patientDetail.temperature") || "Temperature",
+                      oxygenSaturation: t("patientDetail.oxygenSaturation") || "O2 Saturation",
+                      respiratoryRate: t("patientDetail.respiratoryRate") || "Respiratory Rate",
+                      weight: t("patientDetail.weight") || "Weight (kg)",
+                      height: t("patientDetail.height") || "Height (cm)",
+                      bmi: t("patientDetail.bmi") || "BMI",
+                      painLevel: t("patientDetail.painLevel") || "Pain Level",
+                      medication: t("prescription.medication") || "Medication",
+                      dosage: t("prescription.dosage") || "Dosage",
+                      eventType: t("eventForm.formName") || "Event Type",
+                      formData: t("eventForm.formFields") || "Form Data",
+                    };
+
+                    const historyData = {
+                      patient,
+                      vitals: initialVitals,
+                      appointments: appointments.map((apt) => ({
+                        appointment: apt.appointment,
+                        clinic: { name: apt.clinic.name || "" },
+                        provider: apt.provider
+                          ? {
+                              given_name: apt.provider.given_name,
+                              surname: apt.provider.surname,
+                            }
+                          : null,
+                      })),
+                      prescriptions: prescriptions.map((pres) => ({
+                        prescription: pres.prescription,
+                        clinic: { name: pres.clinic.name || "" },
+                        provider: pres.provider
+                          ? {
+                              given_name: pres.provider.given_name,
+                              surname: pres.provider.surname,
+                            }
+                          : null,
+                      })),
+                      events,
+                      visits,
+                    };
+
+                const allClinics = await getAllClinics();
+
+                    const blob = await exportPatientHistoryToExcel(
+                      historyData,
+                  translations,
+                  allClinics || []
+                    );
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = `patient_history_${patient.external_patient_id || patient.id}_${new Date().toISOString().split("T")[0]}.xlsx`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                    toast.success(t("export.success") || "Patient history exported successfully");
+                  } catch (error: any) {
+                    console.error("Export error:", error);
+                    toast.error(t("export.error") || "Failed to export patient history");
+                  }
+                }}
+              >
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                {t("export.exportHistory") || "Export History"}
+              </Button>
+            </div>
           </div>
         </CardHeader>
       </Card>
