@@ -22,10 +22,7 @@ import {
 } from "@/components/ui/table";
 
 import { getPatientRegistrationForm } from "@/lib/server-functions/patient-registration-forms";
-import {
-  getAllPatients,
-  searchPatients,
-} from "@/lib/server-functions/patients";
+import { getAllPatients, searchPatients } from "@/lib/server-functions/patients";
 import PatientRegistrationForm from "@/models/patient-registration-form";
 import { createServerFn } from "@tanstack/react-start";
 import {
@@ -39,6 +36,7 @@ import {
 } from "@/components/ui/pagination";
 import { truncate } from "es-toolkit/compat";
 import { getCurrentUser } from "@/lib/server-functions/auth";
+import { getAllClinics } from "@/lib/server-functions/clinics";
 
 import ExcelJS from "exceljs";
 import Event from "@/models/event";
@@ -62,7 +60,8 @@ const getAllPatientsForExport = createServerFn({ method: "GET" }).handler(
     const eventForms = await EventForm.API.getAll();
     const exportEvents = await Event.API.getAllForExport();
     const vitals = await PatientVital.API.getAll();
-    return { patients, exportEvents, eventForms, vitals };
+    const clinics = await (await import("@/models/clinic")).default.getAll();
+    return { patients, exportEvents, eventForms, vitals, clinics };
   },
 );
 
@@ -76,12 +75,13 @@ export const Route = createFileRoute("/app/patients/")({
       patients: patients,
       pagination,
       patientRegistrationForm: await getPatientRegistrationForm(),
+      clinics: await getAllClinics(),
     };
   },
 });
 
 function RouteComponent() {
-  const { currentUser, patients, pagination, patientRegistrationForm } =
+  const { currentUser, patients, pagination, patientRegistrationForm, clinics } =
     Route.useLoaderData();
   const t = useTranslation();
   const { language } = useLanguage();
@@ -114,6 +114,16 @@ function RouteComponent() {
     }
     return typeof f.label === 'string' ? f.label : '';
   }) || [];
+
+  const clinicNameById = React.useMemo(() => {
+    const map = new Map<string, string>();
+    (clinics || []).forEach((clinic) => {
+      if (clinic.id) {
+        map.set(clinic.id, clinic.name || "");
+      }
+    });
+    return map;
+  }, [clinics]);
 
   // Calculate pagination values using functional approach
   const pageSize = Option.getOrElse(
@@ -261,7 +271,15 @@ function RouteComponent() {
         patients: allPatients,
         exportEvents,
         eventForms,
+        clinics,
       } = await getAllPatientsForExport({});
+
+      const clinicNameById = new Map<string, string>();
+      (clinics || []).forEach((clinic: any) => {
+        if (clinic.id) {
+          clinicNameById.set(clinic.id, clinic.name || "");
+        }
+      });
 
       // add Vitals
       addVitalsWorksheet(workbook, patientVitals);
@@ -313,14 +331,22 @@ function RouteComponent() {
         // Add data for each field in the registration form
         fields?.forEach((field) => {
           if (field.baseField) {
-            rowData.push(
-              String(
-                PatientRegistrationForm.renderFieldValue(
-                  field,
-                  patient[field.column as keyof typeof patient],
+            if (field.column === "primary_clinic_id") {
+              const name =
+                clinicNameById.get(
+                  (patient as any).primary_clinic_id || "",
+                ) || (patient as any).primary_clinic_id || "";
+              rowData.push(String(name));
+            } else {
+              rowData.push(
+                String(
+                  PatientRegistrationForm.renderFieldValue(
+                    field,
+                    patient[field.column as keyof typeof patient],
+                  ),
                 ),
-              ),
-            );
+              );
+            }
           } else {
             rowData.push(
               String(
@@ -471,10 +497,16 @@ function RouteComponent() {
                 {fields?.map((field) =>
                   field.baseField ? (
                     <TableCell className="px-6" key={field.id}>
-                      {PatientRegistrationForm.renderFieldValue(
-                        field,
-                        patient[field.column as keyof typeof patient],
-                      )}
+                      {field.column === "primary_clinic_id"
+                        ? clinicNameById.get(
+                            (patient as any).primary_clinic_id || "",
+                          ) ||
+                          (patient as any).primary_clinic_id ||
+                          t("common.unknown")
+                        : PatientRegistrationForm.renderFieldValue(
+                            field,
+                            patient[field.column as keyof typeof patient],
+                          )}
                     </TableCell>
                   ) : (
                     <TableCell className="px-6" key={field.id}>
