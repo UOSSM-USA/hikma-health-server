@@ -42,9 +42,10 @@ import { getCurrentUser } from "@/lib/server-functions/auth";
 import { PatientSearchSelect } from "@/components/patient-search-select";
 import Clinic from "@/models/clinic";
 import User from "@/models/user";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePrescriptionPermissions } from "@/hooks/use-permissions";
-import { useTranslation } from "@/lib/i18n/context";
+import { useLanguage, useTranslation } from "@/lib/i18n/context";
+import { translateText } from "@/lib/server-functions/translate";
 
 // Create a save prescription server function
 const savePrescription = createServerFn({ method: "POST" })
@@ -154,6 +155,7 @@ function RouteComponent() {
   const prescriptionId = params._splat;
   const isEditing = !!prescriptionId && prescriptionId !== "new";
   const t = useTranslation();
+  const { language } = useLanguage();
 
   // Permissions
   const { canAdd, canEdit } = usePrescriptionPermissions(currentUser?.role);
@@ -195,6 +197,50 @@ function RouteComponent() {
   });
   const isSubmitting = form.formState.isSubmitting;
 
+  // Bilingual notes state (in-memory); for now we derive from single notes field
+  const [notesBilingual, setNotesBilingual] = useState<{ en: string; ar: string }>(() => {
+    const existing = prescription?.notes ?? "";
+    // naive guess: if UI is AR, treat existing as ar; otherwise as en
+    if (language === "ar") {
+      return { en: "", ar: existing };
+    }
+    return { en: existing, ar: "" };
+  });
+
+  // Track if we've already auto-translated for this form instance to avoid repeat calls
+  const hasAutoTranslatedRef = useRef(false);
+
+  // When UI language is English and we only have Arabic notes, auto-translate once for admins
+  useEffect(() => {
+    const shouldAutoTranslate =
+      language === "en" &&
+      !!notesBilingual.ar &&
+      !notesBilingual.en &&
+      !isReadOnly &&
+      !hasAutoTranslatedRef.current;
+
+    if (!shouldAutoTranslate) return;
+
+    (async () => {
+      try {
+        const res = await translateText({
+          data: {
+            text: notesBilingual.ar,
+            from: "ar",
+            to: "en",
+          },
+        });
+        setNotesBilingual((prev) => ({
+          ...prev,
+          en: res.translated || prev.en,
+        }));
+        hasAutoTranslatedRef.current = true;
+      } catch (err) {
+        console.error("Auto-translate for prescription notes failed:", err);
+      }
+    })();
+  }, [language, notesBilingual.ar, notesBilingual.en, isReadOnly]);
+
   const priorityOptions = PRIORITY_OPTION_DEFS.map((option) => ({
     label: t(`prescriptionForm.priorities.${option.key}`),
     value: option.value,
@@ -213,17 +259,24 @@ function RouteComponent() {
       toast.error(t("prescriptionForm.modifyError"));
       return;
     }
-    console.log({
-      prescription: values,
-      id: prescriptionId,
-      currentUserName: currentUser?.name || "Unknown",
-      currentClinicId: currentUser?.clinic_id || "Unknown",
-    });
+
+    // Combine bilingual notes into single stored field (prefer English when available)
+    const combinedNotes =
+      language === "ar"
+        ? notesBilingual.ar || notesBilingual.en
+        : notesBilingual.en || notesBilingual.ar;
+
+    const payload: Prescription.EncodedT = {
+      ...values,
+      notes: combinedNotes,
+    };
+
     try {
       await savePrescription({
         data: {
-          prescription: values,
-          id: prescriptionId || null,
+          prescription: payload,
+          // For new prescriptions, pass null so we don't try to use "new" as a UUID
+          id: isEditing && prescriptionId && prescriptionId !== "new" ? prescriptionId : null,
           currentUserName: currentUser?.name || t("common.unknown"),
           currentClinicId: currentUser?.clinic_id || t("common.unknown"),
         },
@@ -400,14 +453,76 @@ function RouteComponent() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                  <FormLabel>{t("prescriptionForm.notesLabel")}</FormLabel>
+                    <FormLabel>{t("prescriptionForm.notesLabel")}</FormLabel>
                     <FormControl>
-                      <Textarea
-                      placeholder={t("prescriptionForm.notesPlaceholder")}
-                        className="resize-none"
-                        {...field}
-                        disabled={isReadOnly}
-                      />
+                      <div className="space-y-2">
+                        {/* Arabic (frontline) */}
+                        <Textarea
+                          value={notesBilingual.ar}
+                          onChange={(e) =>
+                            setNotesBilingual((prev) => ({
+                              ...prev,
+                              ar: e.target.value,
+                            }))
+                          }
+                          placeholder={t("prescriptionForm.notesPlaceholder")}
+                          className="resize-none"
+                          disabled={isReadOnly}
+                        />
+                        {/* English (admin) + translate helper */}
+                        <div className="flex items-start gap-2">
+                          <Textarea
+                            value={notesBilingual.en}
+                            onChange={(e) =>
+                              setNotesBilingual((prev) => ({
+                                ...prev,
+                                en: e.target.value,
+                              }))
+                            }
+                            placeholder="English"
+                            className="resize-none"
+                            disabled={isReadOnly}
+                          />
+                          {!isReadOnly && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={async () => {
+                                if (!notesBilingual.ar) {
+                                  toast.error(
+                                    t("export.error") ||
+                                      "No Arabic text to translate",
+                                  );
+                                  return;
+                                }
+                                try {
+                                  const res = await translateText({
+                                    data: {
+                                      text: notesBilingual.ar,
+                                      from: "ar",
+                                      to: "en",
+                                    },
+                                  });
+                                  setNotesBilingual((prev) => ({
+                                    ...prev,
+                                    en: res.translated || prev.en,
+                                  }));
+                                } catch (err: any) {
+                                  console.error(err);
+                                  toast.error(
+                                    t("export.error") ||
+                                      "Translation failed, please try again",
+                                  );
+                                }
+                              }}
+                            >
+                              {t("export.translateToEnglish") ||
+                                "Translate to English"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

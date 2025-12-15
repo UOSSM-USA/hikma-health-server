@@ -1,4 +1,5 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { getCurrentUser } from "@/lib/server-functions/auth";
 import {
   getAllPrescriptionsWithDetails,
@@ -19,7 +20,8 @@ import upperFirst from "lodash/upperFirst";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
-import { useTranslation } from "@/lib/i18n/context";
+import { useLanguage, useTranslation } from "@/lib/i18n/context";
+import { translateText } from "@/lib/server-functions/translate";
 
 export const Route = createFileRoute("/app/prescriptions/")({
   component: RouteComponent,
@@ -35,6 +37,49 @@ function RouteComponent() {
   const router = useRouter();
   const { prescriptions } = Route.useLoaderData();
   const t = useTranslation();
+  const { language } = useLanguage();
+
+  // Cache translated notes per prescription id (for EN view)
+  const [translatedNotesById, setTranslatedNotesById] = useState<Record<string, string>>({});
+
+  // When language switches away from EN, we can keep cache but we won't use it
+  useEffect(() => {
+    if (language !== "en") return;
+
+    // Find prescriptions that need translation
+    const toTranslate: { id: string; notes: string }[] = [];
+    for (const item of prescriptions as any[]) {
+      const prescription = (item.prescription || item) as Prescription.EncodedT;
+      const notes = (prescription.notes || "").trim();
+      if (!notes) continue;
+      if (translatedNotesById[prescription.id]) continue;
+      toTranslate.push({ id: prescription.id, notes });
+    }
+
+    if (!toTranslate.length) return;
+
+    // Fire off translations in the background; best-effort only
+    void (async () => {
+      for (const entry of toTranslate) {
+        try {
+          const res = await translateText({
+            data: {
+              text: entry.notes,
+              from: "ar",
+              to: "en",
+            },
+          });
+          setTranslatedNotesById((prev) => ({
+            ...prev,
+            [entry.id]: res.translated || entry.notes,
+          }));
+        } catch (err) {
+          // On failure, fall back to original notes; don't toast to avoid noise on list
+          console.error("Failed to translate prescription notes in list view:", err);
+        }
+      }
+    })();
+  }, [language, prescriptions, translatedNotesById]);
 
   // Map status value (with hyphens) to translation key (camelCase)
   const getStatusTranslationKey = (status: string): string => {
@@ -126,7 +171,9 @@ function RouteComponent() {
                         : t("prescriptionsList.notAvailable")}
                     </TableCell>
                     <TableCell className="max-w-xs truncate">
-                      {prescription.notes}
+                      {language === "en"
+                        ? translatedNotesById[prescription.id] || prescription.notes
+                        : prescription.notes}
                     </TableCell>
                   </TableRow>
                 );

@@ -193,6 +193,7 @@ namespace Prescription {
         INNER JOIN clinics ON prescriptions.pickup_clinic_id = clinics.id
         INNER JOIN users ON prescriptions.provider_id = users.id
         WHERE prescriptions.is_deleted = false
+        ORDER BY prescriptions.prescribed_at DESC
       `.compile(db),
       );
 
@@ -235,6 +236,12 @@ namespace Prescription {
         currentUserName: string,
         currentClinicId: string,
       ) => {
+        // Normalize the incoming id: treat non-UUID values (like "new") as null
+        const effectiveId =
+          id && isValidUUID(id)
+            ? id
+            : null;
+
         try {
           return await db.transaction().execute(async (trx) => {
             let visitId =
@@ -286,7 +293,7 @@ namespace Prescription {
             const res = await trx
               .insertInto(Prescription.Table.name)
               .values({
-                id: id || prescription.id || uuidV1(),
+                id: effectiveId || prescription.id || uuidV1(),
                 patient_id: prescription.patient_id,
                 provider_id: prescription.provider_id,
                 pickup_clinic_id: pickupClinicId,
@@ -355,7 +362,7 @@ namespace Prescription {
               stack: error instanceof Error ? error.stack : undefined,
             },
             context: {
-              prescriptionId: id || prescription.id,
+              prescriptionId: effectiveId || prescription.id,
               patientId: prescription.patient_id,
               providerId: prescription.provider_id,
               clinicId: currentClinicId,
