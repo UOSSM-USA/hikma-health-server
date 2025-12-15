@@ -208,33 +208,52 @@ function RouteComponent() {
   });
 
   // Track if we've already auto-translated for this form instance to avoid repeat calls
-  const hasAutoTranslatedRef = useRef(false);
+  const hasAutoTranslatedRef = useRef<{ en?: boolean; ar?: boolean }>({});
 
-  // When UI language is English and we only have Arabic notes, auto-translate once for admins
+  // When UI language is English or Arabic and we only have the opposite language,
+  // auto-translate once into the active UI language for admins.
   useEffect(() => {
-    const shouldAutoTranslate =
+    if (isReadOnly) return;
+
+    const wantsEnglish =
       language === "en" &&
       !!notesBilingual.ar &&
       !notesBilingual.en &&
-      !isReadOnly &&
-      !hasAutoTranslatedRef.current;
+      !hasAutoTranslatedRef.current.en;
 
-    if (!shouldAutoTranslate) return;
+    const wantsArabic =
+      language === "ar" &&
+      !!notesBilingual.en &&
+      !notesBilingual.ar &&
+      !hasAutoTranslatedRef.current.ar;
+
+    if (!wantsEnglish && !wantsArabic) return;
 
     (async () => {
       try {
+        const from = wantsEnglish ? "ar" : "en";
+        const to = wantsEnglish ? "en" : "ar";
+        const sourceText = wantsEnglish ? notesBilingual.ar : notesBilingual.en;
+
         const res = await translateText({
           data: {
-            text: notesBilingual.ar,
-            from: "ar",
-            to: "en",
+            text: sourceText,
+            from,
+            to,
           },
         });
+
         setNotesBilingual((prev) => ({
           ...prev,
-          en: res.translated || prev.en,
+          [to]: res.translated || (prev as any)[to] || sourceText,
         }));
-        hasAutoTranslatedRef.current = true;
+
+        if (wantsEnglish) {
+          hasAutoTranslatedRef.current.en = true;
+        }
+        if (wantsArabic) {
+          hasAutoTranslatedRef.current.ar = true;
+        }
       } catch (err) {
         console.error("Auto-translate for prescription notes failed:", err);
       }

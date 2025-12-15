@@ -33,27 +33,45 @@ export const Route = createFileRoute("/app/prescriptions/")({
   },
 });
 
+// Simple heuristic to detect if text contains Arabic characters
+const hasArabicChars = (text: string): boolean => /[\u0600-\u06FF]/.test(text);
+
 function RouteComponent() {
   const router = useRouter();
   const { prescriptions } = Route.useLoaderData();
   const t = useTranslation();
   const { language } = useLanguage();
 
-  // Cache translated notes per prescription id (for EN view)
-  const [translatedNotesById, setTranslatedNotesById] = useState<Record<string, string>>({});
+  // Cache translated notes per prescription id and target language
+  const [translatedNotesById, setTranslatedNotesById] = useState<
+    Record<string, { en?: string; ar?: string }>
+  >({});
 
-  // When language switches away from EN, we can keep cache but we won't use it
+  // When language is EN or AR, translate notes in the background where needed
   useEffect(() => {
-    if (language !== "en") return;
+    if (language !== "en" && language !== "ar") return;
 
-    // Find prescriptions that need translation
-    const toTranslate: { id: string; notes: string }[] = [];
+    // Find prescriptions that need translation for the current UI language
+    const toTranslate: { id: string; notes: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
     for (const item of prescriptions as any[]) {
       const prescription = (item.prescription || item) as Prescription.EncodedT;
       const notes = (prescription.notes || "").trim();
       if (!notes) continue;
-      if (translatedNotesById[prescription.id]) continue;
-      toTranslate.push({ id: prescription.id, notes });
+
+      const cache = translatedNotesById[prescription.id];
+      const hasArabic = hasArabicChars(notes);
+
+      if (language === "en") {
+        // Only translate into English if we see Arabic and haven't cached EN yet
+        if (hasArabic && !cache?.en) {
+          toTranslate.push({ id: prescription.id, notes, from: "ar", to: "en" });
+        }
+      } else if (language === "ar") {
+        // Only translate into Arabic if we see non-Arabic text and haven't cached AR yet
+        if (!hasArabic && !cache?.ar) {
+          toTranslate.push({ id: prescription.id, notes, from: "en", to: "ar" });
+        }
+      }
     }
 
     if (!toTranslate.length) return;
@@ -65,13 +83,16 @@ function RouteComponent() {
           const res = await translateText({
             data: {
               text: entry.notes,
-              from: "ar",
-              to: "en",
+              from: entry.from,
+              to: entry.to,
             },
           });
           setTranslatedNotesById((prev) => ({
             ...prev,
-            [entry.id]: res.translated || entry.notes,
+            [entry.id]: {
+              ...(prev[entry.id] || {}),
+              [entry.to]: res.translated || entry.notes,
+            },
           }));
         } catch (err) {
           // On failure, fall back to original notes; don't toast to avoid noise on list
@@ -172,8 +193,10 @@ function RouteComponent() {
                     </TableCell>
                     <TableCell className="max-w-xs truncate">
                       {language === "en"
-                        ? translatedNotesById[prescription.id] || prescription.notes
-                        : prescription.notes}
+                        ? translatedNotesById[prescription.id]?.en || prescription.notes
+                        : language === "ar"
+                          ? translatedNotesById[prescription.id]?.ar || prescription.notes
+                          : prescription.notes}
                     </TableCell>
                   </TableRow>
                 );
