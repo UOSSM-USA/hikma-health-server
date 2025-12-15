@@ -535,6 +535,7 @@ export const translations = {
       camp: "Camp",
       systolicBp: "Systolic BP",
       diastolicBp: "Diastolic BP",
+      translateToEnglish: "Translate to English",
     },
     // Users List
     usersList: {
@@ -1216,6 +1217,7 @@ export const translations = {
       camp: "المخيم",
       systolicBp: "ضغط الدم الانقباضي",
       diastolicBp: "ضغط الدم الانبساطي",
+      translateToEnglish: "ترجمة إلى الإنجليزية",
     },
     // Users List
     usersList: {

@@ -1,4 +1,5 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { getCurrentUser } from "@/lib/server-functions/auth";
 import {
   getAllPrescriptionsWithDetails,
@@ -19,7 +20,8 @@ import upperFirst from "lodash/upperFirst";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
-import { useTranslation } from "@/lib/i18n/context";
+import { useLanguage, useTranslation } from "@/lib/i18n/context";
+import { translateText } from "@/lib/server-functions/translate";
 
 export const Route = createFileRoute("/app/prescriptions/")({
   component: RouteComponent,
@@ -31,10 +33,74 @@ export const Route = createFileRoute("/app/prescriptions/")({
   },
 });
 
+// Simple heuristic to detect if text contains Arabic characters
+const hasArabicChars = (text: string): boolean => /[\u0600-\u06FF]/.test(text);
+
 function RouteComponent() {
   const router = useRouter();
   const { prescriptions } = Route.useLoaderData();
   const t = useTranslation();
+  const { language } = useLanguage();
+
+  // Cache translated notes per prescription id and target language
+  const [translatedNotesById, setTranslatedNotesById] = useState<
+    Record<string, { en?: string; ar?: string }>
+  >({});
+
+  // When language is EN or AR, translate notes in the background where needed
+  useEffect(() => {
+    if (language !== "en" && language !== "ar") return;
+
+    // Find prescriptions that need translation for the current UI language
+    const toTranslate: { id: string; notes: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    for (const item of prescriptions as any[]) {
+      const prescription = (item.prescription || item) as Prescription.EncodedT;
+      const notes = (prescription.notes || "").trim();
+      if (!notes) continue;
+
+      const cache = translatedNotesById[prescription.id];
+      const hasArabic = hasArabicChars(notes);
+
+      if (language === "en") {
+        // Only translate into English if we see Arabic and haven't cached EN yet
+        if (hasArabic && !cache?.en) {
+          toTranslate.push({ id: prescription.id, notes, from: "ar", to: "en" });
+        }
+      } else if (language === "ar") {
+        // Only translate into Arabic if we see non-Arabic text and haven't cached AR yet
+        if (!hasArabic && !cache?.ar) {
+          toTranslate.push({ id: prescription.id, notes, from: "en", to: "ar" });
+        }
+      }
+    }
+
+    if (!toTranslate.length) return;
+
+    // Fire off translations in the background; best-effort only
+    void (async () => {
+      for (const entry of toTranslate) {
+        try {
+          const res = await translateText({
+            data: {
+              text: entry.notes,
+              from: entry.from,
+              to: entry.to,
+            },
+          });
+          setTranslatedNotesById((prev) => ({
+            ...prev,
+            [entry.id]: {
+              ...(prev[entry.id] || {}),
+              [entry.to]: res.translated || entry.notes,
+            },
+          }));
+        } catch (err) {
+          // On failure, fall back to original notes; don't toast to avoid noise on list
+          console.error("Failed to translate prescription notes in list view:", err);
+        }
+      }
+    })();
+  }, [language, prescriptions, translatedNotesById]);
 
   // Map status value (with hyphens) to translation key (camelCase)
   const getStatusTranslationKey = (status: string): string => {
@@ -126,7 +192,11 @@ function RouteComponent() {
                         : t("prescriptionsList.notAvailable")}
                     </TableCell>
                     <TableCell className="max-w-xs truncate">
-                      {prescription.notes}
+                      {language === "en"
+                        ? translatedNotesById[prescription.id]?.en || prescription.notes
+                        : language === "ar"
+                          ? translatedNotesById[prescription.id]?.ar || prescription.notes
+                          : prescription.notes}
                     </TableCell>
                   </TableRow>
                 );
