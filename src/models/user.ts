@@ -38,6 +38,15 @@ namespace User {
     ADMIN: "admin",
     SUPER_ADMIN_2: "super_admin_2",
     SUPER_ADMIN: "super_admin",
+    PROJECT_MANAGER: "project_manager",
+    TECHNICAL_ADVISOR: "technical_advisor",
+    TEAM_LEADER: "team_leader",
+    ME_OFFICER: "me_officer",
+    IM_ASSOCIATE: "im_associate",
+    CASEWORKER_1: "caseworker_1",
+    CASEWORKER_2: "caseworker_2",
+    CASEWORKER_3: "caseworker_3",
+    CASEWORKER_4: "caseworker_4",
   };
 
   export const roles = [
@@ -46,6 +55,15 @@ namespace User {
     ROLES.ADMIN,
     ROLES.SUPER_ADMIN_2,
     ROLES.SUPER_ADMIN,
+    ROLES.PROJECT_MANAGER,
+    ROLES.TECHNICAL_ADVISOR,
+    ROLES.TEAM_LEADER,
+    ROLES.ME_OFFICER,
+    ROLES.IM_ASSOCIATE,
+    ROLES.CASEWORKER_1,
+    ROLES.CASEWORKER_2,
+    ROLES.CASEWORKER_3,
+    ROLES.CASEWORKER_4,
   ] as const;
 
   export const RoleSchema = Schema.Union(
@@ -54,6 +72,15 @@ namespace User {
     Schema.Literal(ROLES.ADMIN),
     Schema.Literal(ROLES.SUPER_ADMIN_2),
     Schema.Literal(ROLES.SUPER_ADMIN),
+    Schema.Literal(ROLES.PROJECT_MANAGER),
+    Schema.Literal(ROLES.TECHNICAL_ADVISOR),
+    Schema.Literal(ROLES.TEAM_LEADER),
+    Schema.Literal(ROLES.ME_OFFICER),
+    Schema.Literal(ROLES.IM_ASSOCIATE),
+    Schema.Literal(ROLES.CASEWORKER_1),
+    Schema.Literal(ROLES.CASEWORKER_2),
+    Schema.Literal(ROLES.CASEWORKER_3),
+    Schema.Literal(ROLES.CASEWORKER_4),
   );
 
   export type RoleT = typeof RoleSchema.Encoded;
@@ -65,7 +92,16 @@ namespace User {
   export const ROLE_HIERARCHY: Record<typeof RoleSchema.Type, number> = {
     registrar: 1,      // Can only register patients
     provider: 2,       // Can manage patients
+    caseworker_1: 2,   // Caseworker levels treated like providers
+    caseworker_2: 2,
+    caseworker_3: 2,
+    caseworker_4: 2,
     admin: 3,          // Can manage clinic users and patients
+    project_manager: 3,
+    technical_advisor: 3,
+    team_leader: 3,
+    me_officer: 3,
+    im_associate: 3,
     super_admin_2: 4,  // Full system access (no delete)
     super_admin: 5,    // Full system access with delete
   };
