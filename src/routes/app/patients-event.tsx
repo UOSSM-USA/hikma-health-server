@@ -12,6 +12,7 @@ import { useLanguage, useTranslation } from "@/lib/i18n/context";
 import Language from "@/models/language";
 import { shouldShowField, trackSkippedFields } from "@/lib/form-utils/skip-logic";
 import { validateForm, validateFieldRealTime } from "@/lib/form-utils/validation";
+import { translateText } from "@/lib/server-functions/translate";
 
 export const Route = createFileRoute("/app/patients-event")({
   component: RouteComponent,
@@ -35,6 +36,10 @@ function RouteComponent() {
   const [loading, setLoading] = useState(true);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
+  const [translatedFormNames, setTranslatedFormNames] = useState<Record<string, string>>({});
+  const [translatedFormHeader, setTranslatedFormHeader] = useState<
+    Record<string, { name?: string; description?: string }>
+  >({});
 
   // Load patient on mount
   useEffect(() => {
@@ -80,6 +85,119 @@ function RouteComponent() {
       loadForm();
     }
   }, [selectedFormId]);
+
+  // Auto-translate event form names in the dropdown to match UI language (en/ar)
+  useEffect(() => {
+    if (!allForms || !allForms.length) return;
+    const targetLang = language === "ar" ? "ar" : "en";
+
+    // Simple heuristic to detect Arabic script
+    const hasArabicChars = (text: string) => /[\u0600-\u06FF]/.test(text);
+
+    void (async () => {
+      const updates: Record<string, string> = {};
+
+      for (const form of allForms as any[]) {
+        const id = form.id as string;
+        const name = (form.name as string) || "";
+        if (!id || !name) continue;
+
+        // Skip if we already have a translated name for this form and language
+        if (translatedFormNames[id]) continue;
+
+        const storedLang: "en" | "ar" =
+          (form.language === "ar" ? "ar" : form.language === "en" ? "en" : hasArabicChars(name) ? "ar" : "en");
+
+        // If stored language already matches UI language, just cache the original name
+        if (storedLang === targetLang) {
+          updates[id] = name;
+          continue;
+        }
+
+        try {
+          const res = await translateText({
+            data: {
+              text: name,
+              from: storedLang,
+              to: targetLang,
+            },
+          });
+          const translated = res.translated || name;
+          updates[id] = translated;
+        } catch (err) {
+          // On failure or rate limit, fall back to original name
+          console.error("Failed to translate event form name:", err);
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        setTranslatedFormNames((prev) => ({ ...prev, ...updates }));
+      }
+    })();
+  }, [allForms, language, translatedFormNames]);
+
+  // Auto-translate the currently selected form's header (name + description)
+  useEffect(() => {
+    if (!currentForm || !currentForm.id) return;
+    const targetLang = language === "ar" ? "ar" : "en";
+    const id = currentForm.id as string;
+
+    // If we already have translations for this form and language, skip
+    const cached = translatedFormHeader[id];
+    if (cached && cached.name && cached.description) return;
+
+    const name: string = currentForm.name || "";
+    const description: string = currentForm.description || "";
+    if (!name && !description) return;
+
+    const hasArabicChars = (text: string) => /[\u0600-\u06FF]/.test(text);
+    const storedLang: "en" | "ar" =
+      currentForm.language === "ar"
+        ? "ar"
+        : currentForm.language === "en"
+          ? "en"
+          : hasArabicChars(name + description)
+            ? "ar"
+            : "en";
+
+    // If stored language already matches UI language, just cache originals
+    if (storedLang === targetLang) {
+      setTranslatedFormHeader((prev) => ({
+        ...prev,
+        [id]: { name, description },
+      }));
+      return;
+    }
+
+    void (async () => {
+      try {
+        let translatedName = name;
+        let translatedDescription = description;
+
+        if (name) {
+          const resName = await translateText({
+            data: { text: name, from: storedLang, to: targetLang },
+          });
+          translatedName = resName.translated || name;
+        }
+
+        if (description) {
+          const resDesc = await translateText({
+            data: { text: description, from: storedLang, to: targetLang },
+          });
+          translatedDescription = resDesc.translated || description;
+        }
+
+        setTranslatedFormHeader((prev) => ({
+          ...prev,
+          [id]: { name: translatedName, description: translatedDescription },
+        }));
+      } catch (err) {
+        // On failure or rate limiting, keep originals
+        console.error("Failed to translate event form header:", err);
+      }
+    })();
+  }, [currentForm, language, translatedFormHeader]);
 
   // Get visible fields based on skip logic - MUST be called before any early returns
   const visibleFields = useMemo(() => {
@@ -253,18 +371,13 @@ function RouteComponent() {
     }
   };
 
-  // Helper function to get field label with translation support
-  // Event forms store field names in the form's language, so we use the form's language
-  // rather than the user's current language preference
   const getFieldLabel = (field: any): string => {
     // Check if field.label is a translation object (like patient registration forms)
     if (field.label && typeof field.label === "object" && !Array.isArray(field.label)) {
-      // Use form's language if available, otherwise use user's language
-      const formLanguage = (currentForm?.language || language) as "en" | "ar";
-      return Language.getTranslation(field.label, formLanguage);
+      // Prefer the current UI language (en/ar) when translation objects are present
+      const targetLanguage = (language === "ar" ? "ar" : "en") as "en" | "ar";
+      return Language.getTranslation(field.label, targetLanguage);
     }
-    // For event forms, field names are stored in the form's language
-    // The field name is already in the form's language, so we return it as-is
     return field.name || field.label || "";
   };
 
@@ -561,9 +674,9 @@ function RouteComponent() {
             onChange={(e) => setSelectedFormId(e.target.value || null)}
           >
             <option value="">{t("eventForm.selectFormPlaceholder")}</option>
-            {allForms.map((form) => (
+            {allForms.map((form: any) => (
               <option key={form.id} value={form.id}>
-                {form.name}
+                {translatedFormNames[form.id] || form.name}
               </option>
             ))}
           </select>
@@ -576,8 +689,12 @@ function RouteComponent() {
           <CardHeader>
             <div className="flex items-start justify-between">
               <div>
-                <CardTitle>{currentForm.name}</CardTitle>
-                <CardDescription>{currentForm.description}</CardDescription>
+                <CardTitle>
+                  {translatedFormHeader[currentForm.id]?.name || currentForm.name}
+                </CardTitle>
+                <CardDescription>
+                  {translatedFormHeader[currentForm.id]?.description || currentForm.description}
+                </CardDescription>
               </div>
               {isFormInDifferentLanguage && (
                 <div className="text-sm text-muted-foreground">

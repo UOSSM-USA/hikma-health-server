@@ -564,6 +564,15 @@ export const translations = {
       admin: "Admin",
       super_admin_2: "Super Admin 2",
       super_admin: "Super Admin",
+      project_manager: "Project Manager",
+      technical_advisor: "Technical Advisor",
+      team_leader: "Team Leader",
+      me_officer: "M&E Officer",
+      im_associate: "Information Management Associate",
+      caseworker_1: "Caseworker 1",
+      caseworker_2: "Caseworker 2",
+      caseworker_3: "Caseworker 3",
+      caseworker_4: "Caseworker 4",
     },
     // Clinics List
     clinicsList: {
@@ -1246,6 +1255,15 @@ export const translations = {
       admin: "المسؤول",
       super_admin_2: "المسؤول الأعلى 2",
       super_admin: "المسؤول الأعلى",
+      project_manager: "مدير المشروع",
+      technical_advisor: "المستشار الفني",
+      team_leader: "قائد الفريق",
+      me_officer: "مسؤول المتابعة والتقييم",
+      im_associate: "موظف إدارة المعلومات",
+      caseworker_1: "أخصائي حالة 1",
+      caseworker_2: "أخصائي حالة 2",
+      caseworker_3: "أخصائي حالة 3",
+      caseworker_4: "أخصائي حالة 4",
     },
     // Clinics List
     clinicsList: {
