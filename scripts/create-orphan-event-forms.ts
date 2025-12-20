@@ -1102,6 +1102,725 @@ const orphanForms: SimpleForm[] = [
       },
     ],
   },
+  {
+    name: "خطة الحالة",
+    description:
+      "نموذج شامل لوضع خطة حالة تتضمن الأهداف والتدخلات والمسؤوليات وتقييم التقدم المحقق.",
+    language: "ar",
+    isEditable: true,
+    isSnapshotForm: false,
+    category: "orphan",
+    formFields: [
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الرمز المرجعي",
+          en: "Reference code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ الاتفاق على خطة الحالة (اليوم/الشهر/السنة)",
+          en: "Date of case plan agreement (day/month/year)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ مراجعة خطة الحالة (اليوم/الشهر/السنة)",
+          en: "Date of case plan review (day/month/year)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "خلفية الحالة / التحديات (وصف مختصر للوضع الحالي للمستفيد، تحديد الاحتياجات والتحديات)",
+          en: "Case background / Challenges (brief description of beneficiary's current situation, identifying needs and challenges)",
+        },
+        required: true,
+        placeholder: "تحديد الاحتياجات والتحديات (تعليم، قانونية، صحة جسدية، صحة نفسية واجتماعية، مسكن، حماية، غذاء، إلخ)",
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الهدف الأول: الموضوع أو المشكلة الأساسية، التدخل/الإجراء، المسؤولية، تقييم التقدم/الملاحظات، التاريخ",
+          en: "Goal 1: Main topic/problem, Intervention/action, Responsibility, Progress assessment/notes, Date",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الهدف الثاني: الموضوع أو المشكلة الأساسية، التدخل/الإجراء، المسؤولية، تقييم التقدم/الملاحظات، التاريخ",
+          en: "Goal 2: Main topic/problem, Intervention/action, Responsibility, Progress assessment/notes, Date",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الهدف الثالث: الموضوع أو المشكلة الأساسية، التدخل/الإجراء، المسؤولية، تقييم التقدم/الملاحظات، التاريخ",
+          en: "Goal 3: Main topic/problem, Intervention/action, Responsibility, Progress assessment/notes, Date",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الهدف الرابع: الموضوع أو المشكلة الأساسية، التدخل/الإجراء، المسؤولية، تقييم التقدم/الملاحظات، التاريخ",
+          en: "Goal 4: Main topic/problem, Intervention/action, Responsibility, Progress assessment/notes, Date",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "أسماء وأدوار الأشخاص (والمنظمات إن وجد ذلك) المشاركين في وضع الخطة",
+          en: "Names and roles of people (and organizations if applicable) involved in developing the plan",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفاصيل بيانات أي شخص لا يتفق مع أطراف الخطة ولماذا",
+          en: "Details of anyone who disagrees with the plan parties and why",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "تم مراجعتها والمصادقة عليها بواسطة الطفل والأسرة",
+          en: "Reviewed and approved by child and family",
+        },
+        required: false,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ مراجعة ومصادقة الطفل والأسرة",
+          en: "Date of child and family review and approval",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "اسم المشرف",
+          en: "Supervisor name",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ مراجعة ومصادقة المشرف",
+          en: "Date of supervisor review and approval",
+        },
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "نموذج الإحالة",
+    description:
+      "نموذج شامل لتوثيق إحالة حالة حماية الطفل من وكالة إلى أخرى، يتضمن معلومات الطفل ومقدم الرعاية والخدمات المطلوبة.",
+    language: "ar",
+    isEditable: true,
+    isSnapshotForm: false,
+    category: "orphan",
+    formFields: [
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "مستوى الإحالة",
+          en: "Referral level",
+        },
+        required: true,
+        options: [
+          { value: "low", label: "منخفض (خلال أسبوعين)" },
+          { value: "medium", label: "متوسط (من أسبوع إلى أسبوعين)" },
+          { value: "high", label: "عالي (خلال 48 ساعة)" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ الإحالة",
+          en: "Referral date",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الوكالة المحيلة",
+          en: "Referring agency",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "بيانات الاتصال للوكالة المحيلة",
+          en: "Contact information for referring agency",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ الاستلام (اليوم/الشهر/السنة)",
+          en: "Receipt date (day/month/year)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "اسم المستلم",
+          en: "Recipient name",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الوكالة المستلمة",
+          en: "Receiving agency",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "بيانات الاتصال للوكالة المستلمة",
+          en: "Contact information for receiving agency",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "توقيع المستلم",
+          en: "Recipient signature",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الاسم الكامل للطفل",
+          en: "Child's full name",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ الميلاد (اليوم/الشهر/السنة)",
+          en: "Date of birth (day/month/year)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "مكان الولادة",
+          en: "Place of birth",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "الجنس",
+          en: "Sex",
+        },
+        required: true,
+        options: [
+          { value: "male", label: "ذكر" },
+          { value: "female", label: "أنثى" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "number",
+        label: {
+          ar: "العمر",
+          en: "Age",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رقم الاتصال للطفل",
+          en: "Child's contact number",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "العنوان",
+          en: "Address",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "اسم مقدم الرعاية الرئيسي",
+          en: "Primary caregiver name",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "العلاقة بالطفل",
+          en: "Relationship to child",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "معلومات التواصل بمقدم الرعاية",
+          en: "Caregiver contact information",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل مقدم الرعاية على علم بالإحالة؟",
+          en: "Is caregiver aware of the referral?",
+        },
+        required: true,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الخدمات المطلوبة (طعام، صحة، تعليم، دعم نفسي، سكن، حماية، تأهيل جسدي، صحة عقلية، نظافة، أدوات مساعدة على الحركة، خدمات أخرى)",
+          en: "Required services (food, health, education, psychological support, housing, protection, physical rehabilitation, mental health, hygiene, mobility aids, other services)",
+        },
+        required: true,
+        placeholder: "حدد جميع الخدمات المطلوبة",
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "سبب الإحالة (وصف المشكلة وفقاً للطفل والعائلة، مدتها، تكرارها، إلخ) والخدمات التي تم تقديمها بالفعل",
+          en: "Reason for referral (description of problem according to child and family, duration, frequency, etc.) and services already provided",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل وافق الطفل أو مقدم الرعاية (ما هو ملائم) على هذه الإحالة؟",
+          en: "Has the child or caregiver (as appropriate) agreed to this referral?",
+        },
+        required: true,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفسير عدم الموافقة (إن وجد)",
+          en: "Explanation for non-agreement (if applicable)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل الطفل أو مقدم الرعاية (ما هو ملائم) على علم بهذه الإحالة؟",
+          en: "Is the child or caregiver (as appropriate) aware of this referral?",
+        },
+        required: true,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفسير عدم العلم بالإحالة (إن وجد)",
+          en: "Explanation for lack of awareness (if applicable)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل طلب الطفل/مقدم الرعاية وضع أية قيود على من يمكن الاتصال به فيما يتعلق بهذه الحالة/الخدمات؟",
+          en: "Has the child/caregiver requested any restrictions on who can be contacted regarding this case/services?",
+        },
+        required: false,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفاصيل القيود المطلوبة (إن وجدت)",
+          en: "Details of requested restrictions (if any)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "تم تقديم الإحالة عبر",
+          en: "Referral submitted via",
+        },
+        required: true,
+        options: [
+          { value: "phone", label: "الهاتف (في حالات الطوارئ فقط)" },
+          { value: "email", label: "البريد الإلكتروني" },
+          { value: "in_person", label: "بشكل شخصي" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "من المتوقع إجراء المتابعة مع الوكالة المستلمة عبر (الهاتف، البريد الإلكتروني، بشكل شخصي)",
+          en: "Follow-up with receiving agency expected via (phone, email, in person)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ المتابعة المتوقع (اليوم/الشهر/السنة)",
+          en: "Expected follow-up date (day/month/year)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الوكالات التي توافق على تبادل المعلومات في عملية المتابعة",
+          en: "Agencies that agree to share information in the follow-up process",
+        },
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "نموذج تحويل الحالة",
+    description:
+      "نموذج لتوثيق تحويل حالة حماية الطفل من وكالة إلى أخرى، يتضمن أسباب التحويل والترتيبات والموافقات.",
+    language: "ar",
+    isEditable: true,
+    isSnapshotForm: false,
+    category: "orphan",
+    formFields: [
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الرمز المرجعي",
+          en: "Reference code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "سبب تحويل الحالة",
+          en: "Reason for case transfer",
+        },
+        required: true,
+        options: [
+          { value: "child_relocation", label: "انتقال الطفل إلى موقع جديد" },
+          { value: "specialized_services", label: "الحاجة إلى خدمات متخصصة مما يعني أن هناك وكالة أخرى أكثر قدرة على إدارة الحالة" },
+          { value: "institutional", label: "أسباب مؤسساتية" },
+          { value: "other", label: "غير ذلك" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "أعط أسباب لما ورد أعلاه",
+          en: "Provide reasons for the above",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل أعطى الطفل/مقدم الرعاية الموافقة على تحويل الحالة؟",
+          en: "Has the child/caregiver given consent for case transfer?",
+        },
+        required: true,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفسير عدم الموافقة (إن وجد)",
+          en: "Explanation for non-consent (if applicable)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "العنوان الجديد (إذا كان الطفل/الأسرة ينتقل/تنتقل إلى مكان آخر)",
+          en: "New address (if child/family is relocating to another location)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "بيانات الاتصال الجديدة (إذا كان الطفل/الأسرة ينتقل/تنتقل إلى مكان آخر)",
+          en: "New contact information (if child/family is relocating to another location)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الوكالة المستلمة للحالة",
+          en: "Receiving agency for case",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الوكالة المحيلة للحالة",
+          en: "Referring agency for case",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "جهة الاتصال في الوكالة المستلمة",
+          en: "Contact person in receiving agency",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "جهة الاتصال في الوكالة المحيلة",
+          en: "Contact person in referring agency",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "عنوان وبيانات الوكالة المستلمة",
+          en: "Address and information of receiving agency",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "عنوان وبيانات الوكالة المحيلة",
+          en: "Address and information of referring agency",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ التحويل (اليوم/الشهر/السنة)",
+          en: "Transfer date (day/month/year)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفاصيل الترتيبات التي تم القيام بها لدعم التحويل الناجح للحالة",
+          en: "Details of arrangements made to support successful case transfer",
+        },
+        required: false,
+        placeholder: "على سبيل المثال، عقد اجتماعات بين أخصائي الحالة، عقد اجتماع تعريفي مع الطفل والأسرة، تنفيذ زيارة متابعة ميدانية نهائية، إلخ",
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "محتويات ملف الحالة التي تم تحويلها (عدد الوثائق، سواء كانت نسخ أو أصلية)",
+          en: "Contents of transferred case file (number of documents, whether copies or originals)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رمز أخصائي الحالة (الذي استكمل النموذج)",
+          en: "Caseworker code (who completed the form)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "توقيع أخصائي الحالة",
+          en: "Caseworker signature",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ استكمال النموذج من قبل أخصائي الحالة (اليوم/الشهر/السنة)",
+          en: "Date form completed by caseworker (day/month/year)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رمز المشرف",
+          en: "Supervisor code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "توقيع المشرف",
+          en: "Supervisor signature",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ التخويل من المشرف (اليوم/الشهر/السنة)",
+          en: "Date of authorization by supervisor (day/month/year)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "مقدم الرعاية / الطفل",
+          en: "Caregiver / Child",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "توقيع مقدم الرعاية / الطفل",
+          en: "Caregiver / Child signature",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ الموافقة من مقدم الرعاية / الطفل (اليوم/الشهر/السنة)",
+          en: "Date of approval by caregiver / child (day/month/year)",
+        },
+        required: false,
+      },
+    ],
+  },
 ];
 
 async function main() {
