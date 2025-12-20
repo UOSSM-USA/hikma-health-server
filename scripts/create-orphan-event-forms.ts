@@ -262,6 +262,320 @@ const orphanForms: SimpleForm[] = [
       },
     ],
   },
+  {
+    name: "ايصال استلام مساعدة من صندوق الاحتياجات الطارئة",
+    description:
+      "نموذج لتوثيق استلام المساعدة من صندوق الاحتياجات الطارئة، يتضمن تفاصيل المواد المستلمة والمستفيدين.",
+    language: "ar",
+    isEditable: true,
+    isSnapshotForm: false,
+    category: "orphan",
+    formFields: [
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رقم دفتر العائلة",
+          en: "Family book number",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رمز الحالة",
+          en: "Case code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "نوع الحاجة",
+          en: "Type of need",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "مصدر الإحالة",
+          en: "Referral source",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "المواد المستلمة (قائمة بالمواد والكميات)",
+          en: "Materials received (list of materials and quantities)",
+        },
+        required: true,
+        placeholder: "اكتب قائمة بالمواد المستلمة مع الكميات لكل مادة",
+      },
+      {
+        id: uuidv1(),
+        type: "number",
+        label: {
+          ar: "العدد الإجمالي من الأفراد المستفيدين بشكل مباشر من المساعدة ضمن نفس الأسرة",
+          en: "Total number of direct beneficiaries within the same family",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "اسم المستلم",
+          en: "Recipient name",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ الاستلام",
+          en: "Receipt date",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "توقيع عامل إدارة الحالة",
+          en: "Caseworker signature",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ التوقيع",
+          en: "Signature date",
+        },
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "نموذج التسجيل - إدارة حالات حماية الطفل",
+    description:
+      "نموذج تسجيل شامل لحالة حماية الطفل، يتضمن المعلومات الشخصية، العنوان، العائلة/مقدمي الرعاية، والمخاوف المتعلقة بالحماية.",
+    language: "ar",
+    isEditable: true,
+    isSnapshotForm: false,
+    category: "orphan",
+    formFields: [
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ التسجيل (اليوم/الشهر/السنة)",
+          en: "Registration date (day/month/year)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الموقع",
+          en: "Location",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الرمز المرجعي للحالة",
+          en: "Case reference code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الاسم الكامل",
+          en: "Full name",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "number",
+        label: {
+          ar: "العمر",
+          en: "Age",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ الميلاد (اليوم/الشهر/السنة)",
+          en: "Date of birth (day/month/year)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "الجنس",
+          en: "Sex",
+        },
+        required: true,
+        options: [
+          { value: "male", label: "ذكر" },
+          { value: "female", label: "أنثى" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "مكان الولادة",
+          en: "Place of birth",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل المستفيد",
+          en: "Is beneficiary",
+        },
+        required: true,
+        options: [
+          { value: "resident", label: "مقيم" },
+          { value: "displaced", label: "نازح" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "العنوان السابق (إذا كان نازحاً)",
+          en: "Previous address (if displaced)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "بيانات الاتصال الخاصة بالطفل (إن أمكن)",
+          en: "Child contact information (if available)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "بيانات الاتصال الخاصة بمقدم الرعاية (بما في ذلك الاسم)",
+          en: "Caregiver contact information (including name)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "العائلة / مقدمو الرعاية",
+          en: "Family / Caregivers",
+        },
+        required: true,
+        options: [
+          { value: "family", label: "1- يعيش مع الأسرة" },
+          { value: "relatives", label: "2- يعيش مع الأقارب" },
+          { value: "adult_caregiver", label: "3- يعيش مع مقدم/ي رعاية بالغ/ين" },
+          { value: "other_children", label: "4- يعيش مع أطفال آخرين (دون سن 18 سنة)" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفاصيل العائلة/مقدمي الرعاية (حسب الخيار المختار أعلاه)",
+          en: "Family/Caregiver details (based on option selected above)",
+        },
+        required: false,
+        placeholder: "اكتب تفاصيل إضافية حسب نوع العائلة/مقدمي الرعاية",
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "المخاوف المتعلقة بالحماية التي تم وصفها في مرحلة التحديد/الإحالة",
+          en: "Protection concerns described during identification/referral",
+        },
+        required: true,
+        placeholder: "اكتب تفاصيل المخاوف المتعلقة بالحماية ومصدر الإحالة إن وجد",
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "تقييم مستوى الخطر",
+          en: "Risk level assessment",
+        },
+        required: true,
+        options: [
+          { value: "high", label: "عالٍ" },
+          { value: "medium", label: "متوسط" },
+          { value: "low", label: "متدني" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ التقييم (اليوم/الشهر/السنة)",
+          en: "Assessment date (day/month/year)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رمز أخصائي الحالة",
+          en: "Caseworker code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "التوقيع",
+          en: "Signature",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ استكمال النموذج (اليوم/الشهر/السنة)",
+          en: "Form completion date (day/month/year)",
+        },
+        required: true,
+      },
+    ],
+  },
 ];
 
 async function main() {
