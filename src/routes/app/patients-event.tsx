@@ -505,7 +505,7 @@ function RouteComponent() {
               onBlur={() => handleFieldBlur(field.id)}
               required={field.required}
             >
-              <option value="">Select an option</option>
+              <option value="">{t("common.selectOption")}</option>
               {field.options?.map((opt: any) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label || opt.value}

@@ -10,7 +10,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronDown, X } from "lucide-react";
+import { X } from "lucide-react";
+import { useLanguage } from "@/lib/i18n/context";
 
 export interface SelectOption {
   value: string;
@@ -90,8 +91,19 @@ const SelectInput = React.forwardRef<
     },
     ref
   ) => {
+    const { t } = useLanguage();
     const [internalValue, setInternalValue] = React.useState(defaultValue);
     const controlledValue = value !== undefined ? value : internalValue;
+    
+    // Use translated placeholder if default is used, otherwise use provided placeholder
+    const translatedPlaceholder = React.useMemo(() => {
+      if (placeholder === "Select an option") {
+        const translated = t("common.selectOption");
+        // If translation returns the key itself, it means translation wasn't found, use fallback
+        return translated === "common.selectOption" ? "Select an option" : translated;
+      }
+      return placeholder;
+    }, [placeholder, t]);
 
     const sizeClasses = {
       sm: "h-8 px-2 text-sm",
@@ -107,7 +119,7 @@ const SelectInput = React.forwardRef<
       full: "rounded-full",
     };
 
-    const hasError = error && error !== false;
+    const hasError = typeof error === "string" || error === true;
     const selectId = id || `select-${Math.random().toString(36).substr(2, 9)}`;
 
     // Normalize data to consistent format
@@ -218,7 +230,7 @@ const SelectInput = React.forwardRef<
             </div>
           )}
 
-          <SelectValue placeholder={placeholder} />
+          <SelectValue placeholder={translatedPlaceholder} />
 
           {showClearButton && (
             <button
