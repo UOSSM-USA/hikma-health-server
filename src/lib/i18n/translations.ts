@@ -70,6 +70,11 @@ export const translations = {
       yes: "Yes",
       no: "No",
       unknown: "Unknown",
+      selectOption: "Select an option",
+      enterText: "Enter text...",
+      enterNumber: "Enter number...",
+      selectDate: "Select date",
+      noOptions: "No options available",
     },
     // Messages
     messages: {
@@ -761,6 +766,11 @@ export const translations = {
       yes: "نعم",
       no: "لا",
       unknown: "غير معروف",
+      selectOption: "اختر خياراً",
+      enterText: "أدخل النص...",
+      enterNumber: "أدخل الرقم...",
+      selectDate: "اختر التاريخ",
+      noOptions: "لا توجد خيارات متاحة",
     },
     // Messages
     messages: {

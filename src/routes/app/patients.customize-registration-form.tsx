@@ -524,7 +524,7 @@ function RouteComponent() {
                       }
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select an option" />
+                        <SelectValue placeholder={t("common.selectOption")} />
                       </SelectTrigger>
                       <SelectContent>
                         {translationObjectOptions(options, formLanguage).map(

@@ -29,9 +29,10 @@ import { PermissionOperation } from "@/models/permissions";
 import { redirect } from "@tanstack/react-router";
 import User from "@/models/user";
 import { getCurrentUser } from "@/lib/server-functions/auth";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useEventFormPermissions } from "@/hooks/use-permissions";
-import { useTranslation } from "@/lib/i18n/context";
+import { useTranslation, useLanguage } from "@/lib/i18n/context";
+import { translateText } from "@/lib/server-functions/translate";
 
 const deleteForm = createServerFn({ method: "POST" })
   .middleware([permissionsMiddleware])
@@ -102,10 +103,110 @@ function RouteComponent() {
   };
   const route = useRouter();
   const t = useTranslation();
+  const { language } = useLanguage();
   const { canAdd, canEdit, canDelete } = useEventFormPermissions(
     currentUser?.role,
   );
   const canConfigure = useMemo(() => canEdit, [canEdit]);
+  
+  // State for translated form names and descriptions
+  const [translatedFormNames, setTranslatedFormNames] = useState<Record<string, string>>({});
+  const [translatedFormDescriptions, setTranslatedFormDescriptions] = useState<Record<string, string>>({});
+
+  // Clear translation cache when language changes
+  useEffect(() => {
+    setTranslatedFormNames({});
+    setTranslatedFormDescriptions({});
+  }, [language]);
+
+  // Auto-translate event form names and descriptions to match UI language (en/ar)
+  useEffect(() => {
+    if (!forms || !forms.length) return;
+    const targetLang = language === "ar" ? "ar" : "en";
+
+    // Simple heuristic to detect Arabic script
+    const hasArabicChars = (text: string) => /[\u0600-\u06FF]/.test(text);
+
+    void (async () => {
+      const nameUpdates: Record<string, string> = {};
+      const descUpdates: Record<string, string> = {};
+
+      for (const form of forms) {
+        const id = form.id;
+        const name = form.name || "";
+        const description = form.description || "";
+        if (!id || (!name && !description)) continue;
+
+        // Skip if we already have translations for this form and language
+        // Check if name translation exists (and description if it exists in form)
+        const hasNameTranslation = name ? translatedFormNames[id] : true;
+        const hasDescTranslation = description ? translatedFormDescriptions[id] : true;
+        if (hasNameTranslation && hasDescTranslation) continue;
+
+        // Determine stored language
+        const storedLang: "en" | "ar" =
+          form.language === "ar"
+            ? "ar"
+            : form.language === "en"
+              ? "en"
+              : hasArabicChars(name + description)
+                ? "ar"
+                : "en";
+
+        // If stored language already matches UI language, just cache the originals
+        if (storedLang === targetLang) {
+          if (name) nameUpdates[id] = name;
+          if (description) descUpdates[id] = description;
+          continue;
+        }
+
+        // Translate name
+        if (name) {
+          try {
+            const nameRes = await translateText({
+              data: {
+                text: name,
+                from: storedLang,
+                to: targetLang,
+              },
+            });
+            const translatedName = nameRes.translated || name;
+            nameUpdates[id] = translatedName;
+          } catch (err) {
+            // On failure or rate limit, fall back to original name
+            console.error("Failed to translate event form name:", err);
+            nameUpdates[id] = name;
+          }
+        }
+
+        // Translate description
+        if (description) {
+          try {
+            const descRes = await translateText({
+              data: {
+                text: description,
+                from: storedLang,
+                to: targetLang,
+              },
+            });
+            const translatedDesc = descRes.translated || description;
+            descUpdates[id] = translatedDesc;
+          } catch (err) {
+            // On failure or rate limit, fall back to original description
+            console.error("Failed to translate event form description:", err);
+            descUpdates[id] = description;
+          }
+        }
+      }
+
+      if (Object.keys(nameUpdates).length > 0) {
+        setTranslatedFormNames((prev) => ({ ...prev, ...nameUpdates }));
+      }
+      if (Object.keys(descUpdates).length > 0) {
+        setTranslatedFormDescriptions((prev) => ({ ...prev, ...descUpdates }));
+      }
+    })();
+  }, [forms, language]);
 
   const handleSnapshotToggle = (id: string, isSnapshot: boolean) => {
     toggleFormDetail({ data: { id, field: "snapshot", value: isSnapshot } })
@@ -206,8 +307,12 @@ function RouteComponent() {
                         <Checkbox checked={form.is_editable} disabled />
                       )}
                     </TableCell>
-                    <TableCell>{form.name || "—"}</TableCell>
-                    <TableCell>{form.description || "—"}</TableCell>
+                    <TableCell>
+                      {translatedFormNames[form.id] || form.name || "—"}
+                    </TableCell>
+                    <TableCell>
+                      {translatedFormDescriptions[form.id] || form.description || "—"}
+                    </TableCell>
                     <TableCell>
                       {format(form.created_at, "yyyy-MM-dd")}
                     </TableCell>
