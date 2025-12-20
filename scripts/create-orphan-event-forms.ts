@@ -1821,6 +1821,537 @@ const orphanForms: SimpleForm[] = [
       },
     ],
   },
+  {
+    name: "نموذج المتابعة",
+    description:
+      "نموذج لتوثيق متابعة حالة حماية الطفل، يتضمن تفاصيل المتابعة والمشاركين والمخرجات والخطوات التالية.",
+    language: "ar",
+    isEditable: true,
+    isSnapshotForm: false,
+    category: "orphan",
+    formFields: [
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الرمز المرجعي",
+          en: "Reference code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رمز أخصائي الحالة",
+          en: "Caseworker code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ المتابعة (اليوم/الشهر/السنة)",
+          en: "Follow-up date (day/month/year)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "تخطيط المتابعة رقم",
+          en: "Follow-up planning number",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "نوع المتابعة",
+          en: "Type of follow-up",
+        },
+        required: true,
+        options: [
+          { value: "scheduled", label: "موعد زمني مجدول" },
+          { value: "unscheduled", label: "مفاجئة (غير مجدولة)" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "موقع المتابعة",
+          en: "Follow-up location",
+        },
+        required: true,
+        options: [
+          { value: "child_home", label: "منزل الطفل" },
+          { value: "center", label: "المركز" },
+          { value: "other", label: "غير ذلك" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "موقع المتابعة (آخر)",
+          en: "Follow-up location (other)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "غرض/هدف المتابعة",
+          en: "Purpose/objective of follow-up",
+        },
+        required: true,
+        options: [
+          { value: "assessment", label: "التقييم" },
+          { value: "monitoring", label: "المراقبة" },
+          { value: "support_verification", label: "دعم/تحقق" },
+          { value: "other", label: "غير ذلك" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفاصيل المتابعة (بما في ذلك التعليقات على الغرض/الأهداف المذكورة أعلاه)",
+          en: "Follow-up details (including comments on the purpose/objectives mentioned above)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "أسماء الوكالات وجميع الحاضرين عن الوكالة وأسماء المشاركين من غير أفراد الأسرة",
+          en: "Names of agencies and all agency attendees and names of participants from outside the family",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "أسماء جميع المشاركين من الأسرة (بما فيهم الأطفال)",
+          en: "Names of all family participants (including children)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "نقاط النقاش الرئيسية",
+          en: "Main discussion points",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "مخرجات الاجتماع",
+          en: "Meeting outcomes",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "النقاط الإضافية التي تم الإشارة إليها",
+          en: "Additional points mentioned",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "العملية التي تمت",
+          en: "Process that took place",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الإجراءات المخطط لها - بحيث يتم تحديثها في ملف الحالة",
+          en: "Planned actions - to be updated in case file",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "ديناميكيات الاجتماع (الأجواء وتفاعل الحاضرين)",
+          en: "Meeting dynamics (atmosphere and interaction of attendees)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل سنحت لك الفرصة للتحدث مع الطفل صاحب الحالة بشكل فردي؟",
+          en: "Did you have the opportunity to speak with the case child individually?",
+        },
+        required: false,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "مخرجات النقاش الفردي مع الطفل (إذا كانت الإجابة نعم) أو سبب عدم إمكانية ذلك (إذا كانت الإجابة لا)",
+          en: "Outcomes of individual discussion with child (if yes) or reason why not possible (if no)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ المتابعة القادمة (اليوم/الشهر/السنة)",
+          en: "Date of next follow-up (day/month/year)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "النوع، الموقع، الغرض/الهدف للمتابعة القادمة",
+          en: "Type, location, purpose/objective of next follow-up",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الخدمة المقدمة (نوع التدخل/الخدمات المقدمة، مدتها/تكرارها)",
+          en: "Service provided (type of intervention/services provided, duration/frequency)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "مخرجات الإحالة والتوصيات الأخرى",
+          en: "Referral outcomes and other recommendations",
+        },
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "نموذج إغلاق الحالة",
+    description:
+      "نموذج شامل لإغلاق حالة حماية الطفل، يتضمن سبب الإغلاق وترتيبات الرعاية والتواصل مع الطفل والأسرة والتقييم.",
+    language: "ar",
+    isEditable: true,
+    isSnapshotForm: false,
+    category: "orphan",
+    formFields: [
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الرمز المرجعي",
+          en: "Reference code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "السبب الرئيسي لإغلاق الحالة",
+          en: "Main reason for case closure",
+        },
+        required: true,
+        options: [
+          { value: "case_plan_completed", label: "استكمال خطة الحالة / تم تسوية دواعي الحماية" },
+          { value: "case_transferred", label: "تم تحويل الحالة (وتم استيفاء النموذج)" },
+          { value: "child_death", label: "وفاة الطفل" },
+          { value: "child_over_18", label: "الطفل فوق سن 18 سنة" },
+          { value: "child_relocated", label: "انتقل الطفل إلى خارج منطقة عمل المنظمة" },
+          { value: "no_longer_wanting", label: "لم يعد الطفل أو الأسرة راغبين في المشاركة" },
+          { value: "other", label: "غير ذلك" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفاصيل الإغلاق",
+          en: "Closure details",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "اسم مقدم الرعاية",
+          en: "Caregiver name",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "بيانات مقدم الرعاية",
+          en: "Caregiver information",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "عنوان مقدم الرعاية",
+          en: "Caregiver address",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "نوع ترتيب الرعاية",
+          en: "Type of care arrangement",
+        },
+        required: true,
+        options: [
+          { value: "parents", label: "الوالدان" },
+          { value: "relatives", label: "الأقارب" },
+          { value: "alternative_caregiver", label: "مقدم رعاية بديل" },
+          { value: "supported_independent", label: "رعاية معيشة مستقلة مدعومة" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "تفاصيل نوع ترتيب الرعاية (إذا كان الأقارب، يرجى التحديد)",
+          en: "Details of care arrangement type (if relatives, please specify)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "هل هناك تفاصيل ذات علاقة",
+          en: "Are there relevant details",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "هل تم مشاركة الطفل والأسرة التفاصيل المتعلقة بخطة الحالة والمخرجات المتعلقة به",
+          en: "Were the child and family shared details related to the case plan and related outcomes",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل تم إشراك الطفل والأسرة بالكامل في قرار إغلاق الحالة؟",
+          en: "Were the child and family fully involved in the case closure decision?",
+        },
+        required: true,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تعليقات على إشراك الطفل والأسرة",
+          en: "Comments on child and family involvement",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل وافق الطفل والأسرة على أنه يجب إغلاق الحالة؟",
+          en: "Did the child and family agree that the case should be closed?",
+        },
+        required: true,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تعليقات على موافقة الطفل والأسرة",
+          en: "Comments on child and family agreement",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل تم إخبار الطفل والأسرة بمن يتصلوا إذا كان لديهم أسئلة/احتياجات دعم أخرى؟",
+          en: "Were the child and family informed who to contact if they have questions/other support needs?",
+        },
+        required: true,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تم توفير بيانات الاتصال",
+          en: "Contact information provided",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تعليقات على بيانات الاتصال",
+          en: "Comments on contact information",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رمز أخصائي الحالة (الذي استكمل النموذج)",
+          en: "Caseworker code (who completed the form)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "توقيع أخصائي الحالة",
+          en: "Caseworker signature",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ استكمال النموذج من قبل أخصائي الحالة (اليوم/الشهر/السنة)",
+          en: "Date form completed by caseworker (day/month/year)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رمز المشرف",
+          en: "Supervisor code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "توقيع المشرف",
+          en: "Supervisor signature",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ إغلاق الحالة بعد المراجعة بتخويل من المشرف (اليوم/الشهر/السنة)",
+          en: "Date case closed after review authorized by supervisor (day/month/year)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "مقدم الرعاية / الطفل",
+          en: "Caregiver / Child",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "توقيع مقدم الرعاية / الطفل",
+          en: "Caregiver / Child signature",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ الموافقة من مقدم الرعاية / الطفل (اليوم/الشهر/السنة)",
+          en: "Date of approval by caregiver / child (day/month/year)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ تقييم الخدمة (اليوم/الشهر/السنة) - يجب أن يتم بعد 3 أشهر من إغلاق الحالة",
+          en: "Service evaluation date (day/month/year) - must be done 3 months after case closure",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "تم استكمال تقييم الخدمة",
+          en: "Service evaluation completed",
+        },
+        required: false,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+    ],
+  },
 ];
 
 async function main() {
