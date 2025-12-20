@@ -576,6 +576,532 @@ const orphanForms: SimpleForm[] = [
       },
     ],
   },
+  {
+    name: "تقرير تقييم وضع الطفل",
+    description:
+      "تقرير شامل لتقييم وضع الطفل من حيث النماء والصحة والاندماج في الأسرة والمجتمع، مع تحليل المخاطر والخطوات اللاحقة.",
+    language: "ar",
+    isEditable: true,
+    isSnapshotForm: false,
+    category: "orphan",
+    formFields: [
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "الطفل (الرقم المرجعي)",
+          en: "Child (reference number)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "أخصائي الحالة (الرقم المرجعي)",
+          en: "Caseworker (reference number)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "التاريخ",
+          en: "Date",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "مخاوف الحماية التي اطلعت عليها خلال التسجيل",
+          en: "Protection concerns identified during registration",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "فترة التقييم - من",
+          en: "Assessment period - from",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "فترة التقييم - إلى",
+          en: "Assessment period - to",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "قائمة الأشخاص المشاركين في التقييم ووظيفتهم/دورهم",
+          en: "List of people involved in assessment and their role/function",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "ملاحظات على مواقف وتوجهات الطفل النفسية والعاطفية والفكرية والاجتماعية",
+          en: "Observations on child's psychological, emotional, intellectual, and social attitudes and orientations",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "صعوبات ملحوظة (مثل صعوبات النطق، التواصل، عدم الانتباه، العدوانية، عدم الفهم، قلة التركيز)",
+          en: "Observed difficulties (e.g., speech, communication, inattention, aggression, lack of understanding, poor concentration)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "حجم الطفل ووزنه وطوله مقارنة مع أقرانه من نفس العمر ومستوى النماء",
+          en: "Child's size, weight, and height compared to peers of same age and development level",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "خلل جسدي أو إعاقة أو تدهور في الصحة",
+          en: "Physical abnormalities, disabilities, or health deterioration",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "ملاحظات بخصوص علاقات الطفل مع أفراد الأسرة",
+          en: "Observations regarding child's relationships with family members",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تصرفات ملحوظة في تعاملات الطفل مع أفراد الأسرة (كالخوف أو العصبية)",
+          en: "Notable behaviors in child's interactions with family members (e.g., fear or nervousness)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الأنشطة التعليمية المعتادة للطفل",
+          en: "Child's usual educational activities",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الأنشطة الترفيهية المعتادة للطفل",
+          en: "Child's usual recreational activities",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفاعل الطفل مع جيرانه أو المجتمع أو أقرانه",
+          en: "Child's interaction with neighbors, community, or peers",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "ما الذي يحدده الطفل على أنه مشكلة/مشاكل",
+          en: "What the child identifies as problem(s)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "ما الذي يرغب الطفل في أن يتم القيام به لمعالجة المشكلة",
+          en: "What the child wishes to be done to address the problem",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "قدرة الوالدين/مقدمي الرعاية على توفير الرعاية والدعم للطفل",
+          en: "Parents'/caregivers' ability to provide care and support for the child",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "كيف تتصرف الأسرة ككل",
+          en: "How the family behaves as a whole",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الوضع الحالي للمسكن (ملائم، صغير، يحتاج صيانة، غير ملائم، غير مخدوم، إلخ)",
+          en: "Current housing situation (suitable, small, needs maintenance, unsuitable, unserviced, etc.)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "الوضع الاقتصادي ومصادر الدخل",
+          en: "Economic situation and income sources",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "نوع الدعم الذي تحصل عليه الأسرة من العائلة الممتدة أو المجتمع الأوسع",
+          en: "Type of support the family receives from extended family or wider community",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "ما الذي يحدده الوالدان/مقدمو الرعاية على أنه مشكلة وما الذي يرغبون في أن يتم القيام به",
+          en: "What parents/caregivers identify as problem(s) and what they wish to be done",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل الوالدان/مقدمو الرعاية داعمون لإدارة حالة طفلهم؟",
+          en: "Are parents/caregivers supportive of managing their child's case?",
+        },
+        required: false,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+          { value: "partially", label: "جزئياً" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "معلومات إضافية من أشخاص آخرين (معلم، منشط، طاقم طبي، إلخ)",
+          en: "Additional information from other people (teacher, facilitator, medical staff, etc.)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "آراء وملاحظات أخصائي الحالة",
+          en: "Caseworker opinions and observations",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل الطفل آمن؟",
+          en: "Is the child safe?",
+        },
+        required: true,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+          { value: "partially", label: "جزئياً" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "شرح حالة أمان الطفل",
+          en: "Explanation of child's safety status",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "احتياجات حماية أخرى لدى الطفل",
+          en: "Other protection needs of the child",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "عوامل الخطر الموجودة (في إطار بيئة الطفل)",
+          en: "Existing risk factors (within child's environment)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "عوامل الوقاية الموجودة",
+          en: "Existing protective factors",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل هناك حاجة إلى إجراء فوري؟",
+          en: "Is there a need for immediate action?",
+        },
+        required: true,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "نوع الإجراء الفوري المطلوب",
+          en: "Type of immediate action required",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "هل يجب اتخاذ إجراء قصير الأمد أو متوسط الأمد، أو طويل الأمد؟",
+          en: "Should short-term, medium-term, or long-term action be taken?",
+        },
+        required: false,
+        options: [
+          { value: "yes", label: "نعم" },
+          { value: "no", label: "لا" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تفاصيل بيانات الاتصال/المقابلات (الشخص المبحوث، العلاقة بالطفل، التاريخ، المكان)",
+          en: "Contact/interview details (person interviewed, relationship to child, date, location)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رمز أخصائي الحالة",
+          en: "Caseworker code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "التوقيع",
+          en: "Signature",
+        },
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "نموذج الموافقة على الحالة",
+    description:
+      "نموذج لمراجعة واعتماد نقاط العمل المقترحة لحالات محددة بحاجة إلى المساعدة، يجب مراجعته واعتماده من قِبل قائد فريق إدارة الحالات.",
+    language: "ar",
+    isEditable: true,
+    isSnapshotForm: false,
+    category: "orphan",
+    formFields: [
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "اسم أخصائي الحالة",
+          en: "Caseworker name",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "تمت الإحالة بواسطة",
+          en: "Referred by",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "رمز الحالة",
+          en: "Case code",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ الإحالة",
+          en: "Referral date",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "دفتر العائلة #",
+          en: "Family book #",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "أولوية",
+          en: "Priority",
+        },
+        required: true,
+        options: [
+          { value: "high", label: "أولوية عالية (تتطلب متابعة خلال 24-48 ساعة)" },
+          { value: "medium", label: "أولوية متوسطة (تتطلب متابعة خلال 3-5 أيام)" },
+          { value: "low", label: "أولوية منخفضة (تتطلب متابعة خلال 10 أيام)" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "ملخص الحالة",
+          en: "Case summary",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "تبرير نوع المساعدة والمبلغ المطلوب تقديمه (يرجى تحديد الأصناف مع المبلغ والغرض منها)",
+          en: "Justification for type of assistance and amount required (please specify items with amount and purpose)",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "number",
+        label: {
+          ar: "المبلغ الإجمالي المطلوب",
+          en: "Total amount required",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "number",
+        label: {
+          ar: "العدد المستهدف للأطفال في نفس منزل الحالة المسجلة",
+          en: "Number of target children in same household as registered case",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "select",
+        label: {
+          ar: "قرار اللجنة",
+          en: "Committee decision",
+        },
+        required: true,
+        options: [
+          { value: "approved", label: "موافقة" },
+          { value: "not_approved", label: "غير معتمد" },
+        ],
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "سبب عدم الموافقة (إن وجد)",
+          en: "Reason for non-approval (if applicable)",
+        },
+        required: false,
+      },
+      {
+        id: uuidv1(),
+        type: "text",
+        label: {
+          ar: "اسم قائد فريق إدارة الحالات",
+          en: "Case management team leader name",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "textarea",
+        label: {
+          ar: "توقيع قائد فريق إدارة الحالات",
+          en: "Case management team leader signature",
+        },
+        required: true,
+      },
+      {
+        id: uuidv1(),
+        type: "date",
+        label: {
+          ar: "تاريخ القرار",
+          en: "Decision date",
+        },
+        required: true,
+      },
+    ],
+  },
 ];
 
 async function main() {
