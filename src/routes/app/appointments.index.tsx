@@ -22,7 +22,9 @@ import { SelectInput } from "@/components/select-input";
 import { toggleAppointmentStatus } from "@/lib/server-functions/appointments";
 import { toast } from "sonner";
 import { useRouter } from "@tanstack/react-router";
-import { useTranslation } from "@/lib/i18n/context";
+import { useTranslation, useLanguage } from "@/lib/i18n/context";
+import { translateText } from "@/lib/server-functions/translate";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/app/appointments/")({
   component: RouteComponent,
@@ -62,10 +64,76 @@ export const Route = createFileRoute("/app/appointments/")({
 
 // TODO: Support pagination and search
 
+// Simple heuristic to detect if text contains Arabic characters
+const hasArabicChars = (text: string): boolean => /[\u0600-\u06FF]/.test(text);
+
 function RouteComponent() {
   const { appointments, departmentNames } = Route.useLoaderData();
   const router = useRouter();
   const t = useTranslation();
+  const { language } = useLanguage();
+
+  // Cache translated notes per appointment id and target language
+  const [translatedNotesById, setTranslatedNotesById] = useState<
+    Record<string, { en?: string; ar?: string }>
+  >({});
+
+  // When language is EN or AR, translate notes in the background where needed
+  useEffect(() => {
+    if (language !== "en" && language !== "ar") return;
+
+    // Find appointments that need translation for the current UI language
+    const toTranslate: { id: string; notes: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    for (const appt of appointments as any[]) {
+      const appointment = appt?.appointment;
+      if (!appointment) continue;
+      
+      const notes = (appointment.notes || "").trim();
+      if (!notes) continue;
+
+      const cache = translatedNotesById[appointment.id];
+      const hasArabic = hasArabicChars(notes);
+
+      if (language === "en") {
+        // Only translate into English if we see Arabic and haven't cached EN yet
+        if (hasArabic && !cache?.en) {
+          toTranslate.push({ id: appointment.id, notes, from: "ar", to: "en" });
+        }
+      } else if (language === "ar") {
+        // Only translate into Arabic if we see non-Arabic text and haven't cached AR yet
+        if (!hasArabic && !cache?.ar) {
+          toTranslate.push({ id: appointment.id, notes, from: "en", to: "ar" });
+        }
+      }
+    }
+
+    if (!toTranslate.length) return;
+
+    // Fire off translations in the background; best-effort only
+    void (async () => {
+      for (const entry of toTranslate) {
+        try {
+          const res = await translateText({
+            data: {
+              text: entry.notes,
+              from: entry.from,
+              to: entry.to,
+            },
+          });
+          setTranslatedNotesById((prev) => ({
+            ...prev,
+            [entry.id]: {
+              ...(prev[entry.id] || {}),
+              [entry.to]: res.translated || entry.notes,
+            },
+          }));
+        } catch (err) {
+          // On failure, fall back to original notes; don't toast to avoid noise on list
+          console.error("Failed to translate appointment notes in list view:", err);
+        }
+      }
+    })();
+  }, [appointments, language]);
 
   // Function to calculate age from date of birth
   const calculateAge = (dateOfBirth: Date | string | null | undefined) => {
@@ -94,7 +162,7 @@ function RouteComponent() {
         toast.success(t("appointmentsList.statusUpdatedSuccess"));
         router.invalidate({ sync: true });
       })
-      .catch((error) => {
+      .catch(() => {
         toast.error(t("appointmentsList.statusUpdateError"));
       });
   };
@@ -230,7 +298,22 @@ function RouteComponent() {
                     </TableCell>
                     <TableCell>{appt?.appointment?.duration}</TableCell>
                     <TableCell className="max-w-[200px] truncate">
-                      {appt?.appointment?.notes}
+                      {(() => {
+                        const appointment = appt?.appointment;
+                        if (!appointment) return "—";
+                        
+                        const notes = appointment.notes || "";
+                        if (!notes.trim()) return "—";
+                        
+                        // Display translated version if available, otherwise original
+                        const cache = translatedNotesById[appointment.id];
+                        if (language === "en" && cache?.en) {
+                          return cache.en;
+                        } else if (language === "ar" && cache?.ar) {
+                          return cache.ar;
+                        }
+                        return notes;
+                      })()}
                     </TableCell>
                     <TableCell>
                       <SelectInput
