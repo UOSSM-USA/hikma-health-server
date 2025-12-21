@@ -802,17 +802,42 @@ export const PERMISSION_MATRIX: Record<
 };
 
 // Map new orphan-related roles onto existing base permission sets.
-// This keeps the matrix DRY while satisfying tests that expect all roles to be present.
+// Full Access Roles: Can see, edit, validate, and extract ALL forms (including submitted forms from all caseworkers)
 PERMISSION_MATRIX[User.ROLES.PROJECT_MANAGER] = PERMISSION_MATRIX[User.ROLES.ADMIN];
 PERMISSION_MATRIX[User.ROLES.TECHNICAL_ADVISOR] = PERMISSION_MATRIX[User.ROLES.ADMIN];
 PERMISSION_MATRIX[User.ROLES.TEAM_LEADER] = PERMISSION_MATRIX[User.ROLES.ADMIN];
 PERMISSION_MATRIX[User.ROLES.ME_OFFICER] = PERMISSION_MATRIX[User.ROLES.ADMIN];
 PERMISSION_MATRIX[User.ROLES.IM_ASSOCIATE] = PERMISSION_MATRIX[User.ROLES.ADMIN];
 
-PERMISSION_MATRIX[User.ROLES.CASEWORKER_1] = PERMISSION_MATRIX[User.ROLES.PROVIDER];
-PERMISSION_MATRIX[User.ROLES.CASEWORKER_2] = PERMISSION_MATRIX[User.ROLES.PROVIDER];
-PERMISSION_MATRIX[User.ROLES.CASEWORKER_3] = PERMISSION_MATRIX[User.ROLES.PROVIDER];
-PERMISSION_MATRIX[User.ROLES.CASEWORKER_4] = PERMISSION_MATRIX[User.ROLES.PROVIDER];
+// Restricted Access Roles (Caseworkers): 
+// - Can access all empty forms (templates)
+// - Can submit their own forms
+// - NO access to submitted forms from other caseworkers
+// - NO access to edit others' cases
+PERMISSION_MATRIX[User.ROLES.CASEWORKER_1] = {
+  ...PERMISSION_MATRIX[User.ROLES.PROVIDER],
+  [Module.EVENT_FORMS]: {
+    [PermissionOperation.VIEW]: {
+      scope: PermissionScope.ALL, // Can view all form templates (empty forms)
+      restrictions: ["Can view all event form templates", "Cannot view submitted events from other caseworkers"],
+    },
+    [PermissionOperation.ADD]: {
+      scope: PermissionScope.CLINIC, // Can submit forms within clinic
+      restrictions: ["Can submit their own forms"],
+    },
+    [PermissionOperation.EDIT]: {
+      scope: PermissionScope.OWN, // Can only edit their own submitted forms
+      restrictions: ["Cannot edit submitted forms from other caseworkers"],
+    },
+    [PermissionOperation.DELETE]: {
+      scope: PermissionScope.NONE,
+      restrictions: ["Cannot delete event forms"],
+    },
+  },
+};
+PERMISSION_MATRIX[User.ROLES.CASEWORKER_2] = PERMISSION_MATRIX[User.ROLES.CASEWORKER_1];
+PERMISSION_MATRIX[User.ROLES.CASEWORKER_3] = PERMISSION_MATRIX[User.ROLES.CASEWORKER_1];
+PERMISSION_MATRIX[User.ROLES.CASEWORKER_4] = PERMISSION_MATRIX[User.ROLES.CASEWORKER_1];
 
 /**
  * Check if a role has permission for a specific operation on a module
