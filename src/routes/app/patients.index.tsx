@@ -42,9 +42,11 @@ import ExcelJS from "exceljs";
 import Event from "@/models/event";
 import EventForm from "@/models/event-form";
 import { format } from "date-fns";
+import { ar } from "date-fns/locale";
 import User from "@/models/user";
 import { toast } from "sonner";
 import PatientVital from "@/models/patient-vital";
+import { translateText } from "@/lib/server-functions/translate";
 
 // Function to get all patients for export (no pagination)
 const getAllPatientsForExport = createServerFn({ method: "GET" }).handler(
@@ -80,6 +82,9 @@ export const Route = createFileRoute("/app/patients/")({
   },
 });
 
+// Simple heuristic to detect if text contains Arabic characters
+const hasArabicChars = (text: string): boolean => /[\u0600-\u06FF]/.test(text);
+
 function RouteComponent() {
   const { currentUser, patients, pagination, patientRegistrationForm, clinics } =
     Route.useLoaderData();
@@ -105,6 +110,7 @@ function RouteComponent() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
+  // Define fields early so it can be used in useEffect hooks
   const fields = patientRegistrationForm?.fields.filter((f) => !f.deleted);
   // Use current language for field labels instead of always English
   const headers = fields?.map((f) => {
@@ -114,6 +120,158 @@ function RouteComponent() {
     }
     return typeof f.label === 'string' ? f.label : '';
   }) || [];
+
+  // State for translated clinic names and patient field values
+  const [translatedClinicNames, setTranslatedClinicNames] = React.useState<Record<string, { en?: string; ar?: string }>>({});
+  const [translatedFieldValues, setTranslatedFieldValues] = React.useState<Record<string, Record<string, { en?: string; ar?: string }>>>({});
+
+  // Clear translation cache when language changes
+  React.useEffect(() => {
+    setTranslatedClinicNames({});
+    setTranslatedFieldValues({});
+  }, [language]);
+
+  // Auto-translate clinic names
+  React.useEffect(() => {
+    if (language !== "en" && language !== "ar" || !clinics || clinics.length === 0) return;
+    const targetLang = language;
+
+    void (async () => {
+      const toTranslate: { clinicId: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+
+      for (const clinic of clinics) {
+        const clinicName = (clinic.name || "").trim();
+        if (!clinicName || !clinic.id) continue;
+
+        const cache = translatedClinicNames[clinic.id];
+        const hasArabic = hasArabicChars(clinicName);
+        const sourceLang: "ar" | "en" = hasArabic ? "ar" : "en";
+
+        // Translate if source language doesn't match target language and we don't have a cached translation
+        if (sourceLang !== targetLang && !cache?.[targetLang]) {
+          toTranslate.push({ clinicId: clinic.id, text: clinicName, from: sourceLang, to: targetLang });
+        }
+      }
+
+      if (toTranslate.length === 0) {
+        console.log("[Patients List] No clinic names to translate");
+        return;
+      }
+
+      console.log(`[Patients List] Translating ${toTranslate.length} clinic names to ${targetLang}`);
+
+      for (const entry of toTranslate) {
+        try {
+          const res = await translateText({
+            data: { text: entry.text, from: entry.from, to: entry.to },
+          });
+          if (res.translated) {
+            setTranslatedClinicNames((prev) => ({
+              ...prev,
+              [entry.clinicId]: { ...(prev[entry.clinicId] || {}), [entry.to]: res.translated || entry.text },
+            }));
+            console.log(`[Patients List] Translated clinic: "${entry.text}" -> "${res.translated}"`);
+          }
+        } catch (err) {
+          console.error("[Patients List] Failed to translate clinic name:", err);
+        }
+      }
+    })();
+  }, [language, clinics]);
+
+  // Auto-translate patient field values (text fields only)
+  React.useEffect(() => {
+    if (language !== "en" && language !== "ar" || !patientsList || patientsList.length === 0 || !fields) {
+      console.log("[Patients List] Translation skipped:", { language, patientsCount: patientsList?.length, fieldsCount: fields?.length });
+      return;
+    }
+    const targetLang = language;
+
+    void (async () => {
+      const toTranslate: { patientId: string; fieldId: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+
+      for (const patient of patientsList) {
+        for (const field of fields) {
+          // Skip non-string fields (numbers, booleans, dates are handled separately)
+          if (field.fieldType === "number" || field.fieldType === "boolean" || field.fieldType === "date") continue;
+
+          let fieldValue: string | null = null;
+
+          if (field.baseField) {
+            if (field.column === "primary_clinic_id") {
+              // Skip clinic ID, it's handled separately
+              continue;
+            }
+            const rawValue = patient[field.column as keyof typeof patient];
+            // Convert to string for translation
+            if (rawValue !== null && rawValue !== undefined) {
+              fieldValue = String(rawValue).trim();
+            }
+          } else {
+            const attrValue = patient.additional_attributes[field.id];
+            if (attrValue && typeof attrValue === "object" && "string_value" in attrValue) {
+              fieldValue = attrValue.string_value ? String(attrValue.string_value).trim() : null;
+            } else if (attrValue !== null && attrValue !== undefined) {
+              fieldValue = String(attrValue).trim();
+            }
+          }
+
+          // Skip empty values
+          if (!fieldValue || !fieldValue.length) continue;
+
+          // Check cache to avoid re-translating
+          const cache = translatedFieldValues[patient.id]?.[field.id];
+          const hasArabic = hasArabicChars(fieldValue);
+
+          // Determine source language
+          const sourceLang: "ar" | "en" = hasArabic ? "ar" : "en";
+
+          // Translate if source language doesn't match target language and we don't have a cached translation
+          if (sourceLang !== targetLang && !cache?.[targetLang]) {
+            toTranslate.push({ 
+              patientId: patient.id, 
+              fieldId: field.id, 
+              text: fieldValue, 
+              from: sourceLang, 
+              to: targetLang 
+            });
+          }
+        }
+      }
+
+      console.log(`[Patients List] Found ${toTranslate.length} fields to translate (target: ${targetLang})`);
+
+      if (toTranslate.length === 0) {
+        console.log("[Patients List] No fields to translate");
+        return;
+      }
+
+      console.log(`[Patients List] Translating ${toTranslate.length} field values to ${targetLang}`);
+
+      for (const entry of toTranslate) {
+        try {
+          const res = await translateText({
+            data: { text: entry.text, from: entry.from, to: entry.to },
+          });
+          if (res.translated) {
+            setTranslatedFieldValues((prev) => ({
+              ...prev,
+              [entry.patientId]: {
+                ...(prev[entry.patientId] || {}),
+                [entry.fieldId]: {
+                  ...(prev[entry.patientId]?.[entry.fieldId] || {}),
+                  [entry.to]: res.translated || entry.text,
+                },
+              },
+            }));
+            console.log(`[Patients List] Translated: "${entry.text}" -> "${res.translated}"`);
+          }
+        } catch (err) {
+          console.error(`[Patients List] Failed to translate field value for patient ${entry.patientId}, field ${entry.fieldId}:`, err);
+        }
+      }
+    })();
+  }, [language, patientsList, fields]);
 
   const clinicNameById = React.useMemo(() => {
     const map = new Map<string, string>();
@@ -494,29 +652,87 @@ function RouteComponent() {
                 <TableCell className="px-6" key={"id"}>
                   {truncate(patient.id, { length: 12, omission: "…" })}
                 </TableCell>
-                {fields?.map((field) =>
-                  field.baseField ? (
-                    <TableCell className="px-6" key={field.id}>
-                      {field.column === "primary_clinic_id"
-                        ? clinicNameById.get(
-                            (patient as any).primary_clinic_id || "",
-                          ) ||
-                          (patient as any).primary_clinic_id ||
-                          t("common.unknown")
-                        : PatientRegistrationForm.renderFieldValue(
-                            field,
-                            patient[field.column as keyof typeof patient],
-                          )}
-                    </TableCell>
-                  ) : (
-                    <TableCell className="px-6" key={field.id}>
-                      {PatientRegistrationForm.renderFieldValue(
+                {fields?.map((field) => {
+                  let displayValue: string | number | boolean;
+
+                  if (field.baseField) {
+                    if (field.column === "primary_clinic_id") {
+                      const clinicId = (patient as any).primary_clinic_id || "";
+                      const clinicName = clinicNameById.get(clinicId) || clinicId || t("common.unknown");
+                      
+                      // Use translated clinic name if available
+                      const translatedClinicName = language === "en"
+                        ? translatedClinicNames[clinicId]?.en || clinicName
+                        : language === "ar"
+                          ? translatedClinicNames[clinicId]?.ar || clinicName
+                          : clinicName;
+                      
+                      displayValue = translatedClinicName;
+                    } else {
+                      const rawValue = PatientRegistrationForm.renderFieldValue(
                         field,
-                        patient.additional_attributes[field.id],
-                      )}
+                        patient[field.column as keyof typeof patient],
+                      );
+                      
+                      // Translate all string values (text, select, and any other string fields)
+                      if (typeof rawValue === "string" && rawValue.trim()) {
+                        // Check if we have a translation for this field
+                        const translatedValue = language === "en"
+                          ? translatedFieldValues[patient.id]?.[field.id]?.en
+                          : language === "ar"
+                            ? translatedFieldValues[patient.id]?.[field.id]?.ar
+                            : undefined;
+                        
+                        // Use translated value if available, otherwise show original
+                        // Translations happen asynchronously, so original will show until translation completes
+                        displayValue = translatedValue || rawValue;
+                      } else {
+                        displayValue = rawValue;
+                      }
+                    }
+                  } else {
+                    const rawValue = PatientRegistrationForm.renderFieldValue(
+                      field,
+                      patient.additional_attributes[field.id],
+                    );
+                    
+                    // Translate all string values (text, select, and any other string fields)
+                    if (typeof rawValue === "string" && rawValue.trim()) {
+                      // Check if we have a translation for this field
+                      const translatedValue = language === "en"
+                        ? translatedFieldValues[patient.id]?.[field.id]?.en
+                        : language === "ar"
+                          ? translatedFieldValues[patient.id]?.[field.id]?.ar
+                          : undefined;
+                      
+                      // Use translated value if available, otherwise show original
+                      // Translations happen asynchronously, so original will show until translation completes
+                      displayValue = translatedValue || rawValue;
+                    } else {
+                      displayValue = rawValue;
+                    }
+                  }
+
+                  // Format dates with locale
+                  if (field.fieldType === "date" && typeof displayValue === "string") {
+                    try {
+                      const date = new Date(displayValue);
+                      if (!isNaN(date.getTime())) {
+                        displayValue = format(date, "yyyy-MM-dd", {
+                          locale: language === "ar" ? ar : undefined,
+                        });
+                      }
+                    } catch {
+                      // Keep original value if date parsing fails
+                    }
+                  }
+
+                  return (
+                    <TableCell className="px-6" key={field.id}>
+                      {displayValue}
                     </TableCell>
-                  ),
-                )}
+                  );
+                })}
               </TableRow>
             ))}
           </TableBody>

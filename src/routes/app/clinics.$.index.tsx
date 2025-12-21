@@ -1,5 +1,4 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
 import {
   Card,
   CardContent,
@@ -21,16 +20,21 @@ import {
   Edit,
 } from "lucide-react";
 import { format } from "date-fns";
-import { Option } from "effect";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useTranslation, useLanguage } from "@/lib/i18n/context";
+import { translateText } from "@/lib/server-functions/translate";
 import If from "@/components/if";
 import {
   createDepartment,
   getClinicById,
   toggleDepartmentCapability,
 } from "@/lib/server-functions/clinics";
+import { getFormsByClinic } from "@/lib/server-functions/event-forms";
+import { getCurrentUser } from "@/lib/server-functions/auth";
+import User from "@/models/user";
 import type Clinic from "@/models/clinic";
 import type ClinicDepartment from "@/models/clinic-department";
+import type EventForm from "@/models/event-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 
@@ -42,17 +46,50 @@ export const Route = createFileRoute("/app/clinics/$/")({
       throw new Error("Clinic ID is required");
     }
 
-    const { data, error } = await getClinicById({ data: { id: clinicId } });
-    if (error) {
-      throw error;
+    const result: {
+      data: {
+        clinic: Clinic.EncodedT;
+        departments: ClinicDepartment.EncodedT[];
+      } | null;
+      error: string | null;
+    } = await getClinicById({ data: { id: clinicId } }) as any;
+    
+    if (result.error) {
+      throw new Error(result.error);
     }
 
-    const { clinic, departments } = data as {
-      clinic: Clinic.EncodedT;
-      departments: ClinicDepartment.EncodedT[];
-    };
+    if (!result.data) {
+      throw new Error("Clinic not found");
+    }
 
-    return { clinic, departments };
+    const { clinic, departments } = result.data;
+
+    // Load assigned forms (for super admins)
+    let assignedForms: EventForm.EncodedT[] = [];
+    let isSuperAdmin = false;
+    try {
+      const currentUser = await getCurrentUser();
+      isSuperAdmin = currentUser?.role === User.ROLES.SUPER_ADMIN || currentUser?.role === User.ROLES.SUPER_ADMIN_2;
+      if (isSuperAdmin) {
+        try {
+          assignedForms = await getFormsByClinic({ data: { clinicId } });
+          console.log(`[Clinic Detail] Loaded ${assignedForms.length} assigned forms for clinic ${clinicId}`);
+        } catch (formError: any) {
+          console.error("Error loading assigned forms:", formError);
+          // If it's a migration error, forms will be empty but page should still load
+          if (formError?.code !== "42P01") {
+            throw formError;
+          }
+        }
+      } else {
+        console.log(`[Clinic Detail] User is not super admin, skipping form loading`);
+      }
+    } catch (error) {
+      console.error("Error checking user or loading forms:", error);
+      // Don't fail the page load if forms can't be loaded
+    }
+
+    return { clinic, departments, assignedForms, isSuperAdmin };
   },
   component: RouteComponent,
   errorComponent: ErrorComponent,
@@ -212,6 +249,7 @@ function ClinicRegistrationForm({
 }
 
 function ErrorComponent({ error }: { error: Error }) {
+  const t = useTranslation();
   return (
     <div className="container mx-auto p-6">
       <Card className="border-red-200 bg-red-50">
@@ -226,7 +264,7 @@ function ErrorComponent({ error }: { error: Error }) {
           <Link to="/app/clinics">
             <Button variant="outline" className="gap-2">
               <ArrowLeft className="h-4 w-4" />
-              Back to Clinics
+              {t("clinicDetail.backToClinics")}
             </Button>
           </Link>
         </CardContent>
@@ -236,9 +274,114 @@ function ErrorComponent({ error }: { error: Error }) {
 }
 
 function RouteComponent() {
-  const { clinic, departments } = Route.useLoaderData();
+  const { clinic, departments, assignedForms, isSuperAdmin } = Route.useLoaderData();
   const navigate = Route.useNavigate();
   const route = useRouter();
+  const t = useTranslation();
+  const { language } = useLanguage();
+  
+  // Debug logging
+  console.log("[Clinic Detail Component] isSuperAdmin:", isSuperAdmin);
+  console.log("[Clinic Detail Component] assignedForms count:", assignedForms?.length || 0);
+
+  // State for translated form names and descriptions
+  const [translatedFormNames, setTranslatedFormNames] = useState<Record<string, string>>({});
+  const [translatedFormDescriptions, setTranslatedFormDescriptions] = useState<Record<string, string>>({});
+
+  // Clear translation cache when language changes
+  useEffect(() => {
+    setTranslatedFormNames({});
+    setTranslatedFormDescriptions({});
+  }, [language]);
+
+  // Auto-translate event form names and descriptions to match UI language (en/ar)
+  useEffect(() => {
+    if (!assignedForms || !assignedForms.length) return;
+    const targetLang = language === "ar" ? "ar" : "en";
+
+    // Simple heuristic to detect Arabic script
+    const hasArabicChars = (text: string) => /[\u0600-\u06FF]/.test(text);
+
+    void (async () => {
+      const nameUpdates: Record<string, string> = {};
+      const descUpdates: Record<string, string> = {};
+
+      for (const form of assignedForms) {
+        const id = form.id;
+        const name = form.name || "";
+        const description = form.description || "";
+        if (!id || (!name && !description)) continue;
+
+        // Skip if we already have translations for this form and language
+        const hasNameTranslation = name ? translatedFormNames[id] : true;
+        const hasDescTranslation = description ? translatedFormDescriptions[id] : true;
+        if (hasNameTranslation && hasDescTranslation) continue;
+
+        // Determine stored language
+        const storedLang: "en" | "ar" =
+          form.language === "ar"
+            ? "ar"
+            : form.language === "en"
+              ? "en"
+              : hasArabicChars(name + description)
+                ? "ar"
+                : "en";
+
+        // If stored language already matches UI language, just cache the originals
+        if (storedLang === targetLang) {
+          if (name) nameUpdates[id] = name;
+          if (description) descUpdates[id] = description;
+          continue;
+        }
+
+        // Translate name if needed
+        if (name && !translatedFormNames[id]) {
+          try {
+            const nameRes = await translateText({
+              data: {
+                text: name,
+                from: storedLang,
+                to: targetLang,
+              },
+            });
+            const translatedName = nameRes.translated || name;
+            nameUpdates[id] = translatedName;
+          } catch (err) {
+            // On failure or rate limit, fall back to original name
+            console.error("Failed to translate form name:", err);
+            nameUpdates[id] = name;
+          }
+        }
+
+        // Translate description if needed
+        if (description && !translatedFormDescriptions[id]) {
+          try {
+            const descRes = await translateText({
+              data: {
+                text: description,
+                from: storedLang,
+                to: targetLang,
+              },
+            });
+            const translatedDesc = descRes.translated || description;
+            descUpdates[id] = translatedDesc;
+          } catch (err) {
+            // On failure or rate limit, fall back to original description
+            console.error("Failed to translate form description:", err);
+            descUpdates[id] = description;
+          }
+        }
+      }
+
+      // Batch update state
+      if (Object.keys(nameUpdates).length > 0) {
+        setTranslatedFormNames((prev) => ({ ...prev, ...nameUpdates }));
+      }
+      if (Object.keys(descUpdates).length > 0) {
+        setTranslatedFormDescriptions((prev) => ({ ...prev, ...descUpdates }));
+      }
+    })();
+  }, [assignedForms, language]);
 
   const [departmentSectionState, setDepartmentSectionState] = useState<
     "view" | "edit"
@@ -291,7 +434,7 @@ function RouteComponent() {
     e.preventDefault();
 
     if (!departmentFormData.name.trim()) {
-      alert("Department name is required");
+      alert(t("clinicDetail.departmentNameRequired"));
       return;
     }
 
@@ -322,7 +465,7 @@ function RouteComponent() {
       }
     } catch (error) {
       console.error("Failed to create department:", error);
-      alert("Failed to create department. Please try again.");
+      alert(t("clinicDetail.failedToCreateDepartment"));
     } finally {
       setIsSubmitting(false);
     }
@@ -353,10 +496,10 @@ function RouteComponent() {
           <div className="flex items-start justify-between">
             <div>
               <CardTitle className="text-2xl">
-                {clinic.name || "Unnamed Clinic"}
+                {clinic.name || t("clinicDetail.unnamedClinic")}
               </CardTitle>
               <CardDescription className="mt-1">
-                ID:{" "}
+                {t("clinicDetail.id")}:{" "}
                 <code className="text-xs bg-gray-100 px-2 py-1 rounded">
                   {clinic.id}
                 </code>
@@ -366,18 +509,18 @@ function RouteComponent() {
               {clinic.is_archived && (
                 <Badge variant="secondary" className="gap-1">
                   <Archive className="h-3 w-3" />
-                  Archived
+                  {t("clinicDetail.archived")}
                 </Badge>
               )}
               {clinic.is_deleted && (
                 <Badge variant="destructive" className="gap-1">
                   <Trash2 className="h-3 w-3" />
-                  Deleted
+                  {t("clinicDetail.deleted")}
                 </Badge>
               )}
               {!clinic.is_archived && !clinic.is_deleted && (
                 <Badge variant="default" className="bg-green-600">
-                  Active
+                  {t("clinicDetail.active")}
                 </Badge>
               )}
             </div>
@@ -387,32 +530,32 @@ function RouteComponent() {
           <div className="space-y-4">
             {/* Timestamps section */}
             <div className="border-t pt-4">
-              <h3 className="font-semibold mb-3">Timestamps</h3>
+              <h3 className="font-semibold mb-3">{t("clinicDetail.timestamps")}</h3>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="flex items-center gap-2 text-sm">
                   <Calendar className="h-4 w-4 text-gray-500" />
-                  <span className="text-gray-600">Created:</span>
+                  <span className="text-gray-600">{t("clinicDetail.created")}:</span>
                   <span className="font-medium">
                     {formatDate(clinic.created_at)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <Clock className="h-4 w-4 text-gray-500" />
-                  <span className="text-gray-600">Updated:</span>
+                  <span className="text-gray-600">{t("clinicDetail.updated")}:</span>
                   <span className="font-medium">
                     {formatDate(clinic.updated_at)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <Clock className="h-4 w-4 text-gray-500" />
-                  <span className="text-gray-600">Last Modified:</span>
+                  <span className="text-gray-600">{t("clinicDetail.lastModified")}:</span>
                   <span className="font-medium">
                     {formatDate(clinic.last_modified)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <Calendar className="h-4 w-4 text-gray-500" />
-                  <span className="text-gray-600">Server Created:</span>
+                  <span className="text-gray-600">{t("clinicDetail.serverCreated")}:</span>
                   <span className="font-medium">
                     {formatDate(clinic.server_created_at)}
                   </span>
@@ -420,7 +563,7 @@ function RouteComponent() {
                 {clinic.deleted_at && (
                   <div className="flex items-center gap-2 text-sm sm:col-span-2">
                     <Trash2 className="h-4 w-4 text-red-500" />
-                    <span className="text-gray-600">Deleted:</span>
+                    <span className="text-gray-600">{t("clinicDetail.deleted")}:</span>
                     <span className="font-medium text-red-600">
                       {formatDate(clinic.deleted_at)}
                     </span>
@@ -431,22 +574,22 @@ function RouteComponent() {
 
             {/* Additional information */}
             <div className="border-t pt-4">
-              <h3 className="font-semibold mb-3">Additional Information</h3>
+              <h3 className="font-semibold mb-3">{t("clinicDetail.additionalInformation")}</h3>
               <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Status:</span>
+                  <span className="text-gray-600">{t("clinicDetail.status")}:</span>
                   <span className="font-medium">
                     {clinic.is_deleted
-                      ? "Deleted"
+                      ? t("clinicDetail.deleted")
                       : clinic.is_archived
-                        ? "Archived"
-                        : "Active"}
+                        ? t("clinicDetail.archived")
+                        : t("clinicDetail.active")}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Clinic Name:</span>
+                  <span className="text-gray-600">{t("clinicDetail.clinicName")}:</span>
                   <span className="font-medium">
-                    {clinic.name || "Not specified"}
+                    {clinic.name || t("common.notSpecified") || "Not specified"}
                   </span>
                 </div>
               </div>
@@ -458,8 +601,8 @@ function RouteComponent() {
       {/* Clinic Departments Information Card */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Clinic Departments</CardTitle>
-          <CardDescription>Manage clinic departments</CardDescription>
+          <CardTitle>{t("clinicDetail.clinicDepartments")}</CardTitle>
+          <CardDescription>{t("clinicDetail.manageDepartments")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -474,7 +617,7 @@ function RouteComponent() {
                       <h4 className="font-medium text-sm">{department.name}</h4>
                       {department.code && (
                         <p className="text-xs text-gray-500">
-                          Code: {department.code}
+                          {t("clinicDetail.code")}: {department.code}
                         </p>
                       )}
                       {department.description && (
@@ -487,10 +630,10 @@ function RouteComponent() {
 
                       <div className="space-y-2">
                         <p className="text-sm text-gray-600 mt-2">
-                          Capabilities:
+                          {t("clinicDetail.capabilities")}:
                         </p>
                         <Checkbox
-                          label="Can Dispense Medications"
+                          label={t("clinicDetail.canDispenseMedications")}
                           size="sm"
                           checked={department.can_dispense_medications}
                           onCheckedChange={() =>
@@ -503,7 +646,7 @@ function RouteComponent() {
                         />
 
                         <Checkbox
-                          label="Can Perform Labs"
+                          label={t("clinicDetail.canPerformLabs")}
                           size="sm"
                           checked={department.can_perform_labs}
                           onCheckedChange={() =>
@@ -519,12 +662,12 @@ function RouteComponent() {
                     <div className="flex gap-2">
                       {department.can_dispense_medications && (
                         <Badge variant="secondary" className="text-xs">
-                          Can Dispense Medications
+                          {t("clinicDetail.canDispenseMedications")}
                         </Badge>
                       )}
                       {department.can_perform_labs && (
                         <Badge variant="secondary" className="text-xs">
-                          Can do Lab Tests
+                          {t("clinicDetail.canDoLabTests")}
                         </Badge>
                       )}
                     </div>
@@ -532,14 +675,14 @@ function RouteComponent() {
                 </div>
               ))}
               {departments.length === 0 && (
-                <div className="text-gray-500">No departments found</div>
+                <div className="text-gray-500">{t("clinicDetail.noDepartmentsFound")}</div>
               )}
             </div>
 
             {/* New Department Form section */}
             <If show={departmentSectionState === "edit"}>
               <div className="border-t pt-4">
-                <h3 className="font-semibold mb-3">New Department Form</h3>
+                <h3 className="font-semibold mb-3">{t("clinicDetail.addDepartment")}</h3>
                 {/* CREATE THE MINIMAL FORM HERE */}
                 <ClinicRegistrationForm
                   formData={departmentFormData}
@@ -569,7 +712,7 @@ function RouteComponent() {
                   }
                   variant="outline"
                 >
-                  Add Department
+                  {t("clinicDetail.addDepartment")}
                 </Button>
               </If>
             </div>
@@ -577,23 +720,115 @@ function RouteComponent() {
         </CardContent>
       </Card>
 
+      {/* Assigned Event Forms Section (Super Admin Only) */}
+      {isSuperAdmin ? (
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>{t("clinicDetail.assignedEventForms")}</CardTitle>
+                <CardDescription>
+                  {t("clinicDetail.assignedFormsDescription")}
+                </CardDescription>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="gap-2"
+                onClick={() => navigate({ to: `/app/clinics/edit/${clinic.id}` })}
+              >
+                <Edit className="h-4 w-4" />
+                {t("clinicDetail.manageForms")}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!assignedForms || assignedForms.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p className="mb-2">{t("clinicDetail.noFormsAssigned")}</p>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => navigate({ to: `/app/clinics/edit/${clinic.id}` })}
+                >
+                  {t("clinicDetail.assignForms")}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {assignedForms.map((form) => (
+                  <div
+                    key={form.id}
+                    className="flex items-center justify-between border rounded-lg p-3 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex-1">
+                      <h4 className="font-medium text-sm">
+                        {translatedFormNames[form.id] || form.name}
+                      </h4>
+                      {form.description && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {translatedFormDescriptions[form.id] || form.description}
+                        </p>
+                      )}
+                      <div className="flex gap-2 mt-2">
+                        <Badge variant="outline" className="text-xs">
+                          {form.language === "ar" ? t("language.arabic") : form.language === "en" ? t("language.english") : form.language}
+                        </Badge>
+                        {form.is_editable && (
+                          <Badge variant="outline" className="text-xs">
+                            {t("table.editable")}
+                          </Badge>
+                        )}
+                        {form.is_snapshot_form && (
+                          <Badge variant="outline" className="text-xs">
+                            {t("table.snapshot")}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => navigate({ to: `/app/event-forms/edit/${form.id}` })}
+                    >
+                      {t("clinicDetail.view")}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        // Debug: Show if user is not super admin (remove in production)
+        process.env.NODE_ENV === "development" && (
+          <Card className="mb-6 border-yellow-200 bg-yellow-50">
+            <CardContent className="pt-6">
+              <p className="text-sm text-yellow-800">
+                Debug: Form assignment section hidden. isSuperAdmin: {String(isSuperAdmin)}
+              </p>
+            </CardContent>
+          </Card>
+        )
+      )}
+
       {/* Action buttons */}
       <Card>
         <CardHeader>
-          <CardTitle>Actions</CardTitle>
-          <CardDescription>Manage this clinic</CardDescription>
+          <CardTitle>{t("clinicDetail.actions")}</CardTitle>
+          <CardDescription>{t("clinicDetail.manageClinic")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline">View Patients</Button>
-            <Button variant="outline">View Staff</Button>
+            <Button variant="outline">{t("clinicDetail.viewPatients")}</Button>
+            <Button variant="outline">{t("clinicDetail.viewStaff")}</Button>
             {!clinic.is_archived && (
               <Button
                 variant="outline"
                 className="text-yellow-600 hover:text-yellow-700"
               >
                 <Archive className="h-4 w-4 mr-2" />
-                Archive Clinic
+                {t("clinicDetail.archiveClinic")}
               </Button>
             )}
             {clinic.is_archived && (
@@ -601,7 +836,7 @@ function RouteComponent() {
                 variant="outline"
                 className="text-green-600 hover:text-green-700"
               >
-                Restore Clinic
+                {t("clinicDetail.restoreClinic")}
               </Button>
             )}
           </div>

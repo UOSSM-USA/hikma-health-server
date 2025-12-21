@@ -73,67 +73,202 @@ function RouteComponent() {
   const t = useTranslation();
   const { language } = useLanguage();
 
-  // Cache translated notes per appointment id and target language
+  // Cache translated content per appointment id and target language
   const [translatedNotesById, setTranslatedNotesById] = useState<
     Record<string, { en?: string; ar?: string }>
   >({});
+  const [translatedPatientNamesById, setTranslatedPatientNamesById] = useState<
+    Record<string, { en?: string; ar?: string }>
+  >({});
+  const [translatedProviderNamesById, setTranslatedProviderNamesById] = useState<
+    Record<string, { en?: string; ar?: string }>
+  >({});
+  const [translatedClinicNamesById, setTranslatedClinicNamesById] = useState<
+    Record<string, { en?: string; ar?: string }>
+  >({});
+  const [translatedDepartmentNamesById, setTranslatedDepartmentNamesById] = useState<
+    Record<string, Record<string, { en?: string; ar?: string }>>
+  >({});
 
-  // When language is EN or AR, translate notes in the background where needed
+  // Clear translation cache when language changes
+  useEffect(() => {
+    setTranslatedNotesById({});
+    setTranslatedPatientNamesById({});
+    setTranslatedProviderNamesById({});
+    setTranslatedClinicNamesById({});
+    setTranslatedDepartmentNamesById({});
+  }, [language]);
+
+  // Auto-translate all dynamic content (notes, patient names, provider names, clinic names, department names)
   useEffect(() => {
     if (language !== "en" && language !== "ar") return;
 
-    // Find appointments that need translation for the current UI language
-    const toTranslate: { id: string; notes: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    const targetLang = language;
+    const toTranslateNotes: { id: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    const toTranslatePatientNames: { id: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    const toTranslateProviderNames: { id: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    const toTranslateClinicNames: { id: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    const toTranslateDepartmentNames: { appointmentId: string; deptId: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+
     for (const appt of appointments as any[]) {
       const appointment = appt?.appointment;
       if (!appointment) continue;
       
+      const patient = appt?.patient || {};
+      const provider = appt?.provider || {};
+      const clinic = appt?.clinic || {};
+
+      // Translate notes
       const notes = (appointment.notes || "").trim();
-      if (!notes) continue;
-
-      const cache = translatedNotesById[appointment.id];
-      const hasArabic = hasArabicChars(notes);
-
-      if (language === "en") {
-        // Only translate into English if we see Arabic and haven't cached EN yet
-        if (hasArabic && !cache?.en) {
-          toTranslate.push({ id: appointment.id, notes, from: "ar", to: "en" });
+      if (notes) {
+        const cache = translatedNotesById[appointment.id];
+        const hasArabic = hasArabicChars(notes);
+        if (targetLang === "en" && hasArabic && !cache?.en) {
+          toTranslateNotes.push({ id: appointment.id, text: notes, from: "ar", to: "en" });
+        } else if (targetLang === "ar" && !hasArabic && !cache?.ar) {
+          toTranslateNotes.push({ id: appointment.id, text: notes, from: "en", to: "ar" });
         }
-      } else if (language === "ar") {
-        // Only translate into Arabic if we see non-Arabic text and haven't cached AR yet
-        if (!hasArabic && !cache?.ar) {
-          toTranslate.push({ id: appointment.id, notes, from: "en", to: "ar" });
+      }
+
+      // Translate patient name
+      const patientGivenName = patient?.given_name || "";
+      const patientSurname = patient?.surname || "";
+      const patientFullName = `${patientGivenName} ${patientSurname}`.trim();
+      if (patientFullName) {
+        const cache = translatedPatientNamesById[appointment.id];
+        const hasArabic = hasArabicChars(patientFullName);
+        if (targetLang === "en" && hasArabic && !cache?.en) {
+          toTranslatePatientNames.push({ id: appointment.id, text: patientFullName, from: "ar", to: "en" });
+        } else if (targetLang === "ar" && !hasArabic && !cache?.ar) {
+          toTranslatePatientNames.push({ id: appointment.id, text: patientFullName, from: "en", to: "ar" });
+        }
+      }
+
+      // Translate provider name
+      const providerName = (provider?.name || "").trim();
+      if (providerName) {
+        const cache = translatedProviderNamesById[appointment.id];
+        const hasArabic = hasArabicChars(providerName);
+        if (targetLang === "en" && hasArabic && !cache?.en) {
+          toTranslateProviderNames.push({ id: appointment.id, text: providerName, from: "ar", to: "en" });
+        } else if (targetLang === "ar" && !hasArabic && !cache?.ar) {
+          toTranslateProviderNames.push({ id: appointment.id, text: providerName, from: "en", to: "ar" });
+        }
+      }
+
+      // Translate clinic name
+      const clinicName = (clinic?.name || "").trim();
+      if (clinicName) {
+        const cache = translatedClinicNamesById[appointment.id];
+        const hasArabic = hasArabicChars(clinicName);
+        if (targetLang === "en" && hasArabic && !cache?.en) {
+          toTranslateClinicNames.push({ id: appointment.id, text: clinicName, from: "ar", to: "en" });
+        } else if (targetLang === "ar" && !hasArabic && !cache?.ar) {
+          toTranslateClinicNames.push({ id: appointment.id, text: clinicName, from: "en", to: "ar" });
+        }
+      }
+
+      // Translate department names
+      if (appointment.departments && Array.isArray(appointment.departments)) {
+        for (const dept of appointment.departments) {
+          const deptName = departmentNames[dept.id] || "";
+          if (deptName) {
+            const cache = translatedDepartmentNamesById[appointment.id]?.[dept.id];
+            const hasArabic = hasArabicChars(deptName);
+            if (targetLang === "en" && hasArabic && !cache?.en) {
+              toTranslateDepartmentNames.push({ appointmentId: appointment.id, deptId: dept.id, text: deptName, from: "ar", to: "en" });
+            } else if (targetLang === "ar" && !hasArabic && !cache?.ar) {
+              toTranslateDepartmentNames.push({ appointmentId: appointment.id, deptId: dept.id, text: deptName, from: "en", to: "ar" });
+            }
+          }
         }
       }
     }
 
-    if (!toTranslate.length) return;
-
     // Fire off translations in the background; best-effort only
     void (async () => {
-      for (const entry of toTranslate) {
+      // Translate notes
+      for (const entry of toTranslateNotes) {
         try {
           const res = await translateText({
-            data: {
-              text: entry.notes,
-              from: entry.from,
-              to: entry.to,
-            },
+            data: { text: entry.text, from: entry.from, to: entry.to },
           });
           setTranslatedNotesById((prev) => ({
             ...prev,
-            [entry.id]: {
-              ...(prev[entry.id] || {}),
-              [entry.to]: res.translated || entry.notes,
+            [entry.id]: { ...(prev[entry.id] || {}), [entry.to]: res.translated || entry.text },
+          }));
+        } catch (err) {
+          console.error("Failed to translate appointment notes:", err);
+        }
+      }
+
+      // Translate patient names
+      for (const entry of toTranslatePatientNames) {
+        try {
+          const res = await translateText({
+            data: { text: entry.text, from: entry.from, to: entry.to },
+          });
+          setTranslatedPatientNamesById((prev) => ({
+            ...prev,
+            [entry.id]: { ...(prev[entry.id] || {}), [entry.to]: res.translated || entry.text },
+          }));
+        } catch (err) {
+          console.error("Failed to translate patient name:", err);
+        }
+      }
+
+      // Translate provider names
+      for (const entry of toTranslateProviderNames) {
+        try {
+          const res = await translateText({
+            data: { text: entry.text, from: entry.from, to: entry.to },
+          });
+          setTranslatedProviderNamesById((prev) => ({
+            ...prev,
+            [entry.id]: { ...(prev[entry.id] || {}), [entry.to]: res.translated || entry.text },
+          }));
+        } catch (err) {
+          console.error("Failed to translate provider name:", err);
+        }
+      }
+
+      // Translate clinic names
+      for (const entry of toTranslateClinicNames) {
+        try {
+          const res = await translateText({
+            data: { text: entry.text, from: entry.from, to: entry.to },
+          });
+          setTranslatedClinicNamesById((prev) => ({
+            ...prev,
+            [entry.id]: { ...(prev[entry.id] || {}), [entry.to]: res.translated || entry.text },
+          }));
+        } catch (err) {
+          console.error("Failed to translate clinic name:", err);
+        }
+      }
+
+      // Translate department names
+      for (const entry of toTranslateDepartmentNames) {
+        try {
+          const res = await translateText({
+            data: { text: entry.text, from: entry.from, to: entry.to },
+          });
+          setTranslatedDepartmentNamesById((prev) => ({
+            ...prev,
+            [entry.appointmentId]: {
+              ...(prev[entry.appointmentId] || {}),
+              [entry.deptId]: {
+                ...(prev[entry.appointmentId]?.[entry.deptId] || {}),
+                [entry.to]: res.translated || entry.text,
+              },
             },
           }));
         } catch (err) {
-          // On failure, fall back to original notes; don't toast to avoid noise on list
-          console.error("Failed to translate appointment notes in list view:", err);
+          console.error("Failed to translate department name:", err);
         }
       }
     })();
-  }, [appointments, language]);
+  }, [appointments, language, departmentNames]);
 
   // Function to calculate age from date of birth
   const calculateAge = (dateOfBirth: Date | string | null | undefined) => {
@@ -210,12 +345,12 @@ function RouteComponent() {
                           <div className="font-medium">
                             {new Date(
                               appt.appointment.timestamp,
-                            ).toLocaleDateString()}
+                            ).toLocaleDateString(language === "ar" ? "ar-SA" : undefined)}
                           </div>
                           <div className="text-muted-foreground">
                             {new Date(
                               appt.appointment.timestamp,
-                            ).toLocaleTimeString([], {
+                            ).toLocaleTimeString(language === "ar" ? "ar-SA" : undefined, {
                               hour: "2-digit",
                               minute: "2-digit",
                             })}
@@ -225,22 +360,80 @@ function RouteComponent() {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell>{appt?.patient?.given_name}</TableCell>
-                    <TableCell>{appt?.patient?.surname}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const appointment = appt?.appointment;
+                        if (!appointment) return "—";
+                        const patientGivenName = appt?.patient?.given_name || "";
+                        const patientSurname = appt?.patient?.surname || "";
+                        const patientFullName = `${patientGivenName} ${patientSurname}`.trim();
+                        return language === "en"
+                          ? translatedPatientNamesById[appointment.id]?.en || patientFullName || "—"
+                          : language === "ar"
+                            ? translatedPatientNamesById[appointment.id]?.ar || patientFullName || "—"
+                            : patientFullName || "—";
+                      })()}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const appointment = appt?.appointment;
+                        if (!appointment) return "—";
+                        const patientSurname = appt?.patient?.surname || "";
+                        // For surname, we'll use the translated full name and extract surname if needed
+                        // For simplicity, just show the full name translation's last part
+                        const patientFullName = `${appt?.patient?.given_name || ""} ${patientSurname}`.trim();
+                        const translatedFullName = language === "en"
+                          ? translatedPatientNamesById[appointment.id]?.en || patientFullName
+                          : language === "ar"
+                            ? translatedPatientNamesById[appointment.id]?.ar || patientFullName
+                            : patientFullName;
+                        // Extract surname from translated full name (last word)
+                        const parts = translatedFullName.split(" ");
+                        return parts.length > 1 ? parts[parts.length - 1] : translatedFullName || "—";
+                      })()}
+                    </TableCell>
                     <TableCell>
                       {calculateAge(appt?.patient?.date_of_birth)}
                     </TableCell>
-                    <TableCell>{appt?.clinic?.name}</TableCell>
-                    <TableCell>{appt?.provider?.name || ""}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const appointment = appt?.appointment;
+                        if (!appointment) return "—";
+                        const clinicName = appt?.clinic?.name || "";
+                        return language === "en"
+                          ? translatedClinicNamesById[appointment.id]?.en || clinicName || "—"
+                          : language === "ar"
+                            ? translatedClinicNamesById[appointment.id]?.ar || clinicName || "—"
+                            : clinicName || "—";
+                      })()}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const appointment = appt?.appointment;
+                        if (!appointment) return "—";
+                        const providerName = appt?.provider?.name || "";
+                        return language === "en"
+                          ? translatedProviderNamesById[appointment.id]?.en || providerName || "—"
+                          : language === "ar"
+                            ? translatedProviderNamesById[appointment.id]?.ar || providerName || "—"
+                            : providerName || "—";
+                      })()}
+                    </TableCell>
                     <TableCell>
                       {appt?.appointment?.departments &&
                       appt?.appointment?.departments.length > 0 ? (
                         <div className="flex flex-col gap-1">
                           {appt.appointment.departments.map((dept: any) => {
-                            const deptName = String(
+                            const originalDeptName = String(
                               departmentNames[dept.id] ||
                                 `${t("appointmentsList.deptPrefix")} ${dept.id.substring(0, 8)}`,
                             );
+                            const translatedDeptName = language === "en"
+                              ? translatedDepartmentNamesById[appt?.appointment?.id]?.[dept.id]?.en || originalDeptName
+                              : language === "ar"
+                                ? translatedDepartmentNamesById[appt?.appointment?.id]?.[dept.id]?.ar || originalDeptName
+                                : originalDeptName;
+                            const deptName = translatedDeptName;
                             const statusIcon =
                               dept.status === "completed"
                                 ? "✓"
@@ -278,7 +471,7 @@ function RouteComponent() {
                                         {t("appointmentsList.seenAtLabel")}{" "}
                                         {new Date(
                                           dept.seen_at,
-                                        ).toLocaleString()}
+                                        ).toLocaleString(language === "ar" ? "ar-SA" : undefined)}
                                       </p>
                                     )}
                                     {dept.seen_by && (
