@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { format, formatDate } from "date-fns";
+import { ar } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import User from "@/models/user";
 import Clinic from "@/models/clinic";
@@ -40,7 +41,11 @@ import { getPatientById } from "@/lib/server-functions/patients";
 import type Patient from "@/models/patient";
 import If from "@/components/if";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useTranslation } from "@/lib/i18n/context";
+import { useTranslation, useLanguage } from "@/lib/i18n/context";
+import { translateText } from "@/lib/server-functions/translate";
+
+// Simple heuristic to detect if text contains Arabic characters
+const hasArabicChars = (text: string): boolean => /[\u0600-\u06FF]/.test(text);
 
 const saveAppointment = createServerFn({ method: "POST" })
   .validator(
@@ -169,6 +174,159 @@ function RouteComponent() {
   const appointmentId = params._splat;
   const isEditing = !!appointmentId;
   const t = useTranslation();
+  const { language } = useLanguage();
+
+  // State for translated provider, clinic, and department names
+  const [translatedProviderNames, setTranslatedProviderNames] = useState<Record<string, string>>({});
+  const [translatedClinicNames, setTranslatedClinicNames] = useState<Record<string, string>>({});
+  const [translatedDepartmentNames, setTranslatedDepartmentNames] = useState<Record<string, string>>({});
+  const [translatedNotes, setTranslatedNotes] = useState<string | null>(null);
+
+  // Clear translation cache when language changes
+  useEffect(() => {
+    setTranslatedProviderNames({});
+    setTranslatedClinicNames({});
+    setTranslatedDepartmentNames({});
+    setTranslatedNotes(null);
+  }, [language]);
+
+  // Auto-translate provider, clinic, department names, and notes
+  useEffect(() => {
+    if (language !== "en" && language !== "ar") return;
+    const targetLang = language;
+
+    void (async () => {
+      const providerUpdates: Record<string, string> = {};
+      const clinicUpdates: Record<string, string> = {};
+      const deptUpdates: Record<string, string> = {};
+
+      // Translate provider names
+      for (const provider of providers) {
+        const providerName = provider.name || "";
+        if (!providerName) continue;
+        const hasArabic = hasArabicChars(providerName);
+        
+        if (targetLang === "en" && hasArabic) {
+          try {
+            const res = await translateText({
+              data: { text: providerName, from: "ar", to: "en" },
+            });
+            providerUpdates[provider.id] = res.translated || providerName;
+          } catch (err) {
+            providerUpdates[provider.id] = providerName;
+          }
+        } else if (targetLang === "ar" && !hasArabic) {
+          try {
+            const res = await translateText({
+              data: { text: providerName, from: "en", to: "ar" },
+            });
+            providerUpdates[provider.id] = res.translated || providerName;
+          } catch (err) {
+            providerUpdates[provider.id] = providerName;
+          }
+        } else {
+          providerUpdates[provider.id] = providerName;
+        }
+      }
+
+      // Translate clinic names
+      for (const clinic of clinics) {
+        const clinicName = clinic.name || "";
+        if (!clinicName) continue;
+        const hasArabic = hasArabicChars(clinicName);
+        
+        if (targetLang === "en" && hasArabic) {
+          try {
+            const res = await translateText({
+              data: { text: clinicName, from: "ar", to: "en" },
+            });
+            clinicUpdates[clinic.id] = res.translated || clinicName;
+          } catch (err) {
+            clinicUpdates[clinic.id] = clinicName;
+          }
+        } else if (targetLang === "ar" && !hasArabic) {
+          try {
+            const res = await translateText({
+              data: { text: clinicName, from: "en", to: "ar" },
+            });
+            clinicUpdates[clinic.id] = res.translated || clinicName;
+          } catch (err) {
+            clinicUpdates[clinic.id] = clinicName;
+          }
+        } else {
+          clinicUpdates[clinic.id] = clinicName;
+        }
+      }
+
+      // Translate department names
+      for (const dept of availableDepartments) {
+        const deptName = dept.name || "";
+        if (!deptName) continue;
+        const hasArabic = hasArabicChars(deptName);
+        
+        if (targetLang === "en" && hasArabic) {
+          try {
+            const res = await translateText({
+              data: { text: deptName, from: "ar", to: "en" },
+            });
+            deptUpdates[dept.id] = res.translated || deptName;
+          } catch (err) {
+            deptUpdates[dept.id] = deptName;
+          }
+        } else if (targetLang === "ar" && !hasArabic) {
+          try {
+            const res = await translateText({
+              data: { text: deptName, from: "en", to: "ar" },
+            });
+            deptUpdates[dept.id] = res.translated || deptName;
+          } catch (err) {
+            deptUpdates[dept.id] = deptName;
+          }
+        } else {
+          deptUpdates[dept.id] = deptName;
+        }
+      }
+
+      // Translate notes if editing existing appointment
+      if (isEditing && appointment?.notes) {
+        const notes = appointment.notes.trim();
+        if (notes) {
+          const hasArabic = hasArabicChars(notes);
+          if (targetLang === "en" && hasArabic) {
+            try {
+              const res = await translateText({
+                data: { text: notes, from: "ar", to: "en" },
+              });
+              setTranslatedNotes(res.translated || notes);
+            } catch (err) {
+              setTranslatedNotes(notes);
+            }
+          } else if (targetLang === "ar" && !hasArabic) {
+            try {
+              const res = await translateText({
+                data: { text: notes, from: "en", to: "ar" },
+              });
+              setTranslatedNotes(res.translated || notes);
+            } catch (err) {
+              setTranslatedNotes(notes);
+            }
+          } else {
+            setTranslatedNotes(notes);
+          }
+        }
+      }
+
+      if (Object.keys(providerUpdates).length > 0) {
+        setTranslatedProviderNames(providerUpdates);
+      }
+      if (Object.keys(clinicUpdates).length > 0) {
+        setTranslatedClinicNames(clinicUpdates);
+      }
+      if (Object.keys(deptUpdates).length > 0) {
+        setTranslatedDepartmentNames(deptUpdates);
+      }
+    })();
+  }, [language, providers, clinics, availableDepartments, isEditing, appointment]);
 
   console.log({ appointment });
 
@@ -322,7 +480,7 @@ function RouteComponent() {
                   <SelectInput
                   label={t("appointmentForm.providerLabel")}
                   data={providers.map((provider) => ({
-                    label: provider.name,
+                    label: translatedProviderNames[provider.id] || provider.name,
                     value: provider.id,
                   }))}
                   value={field.value || ""}
@@ -341,7 +499,7 @@ function RouteComponent() {
                   <SelectInput
                   label={t("appointmentForm.clinicLabel")}
                   data={clinics.map((clinic) => ({
-                    label: clinic.name || t("common.unknown"),
+                    label: translatedClinicNames[clinic.id] || clinic.name || t("common.unknown"),
                     value: clinic.id,
                   }))}
                   value={field.value || ""}
@@ -364,7 +522,7 @@ function RouteComponent() {
                     const departmentOptions = availableDepartments.map(
                       (dept) => ({
                         value: dept.id,
-                        label: dept.name,
+                        label: translatedDepartmentNames[dept.id] || dept.name,
                         department: dept,
                       }),
                     );
@@ -497,7 +655,9 @@ function RouteComponent() {
                             )}
                           >
                             {field.value
-                              ? format(new Date(field.value), "PPP HH:mm")
+                              ? format(new Date(field.value), "PPP HH:mm", {
+                                  locale: language === "ar" ? ar : undefined,
+                                })
                               : t("appointmentForm.datetimePlaceholder")}
                             <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
@@ -541,7 +701,9 @@ function RouteComponent() {
                     </If>
                     <FormDescription>
                       {t("appointmentForm.currentTimeNote")}{" "}
-                      {formatDate(new Date(), "PPP HH:mm")}
+                      {formatDate(new Date(), "PPP HH:mm", {
+                        locale: language === "ar" ? ar : undefined,
+                      })}
                     </FormDescription>
                   </FormItem>
                 )}
@@ -611,7 +773,13 @@ function RouteComponent() {
                       <Textarea
                         placeholder={t("appointmentForm.notesPlaceholder")}
                         className="resize-none"
-                        {...field}
+                        value={isEditing && translatedNotes !== null ? translatedNotes : field.value}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          if (isEditing) {
+                            setTranslatedNotes(null); // Clear translation when user edits
+                          }
+                        }}
                       />
                     </FormControl>
                     <FormMessage />

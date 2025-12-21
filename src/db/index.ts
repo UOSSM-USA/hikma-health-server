@@ -35,6 +35,7 @@ import type AppConfig from "@/models/app-config";
 import type PatientVital from "@/models/patient-vital";
 import type PatientProblem from "@/models/patient-problem";
 import type ClinicDepartment from "@/models/clinic-department";
+import type ClinicEventForm from "@/models/clinic-event-form";
 import { Pool, type PoolConfig } from "pg";
 import type { StringId, StringContent } from "@/models/string-content";
 import "dotenv/config";
@@ -60,6 +61,7 @@ export type Database = {
   patient_problems: PatientProblem.Table.T;
   patient_vitals: PatientVital.Table.T;
   clinic_departments: ClinicDepartment.Table.T;
+  clinic_event_forms: ClinicEventForm.Table.T;
 };
 
 // Environment types

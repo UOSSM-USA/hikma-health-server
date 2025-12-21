@@ -34,7 +34,7 @@ import {
   useSettingsPermissions,
 } from "@/hooks/use-permissions";
 import { toast } from "sonner";
-import { useTranslation } from "@/lib/i18n/context";
+import { useTranslation, useLanguage } from "@/lib/i18n/context";
 import { LanguageToggle } from "@/components/language-toggle";
 
 type AppSidebarProps = {
@@ -50,6 +50,7 @@ export function AppSidebar({
   ...props
 }: AppSidebarProps) {
   const t = useTranslation();
+  const { language } = useLanguage();
   const organizationLevelClinic = React.useMemo(
     () => ({
       id: "organization",
@@ -57,7 +58,7 @@ export function AppSidebar({
       logo: () => <img src="/logo187.png" alt={t("sidebar.organizationName")} />,
       plan: t("sidebar.organizationPlan"),
     }),
-    [t],
+    [t, language], // Include language to ensure it updates when language changes
   );
   const { canView: canViewEventForms } = useEventFormPermissions(
     currentUser?.role,

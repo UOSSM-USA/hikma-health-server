@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
+import { ar } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { SelectInput } from "@/components/select-input";
 import { getAllClinics } from "@/lib/server-functions/clinics";
@@ -46,6 +47,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePrescriptionPermissions } from "@/hooks/use-permissions";
 import { useLanguage, useTranslation } from "@/lib/i18n/context";
 import { translateText } from "@/lib/server-functions/translate";
+
+// Simple heuristic to detect if text contains Arabic characters
+const hasArabicChars = (text: string): boolean => /[\u0600-\u06FF]/.test(text);
 
 // Create a save prescription server function
 const savePrescription = createServerFn({ method: "POST" })
@@ -260,6 +264,86 @@ function RouteComponent() {
     })();
   }, [language, notesBilingual.ar, notesBilingual.en, isReadOnly]);
 
+  // State for translated provider and clinic names
+  const [translatedProviderNames, setTranslatedProviderNames] = useState<Record<string, string>>({});
+  const [translatedClinicNames, setTranslatedClinicNames] = useState<Record<string, string>>({});
+
+  // Auto-translate provider and clinic names for dropdowns
+  useEffect(() => {
+    if (language !== "en" && language !== "ar") return;
+    const targetLang = language;
+
+    void (async () => {
+      const providerUpdates: Record<string, string> = {};
+      const clinicUpdates: Record<string, string> = {};
+
+      // Translate provider names
+      for (const provider of providers) {
+        const providerName = provider.name || "";
+        if (!providerName) continue;
+        const hasArabic = hasArabicChars(providerName);
+        
+        if (targetLang === "en" && hasArabic) {
+          try {
+            const res = await translateText({
+              data: { text: providerName, from: "ar", to: "en" },
+            });
+            providerUpdates[provider.id] = res.translated || providerName;
+          } catch (err) {
+            providerUpdates[provider.id] = providerName;
+          }
+        } else if (targetLang === "ar" && !hasArabic) {
+          try {
+            const res = await translateText({
+              data: { text: providerName, from: "en", to: "ar" },
+            });
+            providerUpdates[provider.id] = res.translated || providerName;
+          } catch (err) {
+            providerUpdates[provider.id] = providerName;
+          }
+        } else {
+          providerUpdates[provider.id] = providerName;
+        }
+      }
+
+      // Translate clinic names
+      for (const clinic of clinics) {
+        const clinicName = clinic.name || "";
+        if (!clinicName) continue;
+        const hasArabic = hasArabicChars(clinicName);
+        
+        if (targetLang === "en" && hasArabic) {
+          try {
+            const res = await translateText({
+              data: { text: clinicName, from: "ar", to: "en" },
+            });
+            clinicUpdates[clinic.id] = res.translated || clinicName;
+          } catch (err) {
+            clinicUpdates[clinic.id] = clinicName;
+          }
+        } else if (targetLang === "ar" && !hasArabic) {
+          try {
+            const res = await translateText({
+              data: { text: clinicName, from: "en", to: "ar" },
+            });
+            clinicUpdates[clinic.id] = res.translated || clinicName;
+          } catch (err) {
+            clinicUpdates[clinic.id] = clinicName;
+          }
+        } else {
+          clinicUpdates[clinic.id] = clinicName;
+        }
+      }
+
+      if (Object.keys(providerUpdates).length > 0) {
+        setTranslatedProviderNames(providerUpdates);
+      }
+      if (Object.keys(clinicUpdates).length > 0) {
+        setTranslatedClinicNames(clinicUpdates);
+      }
+    })();
+  }, [language, providers, clinics]);
+
   const priorityOptions = PRIORITY_OPTION_DEFS.map((option) => ({
     label: t(`prescriptionForm.priorities.${option.key}`),
     value: option.value,
@@ -354,7 +438,7 @@ function RouteComponent() {
                   <SelectInput
                   label={t("prescriptionForm.providerLabel")}
                     data={providers.map((provider) => ({
-                      label: provider.name,
+                      label: translatedProviderNames[provider.id] || provider.name,
                       value: provider.id,
                     }))}
                     value={field.value || ""}
@@ -373,7 +457,7 @@ function RouteComponent() {
                   <SelectInput
                   label={t("prescriptionForm.pickupClinicLabel")}
                     data={clinics.map((clinic) => ({
-                      label: clinic.name,
+                      label: translatedClinicNames[clinic.id] || clinic.name,
                       value: clinic.id,
                     }))}
                     value={field.value || ""}
@@ -421,7 +505,9 @@ function RouteComponent() {
                             disabled={isReadOnly}
                           >
                             {field.value ? (
-                              format(new Date(field.value), "PPP")
+                              format(new Date(field.value), "PPP", {
+                                locale: language === "ar" ? ar : undefined,
+                              })
                             ) : (
                             <span>
                               {t("prescriptionForm.expirationDatePlaceholder")}

@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { format } from "date-fns";
+import { ar } from "date-fns/locale";
 import { SelectInput } from "@/components/select-input";
 import Prescription from "@/models/prescription";
 import upperFirst from "lodash/upperFirst";
@@ -42,65 +43,160 @@ function RouteComponent() {
   const t = useTranslation();
   const { language } = useLanguage();
 
-  // Cache translated notes per prescription id and target language
+  // Cache translated content per prescription id and target language
   const [translatedNotesById, setTranslatedNotesById] = useState<
     Record<string, { en?: string; ar?: string }>
   >({});
+  const [translatedPatientNamesById, setTranslatedPatientNamesById] = useState<
+    Record<string, { en?: string; ar?: string }>
+  >({});
+  const [translatedProviderNamesById, setTranslatedProviderNamesById] = useState<
+    Record<string, { en?: string; ar?: string }>
+  >({});
+  const [translatedClinicNamesById, setTranslatedClinicNamesById] = useState<
+    Record<string, { en?: string; ar?: string }>
+  >({});
 
-  // When language is EN or AR, translate notes in the background where needed
+  // Clear translation cache when language changes
+  useEffect(() => {
+    setTranslatedNotesById({});
+    setTranslatedPatientNamesById({});
+    setTranslatedProviderNamesById({});
+    setTranslatedClinicNamesById({});
+  }, [language]);
+
+  // Auto-translate all dynamic content (notes, patient names, provider names, clinic names)
   useEffect(() => {
     if (language !== "en" && language !== "ar") return;
 
-    // Find prescriptions that need translation for the current UI language
-    const toTranslate: { id: string; notes: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    const targetLang = language;
+    const toTranslateNotes: { id: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    const toTranslatePatientNames: { id: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    const toTranslateProviderNames: { id: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+    const toTranslateClinicNames: { id: string; text: string; from: "ar" | "en"; to: "ar" | "en" }[] = [];
+
     for (const item of prescriptions as any[]) {
       const prescription = (item.prescription || item) as Prescription.EncodedT;
+      const patient = item.patient || {};
+      const provider = item.provider || {};
+      const clinic = item.clinic || {};
+
+      // Translate notes
       const notes = (prescription.notes || "").trim();
-      if (!notes) continue;
-
-      const cache = translatedNotesById[prescription.id];
-      const hasArabic = hasArabicChars(notes);
-
-      if (language === "en") {
-        // Only translate into English if we see Arabic and haven't cached EN yet
-        if (hasArabic && !cache?.en) {
-          toTranslate.push({ id: prescription.id, notes, from: "ar", to: "en" });
+      if (notes) {
+        const cache = translatedNotesById[prescription.id];
+        const hasArabic = hasArabicChars(notes);
+        if (targetLang === "en" && hasArabic && !cache?.en) {
+          toTranslateNotes.push({ id: prescription.id, text: notes, from: "ar", to: "en" });
+        } else if (targetLang === "ar" && !hasArabic && !cache?.ar) {
+          toTranslateNotes.push({ id: prescription.id, text: notes, from: "en", to: "ar" });
         }
-      } else if (language === "ar") {
-        // Only translate into Arabic if we see non-Arabic text and haven't cached AR yet
-        if (!hasArabic && !cache?.ar) {
-          toTranslate.push({ id: prescription.id, notes, from: "en", to: "ar" });
+      }
+
+      // Translate patient name
+      const patientGivenName = (patient as any).given_name || "";
+      const patientSurname = (patient as any).surname || "";
+      const patientFullName = `${patientGivenName} ${patientSurname}`.trim();
+      if (patientFullName) {
+        const cache = translatedPatientNamesById[prescription.id];
+        const hasArabic = hasArabicChars(patientFullName);
+        if (targetLang === "en" && hasArabic && !cache?.en) {
+          toTranslatePatientNames.push({ id: prescription.id, text: patientFullName, from: "ar", to: "en" });
+        } else if (targetLang === "ar" && !hasArabic && !cache?.ar) {
+          toTranslatePatientNames.push({ id: prescription.id, text: patientFullName, from: "en", to: "ar" });
+        }
+      }
+
+      // Translate provider name
+      const providerName = provider.name || (provider as any).given_name || "";
+      const providerSurname = (provider as any).surname || "";
+      const providerFullName = providerName ? `${providerName} ${providerSurname}`.trim() : "";
+      if (providerFullName) {
+        const cache = translatedProviderNamesById[prescription.id];
+        const hasArabic = hasArabicChars(providerFullName);
+        if (targetLang === "en" && hasArabic && !cache?.en) {
+          toTranslateProviderNames.push({ id: prescription.id, text: providerFullName, from: "ar", to: "en" });
+        } else if (targetLang === "ar" && !hasArabic && !cache?.ar) {
+          toTranslateProviderNames.push({ id: prescription.id, text: providerFullName, from: "en", to: "ar" });
+        }
+      }
+
+      // Translate clinic name
+      const clinicName = (clinic.name || "").trim();
+      if (clinicName) {
+        const cache = translatedClinicNamesById[prescription.id];
+        const hasArabic = hasArabicChars(clinicName);
+        if (targetLang === "en" && hasArabic && !cache?.en) {
+          toTranslateClinicNames.push({ id: prescription.id, text: clinicName, from: "ar", to: "en" });
+        } else if (targetLang === "ar" && !hasArabic && !cache?.ar) {
+          toTranslateClinicNames.push({ id: prescription.id, text: clinicName, from: "en", to: "ar" });
         }
       }
     }
 
-    if (!toTranslate.length) return;
-
     // Fire off translations in the background; best-effort only
     void (async () => {
-      for (const entry of toTranslate) {
+      // Translate notes
+      for (const entry of toTranslateNotes) {
         try {
           const res = await translateText({
-            data: {
-              text: entry.notes,
-              from: entry.from,
-              to: entry.to,
-            },
+            data: { text: entry.text, from: entry.from, to: entry.to },
           });
           setTranslatedNotesById((prev) => ({
             ...prev,
-            [entry.id]: {
-              ...(prev[entry.id] || {}),
-              [entry.to]: res.translated || entry.notes,
-            },
+            [entry.id]: { ...(prev[entry.id] || {}), [entry.to]: res.translated || entry.text },
           }));
         } catch (err) {
-          // On failure, fall back to original notes; don't toast to avoid noise on list
-          console.error("Failed to translate prescription notes in list view:", err);
+          console.error("Failed to translate prescription notes:", err);
+        }
+      }
+
+      // Translate patient names
+      for (const entry of toTranslatePatientNames) {
+        try {
+          const res = await translateText({
+            data: { text: entry.text, from: entry.from, to: entry.to },
+          });
+          setTranslatedPatientNamesById((prev) => ({
+            ...prev,
+            [entry.id]: { ...(prev[entry.id] || {}), [entry.to]: res.translated || entry.text },
+          }));
+        } catch (err) {
+          console.error("Failed to translate patient name:", err);
+        }
+      }
+
+      // Translate provider names
+      for (const entry of toTranslateProviderNames) {
+        try {
+          const res = await translateText({
+            data: { text: entry.text, from: entry.from, to: entry.to },
+          });
+          setTranslatedProviderNamesById((prev) => ({
+            ...prev,
+            [entry.id]: { ...(prev[entry.id] || {}), [entry.to]: res.translated || entry.text },
+          }));
+        } catch (err) {
+          console.error("Failed to translate provider name:", err);
+        }
+      }
+
+      // Translate clinic names
+      for (const entry of toTranslateClinicNames) {
+        try {
+          const res = await translateText({
+            data: { text: entry.text, from: entry.from, to: entry.to },
+          });
+          setTranslatedClinicNamesById((prev) => ({
+            ...prev,
+            [entry.id]: { ...(prev[entry.id] || {}), [entry.to]: res.translated || entry.text },
+          }));
+        } catch (err) {
+          console.error("Failed to translate clinic name:", err);
         }
       }
     })();
-  }, [language, prescriptions, translatedNotesById]);
+  }, [language, prescriptions]);
 
   // Map status value (with hyphens) to translation key (camelCase)
   const getStatusTranslationKey = (status: string): string => {
@@ -149,21 +245,47 @@ function RouteComponent() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {prescriptions.map((item) => {
+              {prescriptions.map((item: any) => {
                 const prescription = item.prescription || item;
                 const patient = item.patient || {};
                 const provider = item.provider || {};
                 const clinic = item.clinic || {};
                 
+                // Get translated values
+                const patientGivenName = (patient as any).given_name || "";
+                const patientSurname = (patient as any).surname || "";
+                const patientFullName = `${patientGivenName} ${patientSurname}`.trim();
+                const translatedPatientName = language === "en"
+                  ? translatedPatientNamesById[prescription.id]?.en || patientFullName
+                  : language === "ar"
+                    ? translatedPatientNamesById[prescription.id]?.ar || patientFullName
+                    : patientFullName;
+
+                const providerName = provider.name || (provider as any).given_name || "";
+                const providerSurname = (provider as any).surname || "";
+                const providerFullName = providerName ? `${providerName} ${providerSurname}`.trim() : "";
+                const translatedProviderName = language === "en"
+                  ? translatedProviderNamesById[prescription.id]?.en || providerFullName
+                  : language === "ar"
+                    ? translatedProviderNamesById[prescription.id]?.ar || providerFullName
+                    : providerFullName;
+
+                const clinicName = (clinic.name || "").trim();
+                const translatedClinicName = language === "en"
+                  ? translatedClinicNamesById[prescription.id]?.en || clinicName
+                  : language === "ar"
+                    ? translatedClinicNamesById[prescription.id]?.ar || clinicName
+                    : clinicName;
+                
                 return (
                   <TableRow key={prescription.id}>
                     <TableCell>
-                      {(patient as any).given_name || ""} {(patient as any).surname || ""}
+                      {translatedPatientName || t("prescriptionsList.notAvailable")}
                     </TableCell>
                     <TableCell>
-                      {provider.name || (provider as any).given_name || ""} {(provider as any).surname || ""}
+                      {translatedProviderName || t("prescriptionsList.notAvailable")}
                     </TableCell>
-                    <TableCell>{clinic.name || t("prescriptionsList.notAvailable")}</TableCell>
+                    <TableCell>{translatedClinicName || t("prescriptionsList.notAvailable")}</TableCell>
                     <TableCell>
                       <SelectInput
                         data={Prescription.statusValues.map((status) => {
@@ -183,12 +305,16 @@ function RouteComponent() {
                     </TableCell>
                     <TableCell>
                       {prescription.prescribed_at
-                        ? format(new Date(prescription.prescribed_at), "PPP")
+                        ? format(new Date(prescription.prescribed_at), "PPP", {
+                            locale: language === "ar" ? ar : undefined,
+                          })
                         : t("prescriptionsList.notAvailable")}
                     </TableCell>
                     <TableCell>
                       {prescription.expiration_date
-                        ? format(new Date(prescription.expiration_date), "PPP")
+                        ? format(new Date(prescription.expiration_date), "PPP", {
+                            locale: language === "ar" ? ar : undefined,
+                          })
                         : t("prescriptionsList.notAvailable")}
                     </TableCell>
                     <TableCell className="max-w-xs truncate">

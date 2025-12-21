@@ -21,12 +21,108 @@ function normalizeFormFields(form: EventForm.EncodedT): EventForm.EncodedT {
       }
     }
     if (Array.isArray(data)) {
-      data.forEach((field) => {
+      data.forEach((field: any) => {
+        // Ensure required base properties exist
+        if (!field.id) {
+          console.warn("Field missing id, skipping:", field);
+          return;
+        }
+
+        // Handle orphan forms that use 'label' (bilingual object) instead of 'name'
+        if (!field.name) {
+          if (field.label) {
+            // Orphan forms use bilingual label object { ar: "...", en: "..." }
+            if (typeof field.label === "object" && field.label !== null) {
+              field.name = field.label.ar || field.label.en || `Field ${field.id.substring(0, 8)}`;
+            } else if (typeof field.label === "string") {
+              field.name = field.label;
+            } else {
+              field.name = `Field ${field.id.substring(0, 8)}`;
+            }
+          } else {
+            field.name = `Field ${field.id.substring(0, 8)}`; // Fallback
+          }
+        }
+
+        // Ensure name is a string (not undefined/null)
+        if (!field.name || typeof field.name !== "string") {
+          field.name = `Field ${field.id.substring(0, 8)}`;
+        }
+
+        // Ensure description exists (can be empty string)
+        if (field.description === undefined || field.description === null) {
+          field.description = "";
+        }
+        if (typeof field.description !== "string") {
+          field.description = String(field.description || "");
+        }
+
+        // Handle legacy fields that use 'type' instead of 'fieldType'
+        if (field.type && !field.fieldType) {
+          // Map simple types to fieldType
+          if (field.type === "text" || field.type === "textarea" || field.type === "number" || field.type === "email" || field.type === "tel") {
+            field.fieldType = "free-text";
+            field.inputType = field.type === "textarea" ? "textarea" : field.type;
+            if (field.type === "textarea") {
+              field.length = "long";
+            } else {
+              field.length = "short";
+            }
+          } else if (field.type === "select" || field.type === "checkbox" || field.type === "radio") {
+            field.fieldType = field.type === "select" && field.multi ? "options" : field.type === "select" ? "options" : "binary";
+            field.inputType = field.type;
+            if (!field.options) {
+              field.options = [];
+            }
+          } else if (field.type === "date") {
+            field.fieldType = "date";
+            field.inputType = "date";
+          } else {
+            // Default to free-text for unknown types
+            field.fieldType = "free-text";
+            field.inputType = field.type || "text";
+            field.length = "short";
+          }
+          // Remove the old 'type' property
+          delete field.type;
+        }
+
+        // Normalize inputType for textarea
         if (field.inputType === "textarea") {
           field.inputType = "text";
           field.length = "long";
         }
-        field._tag = EventForm.getFieldTag(field.fieldType);
+
+        // Ensure fieldType exists before calling getFieldTag
+        if (!field.fieldType) {
+          // If no fieldType, default to free-text
+          field.fieldType = "free-text";
+          field.inputType = field.inputType || "text";
+          field.length = field.length || "short";
+        }
+
+        // Ensure _tag is set
+        try {
+          field._tag = EventForm.getFieldTag(field.fieldType);
+        } catch (error) {
+          console.error(`Failed to get field tag for fieldType "${field.fieldType}":`, error);
+          // Fallback to free-text if fieldType is unknown
+          field.fieldType = "free-text";
+          field._tag = "free-text";
+          field.inputType = field.inputType || "text";
+          field.length = field.length || "short";
+        }
+
+        // Ensure required properties exist for all field types
+        if (field.required === undefined) {
+          field.required = false;
+        }
+        if (field.visible === undefined) {
+          field.visible = true;
+        }
+        if (field.deleted === undefined) {
+          field.deleted = false;
+        }
       });
     }
     return data as FormFields;
@@ -65,13 +161,36 @@ const _saveEventForm = createServerFn({ method: "POST" })
         : PermissionOperation.ADD;
       checkEventFormPermission(permContext, operation);
 
+      let savedForm: any;
       if (updateFormId) {
-        return (await EventForm.API.update({
+        savedForm = await EventForm.API.update({
           id: updateFormId,
           form,
-        })) as any;
+        });
+      } else {
+        // Creating a new form
+        savedForm = await EventForm.API.insert(form);
+        
+        // Automatically assign the new form to the user's clinic(s)
+        // Super admins can manually assign forms, so skip auto-assignment for them
+        const ClinicEventFormModel = (await import("@/models/clinic-event-form")).default;
+        const UserModel = (await import("@/models/user")).default;
+        const isSuperAdmin = context.isSuperAdmin || context.role === UserModel.ROLES.SUPER_ADMIN_2;
+        
+        if (!isSuperAdmin && context.clinicIds.length > 0) {
+          // Assign form to all clinics the user has access to
+          for (const clinicId of context.clinicIds) {
+            try {
+              await ClinicEventFormModel.API.assignFormToClinic(clinicId, savedForm.id);
+            } catch (error) {
+              console.error(`Failed to assign form to clinic ${clinicId}:`, error);
+              // Continue with other clinics even if one fails
+            }
+          }
+        }
       }
-      return (await EventForm.API.insert(form)) as any;
+      
+      return savedForm as any;
     }),
   );
 export const saveEventForm = _saveEventForm;

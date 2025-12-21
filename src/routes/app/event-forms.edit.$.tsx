@@ -34,6 +34,8 @@ import { useEventFormPermissions } from "@/hooks/use-permissions";
 import User from "@/models/user";
 import { getCurrentUser } from "@/lib/server-functions/auth";
 import { redirect } from "@tanstack/react-router";
+import { useTranslation, useLanguage } from "@/lib/i18n/context";
+import { translateText } from "@/lib/server-functions/translate";
 
 export const Route = createFileRoute("/app/event-forms/edit/$")({
   // ssr: false,
@@ -81,9 +83,168 @@ function RouteComponent() {
   }, [isEditing, canAdd, canEdit]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const t = useTranslation();
+  const { language } = useLanguage();
 
   const formState = useSelector(eventFormStore, (state) => state.context);
   const InputsConfigurationComponent = InputsConfiguration as any;
+
+  // State for translated form name, description, and field labels
+  const [translatedFormName, setTranslatedFormName] = useState<string | null>(null);
+  const [translatedFormDescription, setTranslatedFormDescription] = useState<string | null>(null);
+  const [translatedFieldLabels, setTranslatedFieldLabels] = useState<Record<string, { name: string; description: string }>>({});
+
+  // Clear translation cache when language changes
+  useEffect(() => {
+    setTranslatedFormName(null);
+    setTranslatedFormDescription(null);
+    setTranslatedFieldLabels({});
+  }, [language]);
+
+  // Auto-translate form name and description
+  useEffect(() => {
+    if (!formState.name && !formState.description) return;
+    const targetLang = language === "ar" ? "ar" : "en";
+    const hasArabicChars = (text: string) => /[\u0600-\u06FF]/.test(text);
+
+    void (async () => {
+      // Determine stored language
+      const storedLang: "en" | "ar" =
+        formState.language === "ar"
+          ? "ar"
+          : formState.language === "en"
+            ? "en"
+            : hasArabicChars((formState.name || "") + (formState.description || ""))
+              ? "ar"
+              : "en";
+
+      // If stored language matches UI language, use originals
+      if (storedLang === targetLang) {
+        if (formState.name) setTranslatedFormName(formState.name);
+        if (formState.description) setTranslatedFormDescription(formState.description);
+        return;
+      }
+
+      // Translate form name
+      if (formState.name) {
+        try {
+          const nameRes = await translateText({
+            data: {
+              text: formState.name,
+              from: storedLang,
+              to: targetLang,
+            },
+          });
+          setTranslatedFormName(nameRes.translated || formState.name);
+        } catch (err) {
+          console.error("Failed to translate form name:", err);
+          setTranslatedFormName(formState.name);
+        }
+      }
+
+      // Translate form description
+      if (formState.description) {
+        try {
+          const descRes = await translateText({
+            data: {
+              text: formState.description,
+              from: storedLang,
+              to: targetLang,
+            },
+          });
+          setTranslatedFormDescription(descRes.translated || formState.description);
+        } catch (err) {
+          console.error("Failed to translate form description:", err);
+          setTranslatedFormDescription(formState.description);
+        }
+      }
+    })();
+  }, [formState.name, formState.description, formState.language, language]);
+
+  // Auto-translate field labels and descriptions
+  useEffect(() => {
+    if (!formState.form_fields || formState.form_fields.length === 0) return;
+    const targetLang = language === "ar" ? "ar" : "en";
+    const hasArabicChars = (text: string) => /[\u0600-\u06FF]/.test(text);
+
+    void (async () => {
+      const storedLang: "en" | "ar" =
+        formState.language === "ar"
+          ? "ar"
+          : formState.language === "en"
+            ? "en"
+            : "ar"; // Default to Arabic for orphan forms
+
+      // If stored language matches UI language, use originals
+      if (storedLang === targetLang) {
+        const labels: Record<string, { name: string; description: string }> = {};
+        formState.form_fields.forEach((field) => {
+          if (field.name || field.description) {
+            labels[field.id] = {
+              name: field.name || "",
+              description: field.description || "",
+            };
+          }
+        });
+        setTranslatedFieldLabels(labels);
+        return;
+      }
+
+      const labelUpdates: Record<string, { name: string; description: string }> = {};
+
+      for (const field of formState.form_fields) {
+        if (!field.name && !field.description) continue;
+
+        const fieldName = field.name || "";
+        const fieldDesc = field.description || "";
+
+        // Translate field name
+        let translatedName = fieldName;
+        if (fieldName) {
+          try {
+            const nameRes = await translateText({
+              data: {
+                text: fieldName,
+                from: storedLang,
+                to: targetLang,
+              },
+            });
+            translatedName = nameRes.translated || fieldName;
+          } catch (err) {
+            console.error(`Failed to translate field name for ${field.id}:`, err);
+            translatedName = fieldName;
+          }
+        }
+
+        // Translate field description
+        let translatedDesc = fieldDesc;
+        if (fieldDesc) {
+          try {
+            const descRes = await translateText({
+              data: {
+                text: fieldDesc,
+                from: storedLang,
+                to: targetLang,
+              },
+            });
+            translatedDesc = descRes.translated || fieldDesc;
+          } catch (err) {
+            console.error(`Failed to translate field description for ${field.id}:`, err);
+            translatedDesc = fieldDesc;
+          }
+        }
+
+        labelUpdates[field.id] = {
+          name: translatedName,
+          description: translatedDesc,
+        };
+      }
+
+      if (Object.keys(labelUpdates).length > 0) {
+        setTranslatedFieldLabels((prev) => ({ ...prev, ...labelUpdates }));
+      }
+    })();
+  }, [formState.form_fields, formState.language, language]);
 
   useEffect(() => {
     // Scroll to top and prevent scrolling.
@@ -337,18 +498,26 @@ function RouteComponent() {
         {/* Right side - Form preview */}
         <div className="space-y-4 overflow-y-auto p-4 h-full">
           <div>
-            <h3 className="text-2xl font-semibold">{formState.name}</h3>
-            <p>{formState.description}</p>
+            <h3 className="text-2xl font-semibold">
+              {translatedFormName !== null ? translatedFormName : formState.name}
+            </h3>
+            <p>
+              {translatedFormDescription !== null ? translatedFormDescription : formState.description}
+            </p>
           </div>
 
           {formState.form_fields.map((field) => {
+            const translatedField = translatedFieldLabels[field.id];
+            const displayName = translatedField?.name || field.name || "";
+            const displayDescription = translatedField?.description || field.description || "";
+
             switch (field._tag) {
               case "free-text":
                 return (
                   <div key={field.id}>
                     <Input
-                      label={field.name}
-                      description={field.description}
+                      label={displayName}
+                      description={displayDescription}
                       type={field.inputType}
                       required={field.required}
                     />
@@ -358,8 +527,8 @@ function RouteComponent() {
                 return (
                   <div key={field.id}>
                     <Checkbox
-                      label={field.name}
-                      description={field.description}
+                      label={displayName}
+                      description={displayDescription}
                       required={field.required}
                     />
                   </div>
@@ -369,8 +538,8 @@ function RouteComponent() {
                 return (
                   <div key={field.id}>
                     <Input
-                      label={field.name}
-                      description={field.description}
+                      label={displayName}
+                      description={displayDescription}
                       type={field.inputType}
                       required={field.required}
                     />
@@ -381,8 +550,8 @@ function RouteComponent() {
                   return (
                     <div key={field.id}>
                       <RadioInput
-                        label={field.name}
-                        description={field.description}
+                        label={displayName}
+                        description={displayDescription}
                         withAsterisk={field.required}
                         data={field.options as (string | RadioOption)[]}
                       />
@@ -394,8 +563,8 @@ function RouteComponent() {
                     <SelectInput
                       withAsterisk={field.required}
                       data={field.options as (string | SelectOption)[]}
-                      label={field.name}
-                      description={field.description}
+                      label={displayName}
+                      description={displayDescription}
                       className="w-full"
                     />
                   </div>
@@ -404,8 +573,8 @@ function RouteComponent() {
                 return (
                   <div key={field.id}>
                     <DatePickerInput
-                      label={field.name}
-                      description={field.description}
+                      label={displayName}
+                      description={displayDescription}
                       withAsterisk={field.required}
                     />
                   </div>
@@ -414,8 +583,8 @@ function RouteComponent() {
                 return (
                   <div key={field.id} className="w-full">
                     <MedicineInput
-                      name={field.name}
-                      description={field.description}
+                      name={displayName}
+                      description={displayDescription}
                     />
                   </div>
                 );
@@ -423,8 +592,8 @@ function RouteComponent() {
                 return (
                   <div key={field.id}>
                     <DiagnosisSelect
-                      name={field.name}
-                      description={field.description}
+                      name={displayName}
+                      description={displayDescription}
                       withAsterisk={field.required}
                       required={field.required}
                       multi={(field as any).multi}
