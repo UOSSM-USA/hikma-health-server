@@ -29,7 +29,7 @@ import { getCurrentUser } from "@/lib/server-functions/auth";
 import { getAllClinics } from "@/lib/server-functions/clinics";
 import { ClinicProvider } from "@/contexts/clinic-context";
 import User from "@/models/user";
-import UserClinicPermissions from "@/models/user-clinic-permissions";
+import { getUserClinicPermissions } from "@/lib/server-functions/users";
 
 export const Route = createFileRoute("/app")({
   beforeLoad: async ({ location }) => {
@@ -53,35 +53,63 @@ export const Route = createFileRoute("/app")({
     
     // Get user's clinic IDs if not super admin
     let userClinicIds: string[] = [];
-    if (user && user.role !== User.ROLES.SUPER_ADMIN && user.role !== User.ROLES.SUPER_ADMIN_2) {
-      const permissions = await UserClinicPermissions.API.getByUser(user.id);
-      userClinicIds = permissions.map(p => p.clinic_id);
-      // Also include clinic_id if set (for backward compatibility)
-      if (user.clinic_id && !userClinicIds.includes(user.clinic_id)) {
-        userClinicIds.push(user.clinic_id);
+    const isSuperAdmin = user?.role === User.ROLES.SUPER_ADMIN || user?.role === User.ROLES.SUPER_ADMIN_2;
+    
+    if (user && !isSuperAdmin) {
+      try {
+        // Use server function instead of direct API call to avoid serverOnly issues
+        const permissions = await getUserClinicPermissions({ data: { userId: user.id } });
+        userClinicIds = permissions.map(p => p.clinic_id);
+        
+        // Data integrity check: If non-super admin has access to ALL or MOST clinics, this is suspicious
+        // This likely indicates incorrect permissions in the database
+        const allClinicIds = allClinics.map(c => c.id);
+        const hasAllClinics = allClinicIds.every(id => userClinicIds.includes(id));
+        const hasMostClinics = userClinicIds.length >= allClinics.length * 0.8; // 80% or more
+        
+        if ((hasAllClinics || hasMostClinics) && allClinics.length > 1) {
+          console.warn(`[App Loader] Non-super admin user ${user.email} has permissions for ${userClinicIds.length} clinics (${allClinics.length} total). Restricting to clinic_id: ${user.clinic_id}`);
+          
+          // If user has a clinic_id set, restrict to that clinic as a safety measure
+          // This prevents non-super admins from accidentally seeing all clinics due to data issues
+          if (user.clinic_id) {
+            userClinicIds = [user.clinic_id];
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching user clinic permissions:", error);
+        // Only fall back to clinic_id if we truly can't fetch permissions AND user has clinic_id set
+        // This is a last resort fallback for legacy users
+        if (user.clinic_id) {
+          userClinicIds = [user.clinic_id];
+        }
       }
+      // Note: We don't automatically add user.clinic_id anymore - only use permissions from user_clinic_permissions table
+      // This ensures users only see clinics they're explicitly assigned to
     }
     
-    // Filter clinics for non-super admins
-    const clinics = 
-      user?.role === User.ROLES.SUPER_ADMIN || user?.role === User.ROLES.SUPER_ADMIN_2
-        ? allClinics
-        : userClinicIds.length > 0
-          ? allClinics.filter(c => userClinicIds.includes(c.id))
-          : user?.clinic_id
-            ? allClinics.filter(c => c.id === user.clinic_id)
-            : [];
+    // Filter clinics for non-super admins - ONLY show clinics from user_clinic_permissions
+    const clinics = isSuperAdmin
+      ? allClinics
+      : userClinicIds.length > 0
+        ? allClinics.filter(c => userClinicIds.includes(c.id))
+        : []; // Empty array if no permissions found - don't fall back to user.clinic_id
     
-    return { currentUser: user, clinics, userClinicIds };
+    if (!isSuperAdmin && clinics.length === 0) {
+      console.warn(`[App Loader] Non-super admin user ${user?.email} has no accessible clinics!`);
+    }
+    
+    return { currentUser: user, clinics, userClinicIds, isSuperAdmin };
   },
 });
 
 function RouteComponent() {
-  const { currentUser, clinics } = Route.useLoaderData();
+  const { currentUser, clinics, isSuperAdmin: loaderIsSuperAdmin } = Route.useLoaderData();
   const t = useTranslation();
   const isSuperAdmin =
     currentUser?.role === User.ROLES.SUPER_ADMIN ||
-    currentUser?.role === User.ROLES.SUPER_ADMIN_2;
+    currentUser?.role === User.ROLES.SUPER_ADMIN_2 ||
+    loaderIsSuperAdmin;
   
   const handleSignOut = () => {
     if (window.confirm(t("messages.signOutConfirm"))) {
@@ -104,8 +132,17 @@ function RouteComponent() {
   const route = useRouter();
   const breadcrumbs = getBreadcrumbs(route.latestLocation.pathname, t);
 
+  // Get accessible clinic IDs for non-super admins
+  const accessibleClinicIds = isSuperAdmin 
+    ? [] 
+    : clinics.map(c => c.id);
+
   return (
-    <ClinicProvider isSuperAdmin={isSuperAdmin} defaultClinicId={currentUser?.clinic_id || null}>
+    <ClinicProvider 
+      isSuperAdmin={isSuperAdmin} 
+      defaultClinicId={currentUser?.clinic_id || null}
+      accessibleClinicIds={accessibleClinicIds}
+    >
       <SidebarProvider>
         {currentUser && (
           <AppSidebar

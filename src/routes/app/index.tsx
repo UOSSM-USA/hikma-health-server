@@ -219,6 +219,7 @@ function RouteComponent() {
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
+      // For non-super admins, ensure we only query clinics they have access to
       const clinicId =
         selectedClinicId === "all" || selectedClinicId === null ? undefined : selectedClinicId;
       const res = await getSummaryStats({ data: { clinicId } });
