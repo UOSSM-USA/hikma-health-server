@@ -27,6 +27,9 @@ import React from "react";
 // import { createServerFileRoute } from '@tanstack/react-start/server'
 import { getCurrentUser } from "@/lib/server-functions/auth";
 import { getAllClinics } from "@/lib/server-functions/clinics";
+import { ClinicProvider } from "@/contexts/clinic-context";
+import User from "@/models/user";
+import UserClinicPermissions from "@/models/user-clinic-permissions";
 
 export const Route = createFileRoute("/app")({
   beforeLoad: async ({ location }) => {
@@ -46,13 +49,40 @@ export const Route = createFileRoute("/app")({
   component: RouteComponent,
   loader: async () => {
     const user = await getCurrentUser();
-    return { currentUser: user, clinics: await getAllClinics() };
+    const allClinics = await getAllClinics();
+    
+    // Get user's clinic IDs if not super admin
+    let userClinicIds: string[] = [];
+    if (user && user.role !== User.ROLES.SUPER_ADMIN && user.role !== User.ROLES.SUPER_ADMIN_2) {
+      const permissions = await UserClinicPermissions.API.getByUser(user.id);
+      userClinicIds = permissions.map(p => p.clinic_id);
+      // Also include clinic_id if set (for backward compatibility)
+      if (user.clinic_id && !userClinicIds.includes(user.clinic_id)) {
+        userClinicIds.push(user.clinic_id);
+      }
+    }
+    
+    // Filter clinics for non-super admins
+    const clinics = 
+      user?.role === User.ROLES.SUPER_ADMIN || user?.role === User.ROLES.SUPER_ADMIN_2
+        ? allClinics
+        : userClinicIds.length > 0
+          ? allClinics.filter(c => userClinicIds.includes(c.id))
+          : user?.clinic_id
+            ? allClinics.filter(c => c.id === user.clinic_id)
+            : [];
+    
+    return { currentUser: user, clinics, userClinicIds };
   },
 });
 
 function RouteComponent() {
   const { currentUser, clinics } = Route.useLoaderData();
   const t = useTranslation();
+  const isSuperAdmin =
+    currentUser?.role === User.ROLES.SUPER_ADMIN ||
+    currentUser?.role === User.ROLES.SUPER_ADMIN_2;
+  
   const handleSignOut = () => {
     if (window.confirm(t("messages.signOutConfirm"))) {
       fetch(`/api/auth/sign-out`, {
@@ -75,47 +105,49 @@ function RouteComponent() {
   const breadcrumbs = getBreadcrumbs(route.latestLocation.pathname, t);
 
   return (
-    <SidebarProvider>
-      {currentUser && (
-        <AppSidebar
-          currentUser={currentUser}
-          clinics={clinics}
-          handleSignOut={handleSignOut}
-        />
-      )}
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
-          <div className="flex items-center gap-2 px-4">
-            <SidebarTrigger className="-ml-1" />
-            <Separator
-              orientation="vertical"
-              className="mr-2 data-[orientation=vertical]:h-4"
-            />
-            <Breadcrumb>
-              <BreadcrumbList>
-                {breadcrumbs.map((crumb, index) => (
-                  <React.Fragment key={crumb.url || crumb.name}>
-                    {index > 0 && <BreadcrumbSeparator />}
-                    <BreadcrumbItem>
-                      {index === breadcrumbs.length - 1 ? (
-                        <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
-                      ) : (
-                        <BreadcrumbLink href={crumb.url || "#"}>
-                          {crumb.name}
-                        </BreadcrumbLink>
-                      )}
-                    </BreadcrumbItem>
-                  </React.Fragment>
-                ))}
-              </BreadcrumbList>
-            </Breadcrumb>
+    <ClinicProvider isSuperAdmin={isSuperAdmin} defaultClinicId={currentUser?.clinic_id || null}>
+      <SidebarProvider>
+        {currentUser && (
+          <AppSidebar
+            currentUser={currentUser}
+            clinics={clinics}
+            handleSignOut={handleSignOut}
+          />
+        )}
+        <SidebarInset>
+          <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+            <div className="flex items-center gap-2 px-4">
+              <SidebarTrigger className="-ml-1" />
+              <Separator
+                orientation="vertical"
+                className="mr-2 data-[orientation=vertical]:h-4"
+              />
+              <Breadcrumb>
+                <BreadcrumbList>
+                  {breadcrumbs.map((crumb, index) => (
+                    <React.Fragment key={crumb.url || crumb.name}>
+                      {index > 0 && <BreadcrumbSeparator />}
+                      <BreadcrumbItem>
+                        {index === breadcrumbs.length - 1 ? (
+                          <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink href={crumb.url || "#"}>
+                            {crumb.name}
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+                    </React.Fragment>
+                  ))}
+                </BreadcrumbList>
+              </Breadcrumb>
+            </div>
+          </header>
+          <div className="px-8">
+            <Outlet />
           </div>
-        </header>
-        <div className="px-8">
-          <Outlet />
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+        </SidebarInset>
+      </SidebarProvider>
+    </ClinicProvider>
   );
 }
 
