@@ -11,6 +11,7 @@ import { getCurrentUser } from "@/lib/server-functions/auth";
 import { getAllClinics } from "@/lib/server-functions/clinics";
 import { useState, useEffect } from "react";
 import User from "@/models/user";
+import { useClinicContext } from "@/contexts/clinic-context";
 
 const getSummaryStats = createServerFn({ method: "GET" })
   .validator((data: { clinicId?: string } | undefined) => data ?? {})
@@ -207,13 +208,11 @@ function StatsCard({ title, value, description, icon }: StatsCardProps) {
 function RouteComponent() {
   const { stats: initialStats, user, clinics } = Route.useLoaderData() as any;
   const t = useTranslation();
+  const { selectedClinicId } = useClinicContext();
 
   const isSuperAdmin =
     user?.role === User.ROLES.SUPER_ADMIN ||
     user?.role === User.ROLES.SUPER_ADMIN_2;
-  const [selectedClinicId, setSelectedClinicId] = useState<string | "all">(
-    isSuperAdmin ? "all" : user?.clinic_id || "all",
-  );
   const [stats, setStats] = useState(initialStats);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -221,7 +220,7 @@ function RouteComponent() {
     const load = async () => {
       setIsLoading(true);
       const clinicId =
-        selectedClinicId === "all" ? undefined : selectedClinicId;
+        selectedClinicId === "all" || selectedClinicId === null ? undefined : selectedClinicId;
       const res = await getSummaryStats({ data: { clinicId } });
       setStats(res);
       setIsLoading(false);
@@ -246,30 +245,6 @@ function RouteComponent() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">{t("dashboard.title")}</h1>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">
-            {t("appointmentsList.clinicHeader") || "Clinic"}
-          </span>
-          <select
-            className="border rounded px-3 py-2 text-sm"
-            value={selectedClinicId}
-            onChange={(e) =>
-              setSelectedClinicId(e.target.value as "all" | string)
-            }
-            disabled={!isSuperAdmin || isLoading}
-          >
-            {isSuperAdmin && (
-              <option value="all">{t("common.all") || "All clinics"}</option>
-            )}
-            {(clinics || []).map(
-              (clinic: { id: string; name: string | null }, idx: number) => (
-                <option key={clinic.id || idx} value={clinic.id}>
-                  {clinic.name || clinic.id}
-                </option>
-              ),
-            )}
-          </select>
-        </div>
       </div>
 
       {/* Summary Stats */}

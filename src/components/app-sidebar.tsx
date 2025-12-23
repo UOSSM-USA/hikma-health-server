@@ -24,7 +24,7 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import type User from "@/models/user";
+import User from "@/models/user";
 import type Clinic from "@/models/clinic";
 import {
   useEventFormPermissions,
@@ -36,6 +36,7 @@ import {
 import { toast } from "sonner";
 import { useTranslation, useLanguage } from "@/lib/i18n/context";
 import { LanguageToggle } from "@/components/language-toggle";
+import { useClinicContext } from "@/contexts/clinic-context";
 
 type AppSidebarProps = {
   clinics: Clinic.EncodedT[];
@@ -51,14 +52,20 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const t = useTranslation();
   const { language } = useLanguage();
+  const { setSelectedClinicId } = useClinicContext();
+  
+  const isSuperAdmin =
+    currentUser?.role === "super_admin" ||
+    currentUser?.role === "super_admin_2";
+  
   const organizationLevelClinic = React.useMemo(
     () => ({
-      id: "organization",
+      id: "all",
       name: t("sidebar.organizationName"),
-      logo: () => <img src="/logo187.png" alt={t("sidebar.organizationName")} />,
+      logo: () => <img src="/logo187.png" alt={t("sidebar.organizationName")} className="size-4" />,
       plan: t("sidebar.organizationPlan"),
     }),
-    [t, language], // Include language to ensure it updates when language changes
+    [t, language],
   );
   const { canView: canViewEventForms } = useEventFormPermissions(
     currentUser?.role,
@@ -257,29 +264,38 @@ export function AppSidebar({
     ],
   );
 
+  // Only show TeamSwitcher for super admins, or if user has multiple clinics
+  const shouldShowTeamSwitcher = isSuperAdmin || clinics.length > 1;
+  
+  const teams = React.useMemo(() => {
+    const clinicTeams = clinics.map((clinic) => ({
+      id: clinic.id,
+      name: clinic.name || t("sidebar.unknownClinic"),
+      logo: () => <img src="/logo187.png" alt={clinic.name || t("sidebar.unknownClinic")} className="size-4" />,
+      plan: "",
+    }));
+    
+    // Super admins see "All" option + all clinics
+    if (isSuperAdmin) {
+      return [organizationLevelClinic, ...clinicTeams];
+    }
+    
+    // Non-super admins only see their clinics
+    return clinicTeams;
+  }, [clinics, isSuperAdmin, organizationLevelClinic, t]);
+
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
-        <TeamSwitcher
-          teams={[
-            organizationLevelClinic,
-            ...clinics.map((clinic) => ({
-              id: clinic.id,
-              name: clinic.name || t("sidebar.unknownClinic"),
-              logo: () => <img src="/logo187.png" alt={t("sidebar.organizationName")} />,
-              // url: `/app/clinics/${clinic.id}`,
-              plan: "",
-            })),
-          ]}
-          onChangeActiveTeam={(id) => {
-            if (id === organizationLevelClinic.id) {
-              // Handle organization-level actions
-            } else {
-              // Handle clinic-level actions
-            }
-          }}
-        />
-      </SidebarHeader>
+      {shouldShowTeamSwitcher && (
+        <SidebarHeader>
+          <TeamSwitcher
+            teams={teams}
+            onChangeActiveTeam={(id) => {
+              setSelectedClinicId(id === "all" ? "all" : id);
+            }}
+          />
+        </SidebarHeader>
+      )}
       <SidebarContent>
         <NavMain
           items={navMain}

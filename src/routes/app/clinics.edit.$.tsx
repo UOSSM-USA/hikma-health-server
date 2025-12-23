@@ -1,10 +1,10 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import {
   Form,
@@ -23,7 +23,7 @@ import db from "@/db";
 import Clinic from "@/models/clinic";
 import { useTranslation } from "@/lib/i18n/context";
 import { getCurrentUser } from "@/lib/server-functions/auth";
-import { assignFormsToClinic, unassignFormsFromClinic } from "@/lib/server-functions/event-forms";
+import { assignFormsToClinic, unassignFormsFromClinic, getEventForms } from "@/lib/server-functions/event-forms";
 import EventForm from "@/models/event-form";
 import User from "@/models/user";
 
@@ -84,14 +84,14 @@ export const Route = createFileRoute("/app/clinics/edit/$")({
           // Use EventForm.API directly in loader (bypasses clinic filtering)
           const EventFormModel = (await import("@/models/event-form")).default;
           allForms = await EventFormModel.API.getAll();
-          console.log(`[Clinic Edit] Loaded ${allForms.length} forms for super admin`);
+          console.log(`[Clinic Edit Loader] Loaded ${allForms.length} forms for super admin (clinic: ${clinicId})`);
           
           // Get assigned forms for this clinic
           // Check if migration has been run (table exists)
           const ClinicEventFormModel = (await import("@/models/clinic-event-form")).default;
           try {
             assignedFormIds = await ClinicEventFormModel.API.getFormIdsByClinic(clinic.id);
-            console.log(`[Clinic Edit] Found ${assignedFormIds.length} assigned forms for clinic ${clinic.id}`);
+            console.log(`[Clinic Edit Loader] Found ${assignedFormIds.length} assigned forms for clinic ${clinic.id}`);
           } catch (migrationError: any) {
             // If table doesn't exist, migration hasn't been run
             const errorMessage = migrationError?.message || String(migrationError);
@@ -99,28 +99,29 @@ export const Route = createFileRoute("/app/clinics/edit/$")({
             if (errorMessage.includes("does not exist") || 
                 errorCode === "42P01" ||
                 errorMessage.includes("relation") && errorMessage.includes("clinic_event_forms")) {
-              console.warn("[Clinic Edit] clinic_event_forms table does not exist. Please run migrations: pnpm run db:migrate");
+              console.warn("[Clinic Edit Loader] clinic_event_forms table does not exist. Please run migrations: pnpm run db:migrate");
               assignedFormIds = [];
             } else {
-              console.error("[Clinic Edit] Error loading assigned forms:", migrationError);
+              console.error("[Clinic Edit Loader] Error loading assigned forms:", migrationError);
               assignedFormIds = [];
             }
           }
         } catch (error) {
-          console.error("[Clinic Edit] Error loading forms for assignment:", error);
+          console.error("[Clinic Edit Loader] Error loading forms for assignment:", error);
           // Don't fail the page load, just log the error
           allForms = [];
         }
       } else {
-        console.log(`[Clinic Edit] Not loading forms - isSuperAdmin: ${isSuperAdmin}, clinic: ${!!clinic}`);
+        console.log(`[Clinic Edit Loader] Not loading forms - isSuperAdmin: ${isSuperAdmin}, clinic: ${!!clinic}`);
       }
     } else if (isSuperAdmin) {
       // For new clinics, load all forms
       try {
         const EventFormModel = (await import("@/models/event-form")).default;
         allForms = await EventFormModel.API.getAll();
+        console.log(`[Clinic Edit Loader] Loaded ${allForms.length} forms for new clinic`);
       } catch (error) {
-        console.error("Error loading forms:", error);
+        console.error("[Clinic Edit Loader] Error loading forms:", error);
       }
     }
     
@@ -128,7 +129,6 @@ export const Route = createFileRoute("/app/clinics/edit/$")({
       clinic, 
       allForms, 
       assignedFormIds,
-      currentUser,
       isSuperAdmin 
     };
   },
@@ -136,7 +136,9 @@ export const Route = createFileRoute("/app/clinics/edit/$")({
 
 function RouteComponent() {
   const navigate = useNavigate();
-  const { clinic, allForms, assignedFormIds: initialAssignedFormIds, isSuperAdmin, currentUser } = Route.useLoaderData();
+  const router = useRouter();
+  const loaderData = Route.useLoaderData();
+  const { clinic, allForms: loaderAllForms, assignedFormIds: initialAssignedFormIds, isSuperAdmin } = loaderData;
   const params = Route.useParams();
   const clinicId = params._splat;
   const isEditing = !!clinicId && clinicId !== "new";
@@ -147,6 +149,42 @@ function RouteComponent() {
     new Set(initialAssignedFormIds || [])
   );
   const [isSavingForms, setIsSavingForms] = useState(false);
+  const [allForms, setAllForms] = useState<EventForm.EncodedT[]>(loaderAllForms || []);
+  const [isLoadingForms, setIsLoadingForms] = useState(false);
+  const hasAttemptedLoad = useRef(false);
+
+  // Load forms when component mounts or clinic changes
+  useEffect(() => {
+    // Reset when clinic changes
+    hasAttemptedLoad.current = false;
+    
+    // If we have forms from loader, use them
+    if (loaderAllForms && loaderAllForms.length > 0) {
+      setAllForms(loaderAllForms);
+      setIsLoadingForms(false);
+      hasAttemptedLoad.current = true;
+      return;
+    }
+    
+    // If super admin editing and no forms loaded yet, load them
+    if (isSuperAdmin && isEditing && clinic && !hasAttemptedLoad.current) {
+      hasAttemptedLoad.current = true;
+      setIsLoadingForms(true);
+      void (async () => {
+        try {
+          // Use server function instead of direct API call (works from client)
+          const forms = await getEventForms();
+          setAllForms(forms);
+          console.log(`[Clinic Edit] Loaded ${forms.length} forms for clinic ${clinicId}`);
+        } catch (error) {
+          console.error("[Clinic Edit] Error loading forms:", error);
+          toast.error("Failed to load event forms");
+        } finally {
+          setIsLoadingForms(false);
+        }
+      })();
+    }
+  }, [clinicId, loaderAllForms, isSuperAdmin, isEditing, clinic]);
 
   // Initialize form
   const form = useForm<FormValues>({
@@ -318,24 +356,41 @@ function RouteComponent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {allForms.length === 0 ? (
+              {isLoadingForms ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    {t("common.loading") || "Loading forms..."}
+                  </p>
+                </div>
+              ) : allForms.length === 0 ? (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">
                     {t("clinicForm.noFormsAvailable") || "No event forms available"}
                   </p>
-                  {process.env.NODE_ENV === "development" && (
-                    <details className="text-xs text-muted-foreground">
-                      <summary className="cursor-pointer">Debug Info</summary>
-                      <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-auto">
-                        {JSON.stringify({
-                          isSuperAdmin,
-                          allFormsCount: allForms.length,
-                          clinicId: clinic?.id,
-                          currentUserRole: currentUser?.role,
-                        }, null, 2)}
-                      </pre>
-                    </details>
-                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      setIsLoadingForms(true);
+                      hasAttemptedLoad.current = false; // Reset flag
+                      try {
+                        // Invalidate route first to refresh loader data
+                        await router.invalidate();
+                        // Then manually load as fallback using server function
+                        const forms = await getEventForms();
+                        setAllForms(forms);
+                        console.log(`[Clinic Edit] Manually loaded ${forms.length} forms`);
+                      } catch (error) {
+                        console.error("[Clinic Edit] Error refreshing forms:", error);
+                        toast.error("Failed to load forms");
+                      } finally {
+                        setIsLoadingForms(false);
+                      }
+                    }}
+                  >
+                    {t("common.refresh") || "Refresh"}
+                  </Button>
                 </div>
               ) : (
                 <div className="space-y-3 max-h-96 overflow-y-auto">

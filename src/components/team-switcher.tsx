@@ -1,12 +1,11 @@
 import * as React from "react";
-import { ChevronsUpDown, Plus } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -16,7 +15,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { useEffect } from "react";
+import { useClinicContext } from "@/contexts/clinic-context";
 
 export function TeamSwitcher({
   teams,
@@ -31,13 +30,20 @@ export function TeamSwitcher({
   onChangeActiveTeam: (teamId: string) => void;
 }) {
   const { isMobile } = useSidebar();
-  const [activeTeam, setActiveTeam] = React.useState(teams[0]);
+  const { selectedClinicId } = useClinicContext();
+  
+  // Find active team based on context
+  const activeTeam = React.useMemo(() => {
+    if (teams.length === 0) return null;
+    const teamId = selectedClinicId || teams[0].id;
+    return teams.find(t => t.id === teamId) || teams[0];
+  }, [selectedClinicId, teams]);
 
-  useEffect(() => {
-    onChangeActiveTeam(activeTeam.id);
-  }, [activeTeam]);
+  const handleTeamChange = (teamId: string) => {
+    onChangeActiveTeam(teamId);
+  };
 
-  if (!activeTeam) {
+  if (!activeTeam || teams.length === 0) {
     return null;
   }
 
@@ -50,47 +56,45 @@ export function TeamSwitcher({
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <div className="text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                <activeTeam.logo className="size-4" />
+              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                <activeTeam.logo />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{activeTeam.name}</span>
-                <span className="truncate text-xs">{activeTeam.plan}</span>
+                <span className="truncate font-semibold">{activeTeam.name}</span>
+                {activeTeam.plan && (
+                  <span className="truncate text-xs text-muted-foreground">{activeTeam.plan}</span>
+                )}
               </div>
-              <ChevronsUpDown className="ml-auto" />
+              <ChevronsUpDown className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
-            className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+            className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
             align="start"
             side={isMobile ? "bottom" : "right"}
             sideOffset={4}
           >
             <DropdownMenuLabel className="text-muted-foreground text-xs">
-              Teams
+              {teams.length > 1 ? "Select Clinic" : "Clinic"}
             </DropdownMenuLabel>
             {teams.map((team, index) => (
               <DropdownMenuItem
-                key={team.name}
-                onClick={() => setActiveTeam(team)}
+                key={team.id}
+                onClick={() => handleTeamChange(team.id)}
                 className="gap-2 p-2"
               >
-                <div className="flex size-6 items-center justify-center rounded-md border">
-                  <team.logo className="size-3.5 shrink-0" />
+                <div className="flex size-6 items-center justify-center rounded-md border bg-sidebar-accent">
+                  <team.logo />
                 </div>
-                {team.name}
-                <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>
+                <div className="flex flex-col">
+                  <span className="font-medium">{team.name}</span>
+                  {team.plan && (
+                    <span className="text-xs text-muted-foreground">{team.plan}</span>
+                  )}
+                </div>
+                {index < 9 && <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2 p-2">
-              <div className="flex size-6 items-center justify-center rounded-md border bg-transparent">
-                <Plus className="size-4" />
-              </div>
-              <div className="text-muted-foreground font-medium">
-                Add Clinic
-              </div>
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

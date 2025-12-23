@@ -81,7 +81,9 @@ function RouteComponent() {
 
   console.log("Clinics:", clinics);
 
-  const handleEdit = (id: string) => {
+  const handleEdit = async (id: string) => {
+    // Invalidate the edit route to ensure fresh data loads
+    await router.invalidate({ to: `/app/clinics/edit/${id}` });
     navigate({ to: `/app/clinics/edit/${id}` });
   };
 
