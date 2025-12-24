@@ -73,6 +73,20 @@ function RouteComponent() {
         try {
           const form = await getEventFormById({ data: { id: selectedFormId } });
           if (form) {
+            // Debug: Check if form fields have labels
+            if (process.env.NODE_ENV === "development" && form.form_fields) {
+              const fields = form.form_fields as any[];
+              const firstField = fields[0];
+              if (firstField) {
+                console.log("Loaded form - first field:", {
+                  id: firstField.id,
+                  name: firstField.name,
+                  label: firstField.label,
+                  labelType: typeof firstField.label,
+                  hasLabel: !!firstField.label,
+                });
+              }
+            }
             setCurrentForm(form);
           } else {
             toast.error("Form not found");
@@ -295,7 +309,7 @@ function RouteComponent() {
       // Show first error
       const firstError = errors[0];
       const field = visibleFields.find((f: any) => f.id === firstError.fieldId);
-      const fieldLabel = field ? getFieldLabel(field) : "Field";
+      const fieldLabel = field ? getFieldLabel(field) || field?.name || `Field ${field.id.substring(0, 8)}` : "Field";
       let firstErrorMessage = firstError.message;
       if (firstError.message.startsWith("validation.")) {
         const [key, param] = firstError.message.split("|");
@@ -376,9 +390,26 @@ function RouteComponent() {
     if (field.label && typeof field.label === "object" && !Array.isArray(field.label)) {
       // Prefer the current UI language (en/ar) when translation objects are present
       const targetLanguage = (language === "ar" ? "ar" : "en") as "en" | "ar";
-      return Language.getTranslation(field.label, targetLanguage);
+      const translated = Language.getTranslation(field.label, targetLanguage);
+      if (!translated && process.env.NODE_ENV === "development") {
+        console.warn("Language.getTranslation returned empty for field:", {
+          id: field.id,
+          label: field.label,
+          targetLanguage,
+        });
+      }
+      return translated;
     }
-    return field.name || field.label || "";
+    const fallback = field.name || field.label || "";
+    if (!fallback && process.env.NODE_ENV === "development") {
+      console.warn("Field has no label or name:", {
+        id: field.id,
+        name: field.name,
+        label: field.label,
+        labelType: typeof field.label,
+      });
+    }
+    return fallback;
   };
 
   // Get form language for display
@@ -397,6 +428,9 @@ function RouteComponent() {
     // Determine the field type - check multiple possible properties
     const fieldType = field._tag || field.fieldType || field.type;
     const fieldLabel = getFieldLabel(field);
+    
+    // Ensure we have a label - if not, try to get it from name or generate a fallback
+    const displayLabel = fieldLabel || field.name || `Field ${field.id.substring(0, 8)}`;
 
     // Get error message (translate if it's a translation key)
     let errorMessage = error;
@@ -416,7 +450,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {fieldLabel}
+              {displayLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input
@@ -440,7 +474,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {fieldLabel}
+              {displayLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <textarea
@@ -467,7 +501,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {fieldLabel}
+              {displayLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input
@@ -493,7 +527,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {fieldLabel}
+              {displayLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <select
@@ -506,11 +540,19 @@ function RouteComponent() {
               required={field.required}
             >
               <option value="">{t("common.selectOption")}</option>
-              {field.options?.map((opt: any) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label || opt.value}
-                </option>
-              ))}
+              {field.options?.map((opt: any) => {
+                // Handle bilingual option labels
+                let optionLabel = opt.label || opt.value;
+                if (opt.label && typeof opt.label === "object" && !Array.isArray(opt.label)) {
+                  const targetLanguage = (language === "ar" ? "ar" : "en") as "en" | "ar";
+                  optionLabel = Language.getTranslation(opt.label, targetLanguage);
+                }
+                return (
+                  <option key={opt.value} value={opt.value}>
+                    {optionLabel}
+                  </option>
+                );
+              })}
             </select>
             {hasError && (
               <p className="text-sm text-red-500 mt-1">{errorMessage}</p>
@@ -522,27 +564,35 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {fieldLabel}
+              {displayLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <div className="space-y-2">
-              {field.options?.map((opt: any) => (
-                <label key={opt.value} className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={(value || []).includes(opt.value)}
-                    onChange={(e) => {
-                      const currentValues = value || [];
-                      const newValues = e.target.checked
-                        ? [...currentValues, opt.value]
-                        : currentValues.filter((v: any) => v !== opt.value);
-                      handleFieldChange(field.id, newValues);
-                    }}
-                    onBlur={() => handleFieldBlur(field.id)}
-                  />
-                  <span>{opt.label || opt.value}</span>
-                </label>
-              ))}
+              {field.options?.map((opt: any) => {
+                // Handle bilingual option labels
+                let optionLabel = opt.label || opt.value;
+                if (opt.label && typeof opt.label === "object" && !Array.isArray(opt.label)) {
+                  const targetLanguage = (language === "ar" ? "ar" : "en") as "en" | "ar";
+                  optionLabel = Language.getTranslation(opt.label, targetLanguage);
+                }
+                return (
+                  <label key={opt.value} className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={(value || []).includes(opt.value)}
+                      onChange={(e) => {
+                        const currentValues = value || [];
+                        const newValues = e.target.checked
+                          ? [...currentValues, opt.value]
+                          : currentValues.filter((v: any) => v !== opt.value);
+                        handleFieldChange(field.id, newValues);
+                      }}
+                      onBlur={() => handleFieldBlur(field.id)}
+                    />
+                    <span>{optionLabel}</span>
+                  </label>
+                );
+              })}
             </div>
             {hasError && (
               <p className="text-sm text-red-500 mt-1">{errorMessage}</p>
@@ -554,23 +604,31 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {fieldLabel}
+              {displayLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <div className="space-y-2">
-              {field.options?.map((opt: any) => (
-                <label key={opt.value} className="flex items-center space-x-2">
-                  <input
-                    type="radio"
-                    name={field.id}
-                    value={opt.value}
-                    checked={value === opt.value}
-                    onChange={(e) => handleFieldChange(field.id, e.target.value)}
-                    onBlur={() => handleFieldBlur(field.id)}
-                  />
-                  <span>{opt.label || opt.value}</span>
-                </label>
-              ))}
+              {field.options?.map((opt: any) => {
+                // Handle bilingual option labels
+                let optionLabel = opt.label || opt.value;
+                if (opt.label && typeof opt.label === "object" && !Array.isArray(opt.label)) {
+                  const targetLanguage = (language === "ar" ? "ar" : "en") as "en" | "ar";
+                  optionLabel = Language.getTranslation(opt.label, targetLanguage);
+                }
+                return (
+                  <label key={opt.value} className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      name={field.id}
+                      value={opt.value}
+                      checked={value === opt.value}
+                      onChange={(e) => handleFieldChange(field.id, e.target.value)}
+                      onBlur={() => handleFieldBlur(field.id)}
+                    />
+                    <span>{optionLabel}</span>
+                  </label>
+                );
+              })}
             </div>
             {hasError && (
               <p className="text-sm text-red-500 mt-1">{errorMessage}</p>
@@ -582,7 +640,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {fieldLabel}
+              {displayLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input
@@ -605,7 +663,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {field.name || field.label}
+              {displayLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input
@@ -623,7 +681,7 @@ function RouteComponent() {
         return (
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {field.name || field.label}
+              {displayLabel}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input

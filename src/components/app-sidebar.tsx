@@ -58,14 +58,24 @@ export function AppSidebar({
     currentUser?.role === "super_admin" ||
     currentUser?.role === "super_admin_2";
   
+  // Memoize organization name to prevent hydration mismatches
+  const organizationName = React.useMemo(() => t("sidebar.organizationName"), [t, language]);
+  const organizationPlan = React.useMemo(() => t("sidebar.organizationPlan"), [t, language]);
+  
+  // Create stable logo component to prevent hydration issues
+  const OrganizationLogo = React.useMemo(
+    () => () => <img src="/logo187.png" alt={organizationName} className="size-4" />,
+    [organizationName]
+  );
+  
   const organizationLevelClinic = React.useMemo(
     () => ({
       id: "all",
-      name: t("sidebar.organizationName"),
-      logo: () => <img src="/logo187.png" alt={t("sidebar.organizationName")} className="size-4" />,
-      plan: t("sidebar.organizationPlan"),
+      name: organizationName,
+      logo: OrganizationLogo,
+      plan: organizationPlan,
     }),
-    [t, language],
+    [organizationName, organizationPlan, OrganizationLogo],
   );
   const { canView: canViewEventForms } = useEventFormPermissions(
     currentUser?.role,
