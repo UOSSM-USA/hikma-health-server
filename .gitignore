@@ -25,3 +25,6 @@ PERMISSION_SYSTEM_IMPLEMENTATION.md*
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+users-with-passwords.csv
+Email Orphans project staff(EMAIL).csv
+users-simplified.csv
