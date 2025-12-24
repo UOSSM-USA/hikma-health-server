@@ -426,7 +426,22 @@ function RouteComponent() {
     const hasError = !!error;
     
     // Determine the field type - check multiple possible properties
-    const fieldType = field._tag || field.fieldType || field.type;
+    // After normalization, fields use fieldType/inputType instead of type
+    // Map normalized types back to render types
+    let fieldType = field._tag || field.fieldType || field.type;
+    const inputType = field.inputType;
+    
+    // Handle normalized field types
+    // Normalization converts: type: "select" -> fieldType: "options", inputType: "select"
+    // Normalization converts: type: "checkbox" -> fieldType: "binary", inputType: "checkbox"
+    if (fieldType === "options" && inputType === "select") {
+      fieldType = "select";
+    } else if (fieldType === "binary" && inputType === "checkbox") {
+      fieldType = "checkbox";
+    } else if (fieldType === "binary" && inputType === "radio") {
+      fieldType = "radio";
+    }
+    
     const fieldLabel = getFieldLabel(field);
     
     // Ensure we have a label - if not, try to get it from name or generate a fallback
