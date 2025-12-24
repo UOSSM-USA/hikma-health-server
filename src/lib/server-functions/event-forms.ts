@@ -3,6 +3,7 @@ import EventForm from "@/models/event-form";
 import { permissionsMiddleware } from "@/middleware/auth";
 import ClinicEventForm from "@/models/clinic-event-form";
 import User from "@/models/user";
+import { normalizeFormFields } from "./event-form-editor";
 
 /**
  * Get all event forms (filtered by clinic assignments for non-super admins)
@@ -12,25 +13,30 @@ export const getEventForms = createServerFn({ method: "GET" })
   .middleware([permissionsMiddleware])
   .validator(() => {})
   .handler(async ({ context }): Promise<EventForm.EncodedT[]> => {
+    let forms: EventForm.EncodedT[];
+    
     // Super admins can see all forms
     if (context.isSuperAdmin || context.role === User.ROLES.SUPER_ADMIN_2) {
-      return await EventForm.API.getAll();
+      forms = await EventForm.API.getAll();
+    } else {
+      // Non-super admins can only see forms assigned to their clinics
+      if (context.clinicIds.length === 0) {
+        return []; // No clinic access = no forms
+      }
+
+      const assignedFormIds = await ClinicEventForm.API.getFormIdsByClinics(context.clinicIds);
+      
+      if (assignedFormIds.length === 0) {
+        return []; // No forms assigned to their clinics
+      }
+
+      // Get all forms and filter to only assigned ones
+      const allForms = await EventForm.API.getAll();
+      forms = allForms.filter((form) => assignedFormIds.includes(form.id));
     }
 
-    // Non-super admins can only see forms assigned to their clinics
-    if (context.clinicIds.length === 0) {
-      return []; // No clinic access = no forms
-    }
-
-    const assignedFormIds = await ClinicEventForm.API.getFormIdsByClinics(context.clinicIds);
-    
-    if (assignedFormIds.length === 0) {
-      return []; // No forms assigned to their clinics
-    }
-
-    // Get all forms and filter to only assigned ones
-    const allForms = await EventForm.API.getAll();
-    return allForms.filter((form) => assignedFormIds.includes(form.id));
+    // Normalize all forms to ensure label objects are preserved and fields are properly structured
+    return forms.map((form) => normalizeFormFields(form));
   });
 
 /**
@@ -45,22 +51,24 @@ export const getEventFormById = createServerFn({ method: "GET" })
     const form = await EventForm.API.getById(data.id);
     if (!form) return null;
 
-    // Super admins can access any form
+    // Check permissions first
+    let hasAccess = false;
     if (context.isSuperAdmin || context.role === User.ROLES.SUPER_ADMIN_2) {
-      return form;
+      hasAccess = true;
+    } else {
+      // Non-super admins can only access forms assigned to their clinics
+      if (context.clinicIds.length > 0) {
+        const assignedFormIds = await ClinicEventForm.API.getFormIdsByClinics(context.clinicIds);
+        hasAccess = assignedFormIds.includes(data.id);
+      }
     }
 
-    // Non-super admins can only access forms assigned to their clinics
-    if (context.clinicIds.length === 0) {
-      return null;
+    if (!hasAccess) {
+      return null; // Form not accessible
     }
 
-    const assignedFormIds = await ClinicEventForm.API.getFormIdsByClinics(context.clinicIds);
-    if (assignedFormIds.includes(data.id)) {
-      return form;
-    }
-
-    return null; // Form not assigned to user's clinics
+    // Always normalize the form before returning (preserves label objects and sets name)
+    return normalizeFormFields(form);
   });
 
 /**

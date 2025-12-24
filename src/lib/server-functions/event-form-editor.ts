@@ -11,7 +11,7 @@ import * as Sentry from "@sentry/tanstackstart-react";
 
 type FormFields = EventForm.EncodedT["form_fields"];
 
-function normalizeFormFields(form: EventForm.EncodedT): EventForm.EncodedT {
+export function normalizeFormFields(form: EventForm.EncodedT): EventForm.EncodedT {
   const formFields = (() => {
     let data: unknown = form.form_fields;
     if (typeof data === "string") {
@@ -29,11 +29,17 @@ function normalizeFormFields(form: EventForm.EncodedT): EventForm.EncodedT {
         }
 
         // Handle orphan forms that use 'label' (bilingual object) instead of 'name'
-        if (!field.name) {
+        // Preserve the label object for bilingual support, but also set name as fallback
+        // If name is already set (e.g., from script with context like "(Screening)"), preserve it
+        // Otherwise, derive name from label
+        if (!field.name || typeof field.name !== "string" || field.name.trim().length === 0) {
           if (field.label) {
             // Orphan forms use bilingual label object { ar: "...", en: "..." }
             if (typeof field.label === "object" && field.label !== null) {
-              field.name = field.label.ar || field.label.en || `Field ${field.id.substring(0, 8)}`;
+              // Set name as fallback (prefer English for default, but keep label object)
+              field.name = field.label.en || field.label.ar || `Field ${field.id.substring(0, 8)}`;
+              // Preserve the label object for bilingual rendering
+              // Don't delete it - the UI will use it for language switching
             } else if (typeof field.label === "string") {
               field.name = field.label;
             } else {
@@ -42,6 +48,12 @@ function normalizeFormFields(form: EventForm.EncodedT): EventForm.EncodedT {
           } else {
             field.name = `Field ${field.id.substring(0, 8)}`; // Fallback
           }
+        }
+        // Always preserve the label object if it exists (for bilingual support)
+        // The name can be unique (e.g., "Mother's name (Screening)") while label stays the same ("Mother's name")
+        // This allows the form editor to have unique names while the UI shows the same label
+        if (field.label && typeof field.label === "object" && field.label !== null) {
+          // Label object is preserved - UI will use it for language switching
         }
 
         // Ensure name is a string (not undefined/null)
@@ -122,6 +134,18 @@ function normalizeFormFields(form: EventForm.EncodedT): EventForm.EncodedT {
         }
         if (field.deleted === undefined) {
           field.deleted = false;
+        }
+
+        // Preserve skipLogic if it exists (it should already be in the correct format)
+        // SkipLogic is used for conditional field visibility
+        if (field.skipLogic) {
+          // Ensure skipLogic structure is valid
+          if (field.skipLogic.showWhen && !Array.isArray(field.skipLogic.showWhen)) {
+            field.skipLogic.showWhen = [];
+          }
+          if (field.skipLogic.hideWhen && !Array.isArray(field.skipLogic.hideWhen)) {
+            field.skipLogic.hideWhen = [];
+          }
         }
       });
     }
