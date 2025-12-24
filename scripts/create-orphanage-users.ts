@@ -53,6 +53,9 @@ const roleMapping: Record<string, User.RoleT> = {
   "Caseworker_2": User.ROLES.CASEWORKER_2,
   "Caseworker_3": User.ROLES.CASEWORKER_3,
   "Caseworker_4": User.ROLES.CASEWORKER_4,
+  "Me_officer": User.ROLES.ME_OFFICER,
+  "Im_associate": User.ROLES.IM_ASSOCIATE,
+  "Super_admin": User.ROLES.SUPER_ADMIN,
   "N/A": User.ROLES.PROVIDER, // Default for N/A roles (Photographer, Accounts Assistant)
 };
 
@@ -78,14 +81,17 @@ function generatePassword(firstName: string, jobPosition: string): string {
   const cleanFirstName = firstName.split(" ")[0].toLowerCase().replace(/[^a-z]/g, "");
   
   // Clean job position: take key words, lowercase, remove spaces/special chars
-  // For positions like "Psw Team Leader" -> "pswteamleader" or just "psw"
   const cleanJobPosition = jobPosition
     .toLowerCase()
     .replace(/[^a-z]/g, "")
     .replace(/teamleader/g, "teamleader")
     .replace(/technicalseniorcoordinator/g, "techcoord")
     .replace(/accountsassistant/g, "accounts")
-    .replace(/photographer/g, "photo");
+    .replace(/photographer/g, "photo")
+    .replace(/meal/g, "meal")
+    .replace(/regionaloperationmanager/g, "rom")
+    .replace(/hqprogrammanager/g, "hqpm")
+    .replace(/vicepresident/g, "vp");
   
   // For simple positions like "Psw", use just "psw"
   if (cleanJobPosition === "psw") {
@@ -104,6 +110,24 @@ function generatePassword(firstName: string, jobPosition: string): string {
   }
   if (cleanJobPosition.includes("photo")) {
     return `${cleanFirstName}Photo`;
+  }
+  if (cleanJobPosition.includes("meal")) {
+    return `${cleanFirstName}Meal`;
+  }
+  if (cleanJobPosition.includes("rom") || cleanJobPosition.includes("regionaloperationmanager")) {
+    return `${cleanFirstName}ROM`;
+  }
+  if (cleanJobPosition.includes("hqpm") || cleanJobPosition.includes("hqprogrammanager")) {
+    return `${cleanFirstName}HQPM`;
+  }
+  if (cleanJobPosition.includes("vp") || cleanJobPosition.includes("vicepresident")) {
+    return `${cleanFirstName}VP`;
+  }
+  if (cleanJobPosition.includes("imassociate")) {
+    return `${cleanFirstName}IM`;
+  }
+  if (cleanJobPosition.includes("superadmin")) {
+    return `${cleanFirstName}Admin`;
   }
   
   // Default: first name + first 3-4 chars of job position
