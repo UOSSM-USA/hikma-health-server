@@ -108,54 +108,72 @@ function RouteComponent() {
     const hasArabicChars = (text: string) => /[\u0600-\u06FF]/.test(text);
 
     void (async () => {
+      let name = formState.name || "";
+      let description = formState.description || "";
+      
+      // Split name if it contains " // " (title // description format)
+      if (name.includes(" // ")) {
+        const parts = name.split(" // ");
+        name = parts[0] || "";
+        // If description is empty, use the part after " // " as description
+        if (!description && parts.length > 1) {
+          description = parts.slice(1).join(" // ");
+        }
+      }
+
       // Determine stored language
       const storedLang: "en" | "ar" =
         formState.language === "ar"
           ? "ar"
           : formState.language === "en"
             ? "en"
-            : hasArabicChars((formState.name || "") + (formState.description || ""))
+            : hasArabicChars(name + description)
               ? "ar"
               : "en";
 
-      // If stored language matches UI language, use originals
-      if (storedLang === targetLang) {
-        if (formState.name) setTranslatedFormName(formState.name);
-        if (formState.description) setTranslatedFormDescription(formState.description);
-        return;
-      }
-
-      // Translate form name
-      if (formState.name) {
-        try {
-          const nameRes = await translateText({
-            data: {
-              text: formState.name,
-              from: storedLang,
-              to: targetLang,
-            },
-          });
-          setTranslatedFormName(nameRes.translated || formState.name);
-        } catch (err) {
-          console.error("Failed to translate form name:", err);
-          setTranslatedFormName(formState.name);
+      // Translate form name based on UI language
+      if (name) {
+        if (storedLang === targetLang) {
+          setTranslatedFormName(name);
+        } else {
+          try {
+            const nameRes = await translateText({
+              data: {
+                text: name,
+                from: storedLang,
+                to: targetLang,
+              },
+            });
+            setTranslatedFormName(nameRes.translated || name);
+          } catch (err) {
+            console.error("Failed to translate form name:", err);
+            setTranslatedFormName(name);
+          }
         }
       }
 
-      // Translate form description
-      if (formState.description) {
-        try {
-          const descRes = await translateText({
-            data: {
-              text: formState.description,
-              from: storedLang,
-              to: targetLang,
-            },
-          });
-          setTranslatedFormDescription(descRes.translated || formState.description);
-        } catch (err) {
-          console.error("Failed to translate form description:", err);
-          setTranslatedFormDescription(formState.description);
+      // Always translate description to Arabic (don't translate to English)
+      if (description) {
+        const descHasArabic = hasArabicChars(description);
+        if (descHasArabic) {
+          // Description already has Arabic, keep it as is
+          setTranslatedFormDescription(description);
+        } else {
+          // Description is not in Arabic, translate it to Arabic
+          const descStoredLang = storedLang === "ar" ? "ar" : "en";
+          try {
+            const descRes = await translateText({
+              data: {
+                text: description,
+                from: descStoredLang,
+                to: "ar",
+              },
+            });
+            setTranslatedFormDescription(descRes.translated || description);
+          } catch (err) {
+            console.error("Failed to translate form description:", err);
+            setTranslatedFormDescription(description);
+          }
         }
       }
     })();
@@ -499,10 +517,26 @@ function RouteComponent() {
         <div className="space-y-4 overflow-y-auto p-4 h-full">
           <div>
             <h3 className="text-2xl font-semibold">
-              {translatedFormName !== null ? translatedFormName : formState.name}
+              {(() => {
+                if (translatedFormName !== null) return translatedFormName;
+                // Fallback: split name if it contains " // "
+                const name = formState.name || "";
+                return name.includes(" // ") ? name.split(" // ")[0] : name;
+              })()}
             </h3>
             <p>
-              {translatedFormDescription !== null ? translatedFormDescription : formState.description}
+              {(() => {
+                if (translatedFormDescription !== null) return translatedFormDescription;
+                // Fallback: use description field, or extract from name if it contains " // "
+                const description = formState.description || "";
+                const name = formState.name || "";
+                if (description) return description;
+                if (name.includes(" // ")) {
+                  const parts = name.split(" // ");
+                  return parts.slice(1).join(" // ");
+                }
+                return "";
+              })()}
             </p>
           </div>
 

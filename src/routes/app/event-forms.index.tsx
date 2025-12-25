@@ -133,8 +133,19 @@ function RouteComponent() {
 
       for (const form of forms) {
         const id = form.id;
-        const name = form.name || "";
-        const description = form.description || "";
+        let name = form.name || "";
+        let description = form.description || "";
+        
+        // Split name if it contains " // " (title // description format)
+        if (name.includes(" // ")) {
+          const parts = name.split(" // ");
+          name = parts[0] || "";
+          // If description is empty, use the part after " // " as description
+          if (!description && parts.length > 1) {
+            description = parts.slice(1).join(" // ");
+          }
+        }
+        
         if (!id || (!name && !description)) continue;
 
         // Skip if we already have translations for this form and language
@@ -153,48 +164,53 @@ function RouteComponent() {
                 ? "ar"
                 : "en";
 
-        // If stored language already matches UI language, just cache the originals
-        if (storedLang === targetLang) {
-          if (name) nameUpdates[id] = name;
-          if (description) descUpdates[id] = description;
-          continue;
-        }
-
-        // Translate name
+        // Translate name based on UI language
         if (name) {
-          try {
-            const nameRes = await translateText({
-              data: {
-                text: name,
-                from: storedLang,
-                to: targetLang,
-              },
-            });
-            const translatedName = nameRes.translated || name;
-            nameUpdates[id] = translatedName;
-          } catch (err) {
-            // On failure or rate limit, fall back to original name
-            console.error("Failed to translate event form name:", err);
+          if (storedLang === targetLang) {
             nameUpdates[id] = name;
+          } else {
+            try {
+              const nameRes = await translateText({
+                data: {
+                  text: name,
+                  from: storedLang,
+                  to: targetLang,
+                },
+              });
+              const translatedName = nameRes.translated || name;
+              nameUpdates[id] = translatedName;
+            } catch (err) {
+              // On failure or rate limit, fall back to original name
+              console.error("Failed to translate event form name:", err);
+              nameUpdates[id] = name;
+            }
           }
         }
 
-        // Translate description
+        // Always translate description to Arabic (don't translate to English)
         if (description) {
-          try {
-            const descRes = await translateText({
-              data: {
-                text: description,
-                from: storedLang,
-                to: targetLang,
-              },
-            });
-            const translatedDesc = descRes.translated || description;
-            descUpdates[id] = translatedDesc;
-          } catch (err) {
-            // On failure or rate limit, fall back to original description
-            console.error("Failed to translate event form description:", err);
+          const descHasArabic = hasArabicChars(description);
+          if (descHasArabic) {
+            // Description already has Arabic, keep it as is
             descUpdates[id] = description;
+          } else {
+            // Description is not in Arabic, translate it to Arabic
+            const descStoredLang = storedLang === "ar" ? "ar" : "en";
+            try {
+              const descRes = await translateText({
+                data: {
+                  text: description,
+                  from: descStoredLang,
+                  to: "ar",
+                },
+              });
+              const translatedDesc = descRes.translated || description;
+              descUpdates[id] = translatedDesc;
+            } catch (err) {
+              // On failure or rate limit, fall back to original description
+              console.error("Failed to translate event form description:", err);
+              descUpdates[id] = description;
+            }
           }
         }
       }
@@ -308,10 +324,28 @@ function RouteComponent() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {translatedFormNames[form.id] || form.name || "—"}
+                      {(() => {
+                        const translated = translatedFormNames[form.id];
+                        if (translated) return translated;
+                        // Fallback: split name if it contains " // "
+                        const name = form.name || "";
+                        return name.includes(" // ") ? name.split(" // ")[0] : name || "—";
+                      })()}
                     </TableCell>
                     <TableCell>
-                      {translatedFormDescriptions[form.id] || form.description || "—"}
+                      {(() => {
+                        const translated = translatedFormDescriptions[form.id];
+                        if (translated) return translated;
+                        // Fallback: use description field, or extract from name if it contains " // "
+                        const description = form.description || "";
+                        const name = form.name || "";
+                        if (description) return description;
+                        if (name.includes(" // ")) {
+                          const parts = name.split(" // ");
+                          return parts.slice(1).join(" // ") || "—";
+                        }
+                        return "—";
+                      })()}
                     </TableCell>
                     <TableCell>
                       {format(form.created_at, "yyyy-MM-dd")}
