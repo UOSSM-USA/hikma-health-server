@@ -25,8 +25,11 @@ export const getAllPatients = createServerFn({
       error: { message: string } | null;
     }> => {
       return Sentry.startSpan({ name: "getAllPatients" }, async () => {
+        // Check for READ_PATIENT capability (provider, caseworker, etc.) instead of READ_ALL_PATIENT
+        // The getAllWithAttributes query already handles permissions correctly by checking
+        // clinic permissions and last_modified_by, so we don't need the stricter READ_ALL_PATIENT check
         const authorized = await userRoleTokenHasCapability([
-          User.CAPABILITIES.READ_ALL_PATIENT,
+          User.CAPABILITIES.READ_PATIENT,
         ]);
 
         if (!authorized) {
@@ -44,6 +47,7 @@ export const getAllPatients = createServerFn({
             },
           };
         }
+        
         const { patients, pagination } = await Patient.API.getAllWithAttributes(
           {
             limit: data?.limit || 50,
@@ -71,8 +75,10 @@ export const searchPatients = createServerFn({ method: "GET" })
     }> => {
       console.log("Calling searchPatients");
       return Sentry.startSpan({ name: "searchPatients" }, async () => {
+        // Check for READ_PATIENT capability instead of READ_ALL_PATIENT
+        // The search query already handles permissions correctly
         const authorized = await userRoleTokenHasCapability([
-          User.CAPABILITIES.READ_ALL_PATIENT,
+          User.CAPABILITIES.READ_PATIENT,
         ]);
 
         if (!authorized) {

@@ -18,7 +18,10 @@ import Prescription from "./prescription";
 import Visit from "./visit";
 import Event from "./event";
 import { safeJSONParse, safeStringify, toSafeDateString } from "@/lib/utils";
+import { getCookie } from "@tanstack/react-start/server";
+import Token from "./token";
 import UserClinicPermissions from "./user-clinic-permissions";
+import User from "./user";
 
 namespace Patient {
   // export type T = {
@@ -403,55 +406,112 @@ namespace Patient {
 
   /**
    * Build the base SQL query for retrieving patients with their additional attributes
+   * @param clinicIds - Array of clinic IDs the user has access to
+   * @param userId - Optional user ID to include patients created by this user
    * @returns SQL query template
    */
-  const buildPatientAttributesBaseQuery = (clinicIds: string[]) => sql`
-    SELECT
-      p.*,
-      COALESCE(json_object_agg(
-        pa.attribute_id,
-        json_build_object(
-          'attribute', pa.attribute,
-          'number_value', pa.number_value,
-          'string_value', pa.string_value,
-          'date_value', pa.date_value,
-          'boolean_value', pa.boolean_value
-        )
-      ) FILTER (WHERE pa.attribute_id IS NOT NULL), '{}') AS additional_attributes
-    FROM patients p
-    LEFT JOIN patient_additional_attributes pa ON p.id = pa.patient_id
-    WHERE p.is_deleted = false
-    AND (${clinicIds.length > 0 ? sql`p.primary_clinic_id IN (${sql.join(clinicIds)})  OR p.primary_clinic_id IS NULL` : sql`p.primary_clinic_id IS NULL`})
-  `;
+  const buildPatientAttributesBaseQuery = (clinicIds: string[], userId?: string | null, isCaseworker?: boolean) => {
+    const conditions: Array<ReturnType<typeof sql>> = [];
+    
+    if (isCaseworker && userId) {
+      // Caseworkers: ONLY see patients they created (last_modified_by = userId)
+      // Don't use clinic-based permissions for caseworkers
+      conditions.push(sql`p.last_modified_by = ${userId}`);
+    } else {
+      // Non-caseworkers: Use clinic-based permissions AND optionally last_modified_by
+      // Add clinic-based conditions
+      if (clinicIds.length > 0) {
+        conditions.push(sql`p.primary_clinic_id IN (${sql.join(clinicIds)})`);
+        conditions.push(sql`p.primary_clinic_id IS NULL`);
+      }
+      
+      // Add user-created patient condition (for non-caseworkers, this is additional to clinic permissions)
+      if (userId) {
+        conditions.push(sql`p.last_modified_by = ${userId}`);
+      }
+    }
+    
+    // If no conditions, return empty result
+    if (conditions.length === 0) {
+      return sql`SELECT p.*, '{}'::jsonb AS additional_attributes FROM patients p WHERE false`;
+    }
+    
+    return sql`
+      SELECT
+        p.*,
+        COALESCE(json_object_agg(
+          pa.attribute_id,
+          json_build_object(
+            'attribute', pa.attribute,
+            'number_value', pa.number_value,
+            'string_value', pa.string_value,
+            'date_value', pa.date_value,
+            'boolean_value', pa.boolean_value
+          )
+        ) FILTER (WHERE pa.attribute_id IS NOT NULL), '{}') AS additional_attributes
+      FROM patients p
+      LEFT JOIN patient_additional_attributes pa ON p.id = pa.patient_id
+      WHERE p.is_deleted = false
+      AND (${sql.join(conditions, sql` OR `)})
+    `;
+  };
 
   /**
    * Build the base SQL for retrieving patients by a given list of ids and their additional attributes
-   * @param ids List of patient ids
+   * @param clinicIds List of clinic IDs the user has access to
+   * @param patientIds List of patient ids
+   * @param userId Optional user ID to include patients created by this user
    * @returns SQL query template
    */
   const buildPatientAttributesByIdQuery = (
     clinicIds: string[],
     patientIds: string[],
-  ) => sql`
-    SELECT
-      p.*,
-      COALESCE(json_object_agg(
-        pa.attribute_id,
-        json_build_object(
-          'attribute', pa.attribute,
-          'number_value', pa.number_value,
-          'string_value', pa.string_value,
-          'date_value', pa.date_value,
-          'boolean_value', pa.boolean_value
-        )
-      ) FILTER (WHERE pa.attribute_id IS NOT NULL), '{}') AS additional_attributes
-    FROM patients p
-    LEFT JOIN patient_additional_attributes pa ON p.id = pa.patient_id
-    WHERE p.is_deleted = false
-    AND (p.primary_clinic_id IN (${sql.join(clinicIds)}) OR p.primary_clinic_id IS NULL)
-    AND p.id IN (${sql.join(patientIds)})
-    GROUP BY p.id
-  `;
+    userId?: string | null,
+    isCaseworker?: boolean,
+  ) => {
+    const conditions: Array<ReturnType<typeof sql>> = [];
+    
+    if (isCaseworker && userId) {
+      // Caseworkers: ONLY see patients they created (last_modified_by = userId)
+      conditions.push(sql`p.last_modified_by = ${userId}`);
+    } else {
+      // Non-caseworkers: Use clinic-based permissions AND optionally last_modified_by
+      if (clinicIds.length > 0) {
+        conditions.push(sql`p.primary_clinic_id IN (${sql.join(clinicIds)})`);
+        conditions.push(sql`p.primary_clinic_id IS NULL`);
+      }
+      
+      if (userId) {
+        conditions.push(sql`p.last_modified_by = ${userId}`);
+      }
+    }
+    
+    // If no conditions, return empty result
+    if (conditions.length === 0) {
+      return sql`SELECT p.*, '{}'::jsonb AS additional_attributes FROM patients p WHERE false`;
+    }
+    
+    return sql`
+      SELECT
+        p.*,
+        COALESCE(json_object_agg(
+          pa.attribute_id,
+          json_build_object(
+            'attribute', pa.attribute,
+            'number_value', pa.number_value,
+            'string_value', pa.string_value,
+            'date_value', pa.date_value,
+            'boolean_value', pa.boolean_value
+          )
+        ) FILTER (WHERE pa.attribute_id IS NOT NULL), '{}') AS additional_attributes
+      FROM patients p
+      LEFT JOIN patient_additional_attributes pa ON p.id = pa.patient_id
+      WHERE p.is_deleted = false
+      AND (${sql.join(conditions, sql` OR `)})
+      AND p.id IN (${sql.join(patientIds)})
+      GROUP BY p.id
+    `;
+  };
 
   /**
    * Execute a patient query and format the results
@@ -481,17 +541,49 @@ namespace Patient {
   export namespace API {
     export const getById = serverOnly(
       async (patientId: string): Promise<Patient.EncodedT> => {
-        // permissions check
-        const clinicIds =
-          await UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
-            "can_view_history",
-          );
-        // ${patientIds.length > 0 ? sql`AND p.id IN (${sql.join(patientIds)})` : ""}
-        //
+        // Get current user to check their role
+        const tokenCookie = getCookie("token");
+        let userId: string | null = null;
+        let userRole: string | null = null;
+        if (tokenCookie) {
+          const userOption = await Token.getUser(tokenCookie);
+          userId = Option.match(userOption, {
+            onNone: () => null,
+            onSome: (user) => user.id,
+          });
+          userRole = Option.match(userOption, {
+            onNone: () => null,
+            onSome: (user) => user.role,
+          });
+        }
 
-        // Build the query using the base query and adding pagination
+        // Check if user is a caseworker
+        const isCaseworker = userRole && (
+          userRole === User.ROLES.CASEWORKER_1 ||
+          userRole === User.ROLES.CASEWORKER_2 ||
+          userRole === User.ROLES.CASEWORKER_3 ||
+          userRole === User.ROLES.CASEWORKER_4
+        );
+
+        let allClinicIds: string[] = [];
+        if (!isCaseworker) {
+          // Non-caseworkers: Get clinic IDs for both viewing and registering permissions
+          const [clinicIdsForView, clinicIdsForRegister] = await Promise.all([
+            UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
+              "can_view_history",
+            ),
+            UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
+              "can_register_patients",
+            ),
+          ]);
+
+          // Combine clinic IDs (union - remove duplicates)
+          allClinicIds = Array.from(new Set([...clinicIdsForView, ...clinicIdsForRegister]));
+        }
+
+        // Build the query using the base query
         const query = sql`
-        ${buildPatientAttributesByIdQuery(clinicIds, [patientId])}
+        ${buildPatientAttributesByIdQuery(allClinicIds, [patientId], userId, isCaseworker)}
       `.compile(db);
 
         const patient = await executePatientQuery(query);
@@ -515,15 +607,53 @@ namespace Patient {
       }): Promise<PatientsQueryResult> => {
         const { limit, offset = 0, includeCount = false } = options || {};
 
-        // permissions check
-        const clinicIds =
-          await UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
-            "can_view_history",
-          );
+        // Get current user to check their role
+        const tokenCookie = getCookie("token");
+        let userId: string | null = null;
+        let userRole: string | null = null;
+        if (tokenCookie) {
+          const userOption = await Token.getUser(tokenCookie);
+          userId = Option.match(userOption, {
+            onNone: () => null,
+            onSome: (user) => user.id,
+          });
+          userRole = Option.match(userOption, {
+            onNone: () => null,
+            onSome: (user) => user.role,
+          });
+        }
+
+        // Check if user is a caseworker - caseworkers should ONLY see patients they created
+        const isCaseworker = userRole && (
+          userRole === User.ROLES.CASEWORKER_1 ||
+          userRole === User.ROLES.CASEWORKER_2 ||
+          userRole === User.ROLES.CASEWORKER_3 ||
+          userRole === User.ROLES.CASEWORKER_4
+        );
+
+        let allClinicIds: string[] = [];
+        
+        if (isCaseworker) {
+          // Caseworkers: Only see patients they created (last_modified_by = userId)
+          // Don't use clinic permissions - they should only see their own patients
+        } else {
+          // Non-caseworkers: Get clinic IDs for both viewing and registering permissions
+          const [clinicIdsForView, clinicIdsForRegister] = await Promise.all([
+            UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
+              "can_view_history",
+            ),
+            UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
+              "can_register_patients",
+            ),
+          ]);
+
+          // Combine clinic IDs (union - remove duplicates)
+          allClinicIds = Array.from(new Set([...clinicIdsForView, ...clinicIdsForRegister]));
+        }
 
         // Build the query using the base query and adding pagination
         const query = sql`
-        ${buildPatientAttributesBaseQuery(clinicIds)}
+        ${buildPatientAttributesBaseQuery(allClinicIds, userId, isCaseworker)}
         GROUP BY p.id
         ORDER BY p.updated_at DESC
         ${offset ? sql`OFFSET ${offset}` : sql``}
@@ -536,16 +666,30 @@ namespace Patient {
         // Get total count if requested
         let totalCount = 0;
         if (includeCount) {
-          const countQuery = sql`
-          SELECT COUNT(*) as total
-          FROM patients
-          WHERE is_deleted = false
-        `.compile(db);
+          const countConditions: Array<ReturnType<typeof sql>> = [];
+          if (allClinicIds.length > 0) {
+            countConditions.push(sql`p.primary_clinic_id IN (${sql.join(allClinicIds)})`);
+            countConditions.push(sql`p.primary_clinic_id IS NULL`);
+          }
+          if (userId) {
+            countConditions.push(sql`p.last_modified_by = ${userId}`);
+          }
+          
+          if (countConditions.length === 0) {
+            totalCount = 0;
+          } else {
+            const countQuery = sql`
+            SELECT COUNT(*) as total
+            FROM patients p
+            WHERE p.is_deleted = false
+            AND (${sql.join(countConditions, sql` OR `)})
+          `.compile(db);
 
-          const countResult = await db.executeQuery<{ total: number }>(
-            countQuery,
-          );
-          totalCount = countResult.rows[0]?.total || 0;
+            const countResult = await db.executeQuery<{ total: number }>(
+              countQuery,
+            );
+            totalCount = countResult.rows[0]?.total || 0;
+          }
         }
 
         // Return both the patients and pagination metadata
@@ -585,16 +729,50 @@ namespace Patient {
       }): Promise<PatientsQueryResult> => {
         const searchPattern = `%${searchQuery}%`;
 
-        // permissions check
-        const clinicIds =
-          await UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
-            "can_view_history",
-          );
+        // Get current user to check their role
+        const tokenCookie = getCookie("token");
+        let userId: string | null = null;
+        let userRole: string | null = null;
+        if (tokenCookie) {
+          const userOption = await Token.getUser(tokenCookie);
+          userId = Option.match(userOption, {
+            onNone: () => null,
+            onSome: (user) => user.id,
+          });
+          userRole = Option.match(userOption, {
+            onNone: () => null,
+            onSome: (user) => user.role,
+          });
+        }
+
+        // Check if user is a caseworker - caseworkers should ONLY see patients they created
+        const isCaseworker = userRole && (
+          userRole === User.ROLES.CASEWORKER_1 ||
+          userRole === User.ROLES.CASEWORKER_2 ||
+          userRole === User.ROLES.CASEWORKER_3 ||
+          userRole === User.ROLES.CASEWORKER_4
+        );
+
+        let allClinicIds: string[] = [];
+        if (!isCaseworker) {
+          // Non-caseworkers: Get clinic IDs for both viewing and registering permissions
+          const [clinicIdsForView, clinicIdsForRegister] = await Promise.all([
+            UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
+              "can_view_history",
+            ),
+            UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
+              "can_register_patients",
+            ),
+          ]);
+
+          // Combine clinic IDs (union - remove duplicates)
+          allClinicIds = Array.from(new Set([...clinicIdsForView, ...clinicIdsForRegister]));
+        }
 
         // Build the query using the base query and adding search condition with pagination
         // Search across multiple patient fields and additional attributes
         const query = sql`
-      ${buildPatientAttributesBaseQuery(clinicIds)}
+      ${buildPatientAttributesBaseQuery(allClinicIds, userId, isCaseworker)}
       AND (
         LOWER(p.given_name) LIKE LOWER(${searchPattern})
         OR LOWER(p.surname) LIKE LOWER(${searchPattern})
@@ -634,6 +812,11 @@ namespace Patient {
           SELECT COUNT(*) as total
           FROM patients p
           WHERE p.is_deleted = false
+          AND (
+            ${allClinicIds.length > 0 ? sql`p.primary_clinic_id IN (${sql.join(allClinicIds)})` : sql`false`}
+            ${allClinicIds.length > 0 ? sql`OR p.primary_clinic_id IS NULL` : sql`OR p.primary_clinic_id IS NULL`}
+            ${userId ? sql`OR p.last_modified_by = ${userId}` : sql``}
+          )
           AND (
             LOWER(p.given_name) LIKE LOWER(${searchPattern})
             OR LOWER(p.surname) LIKE LOWER(${searchPattern})

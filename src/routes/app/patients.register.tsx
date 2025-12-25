@@ -35,8 +35,19 @@ export const createPatient = createServerFn({ method: "POST" })
       clinicId: Option.getOrNull(data.baseFields.primary_clinic_id),
     });
 
+    // Set last_modified_by to current user ID so they can see patients they create
+    const patientData = {
+      ...data,
+      baseFields: {
+        ...data.baseFields,
+        last_modified_by: context.userId 
+          ? Option.some(context.userId) 
+          : Option.none(),
+      },
+    };
+
     return Patient.register(
-      data as unknown as {
+      patientData as unknown as {
         baseFields: Patient.T;
         additionalAttributes: PatientAdditionalAttribute.T[];
       },

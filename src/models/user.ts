@@ -396,6 +396,33 @@ namespace User {
       CAPABILITIES.READ_REPORT,
       CAPABILITIES.UPDATE_REPORT,
     ],
+    // Caseworkers have READ_PATIENT capability to view patients
+    caseworker_1: [
+      CAPABILITIES.CREATE_PATIENT,
+      CAPABILITIES.READ_PATIENT,
+      CAPABILITIES.UPDATE_PATIENT,
+    ],
+    caseworker_2: [
+      CAPABILITIES.CREATE_PATIENT,
+      CAPABILITIES.READ_PATIENT,
+      CAPABILITIES.UPDATE_PATIENT,
+    ],
+    caseworker_3: [
+      CAPABILITIES.CREATE_PATIENT,
+      CAPABILITIES.READ_PATIENT,
+      CAPABILITIES.UPDATE_PATIENT,
+    ],
+    caseworker_4: [
+      CAPABILITIES.CREATE_PATIENT,
+      CAPABILITIES.READ_PATIENT,
+      CAPABILITIES.UPDATE_PATIENT,
+    ],
+    // Full access roles have admin capabilities
+    team_leader: [...ADMIN_CAPABILITIES],
+    technical_advisor: [...ADMIN_CAPABILITIES],
+    project_manager: [...ADMIN_CAPABILITIES],
+    me_officer: [...ADMIN_CAPABILITIES],
+    im_associate: [...ADMIN_CAPABILITIES],
     super_admin_2: [...ADMIN_CAPABILITIES],
     super_admin: [...ADMIN_CAPABILITIES],
   };
