@@ -85,6 +85,79 @@ namespace UserClinicPermissions {
       [userPermissions.CAN_DELETE_RECORDS]: false,
       [userPermissions.IS_CLINIC_ADMIN]: false,
     },
+    // Caseworkers have provider-like permissions - can register and view patients
+    caseworker_1: {
+      [userPermissions.CAN_REGISTER_PATIENTS]: true,
+      [userPermissions.CAN_VIEW_HISTORY]: true,
+      [userPermissions.CAN_EDIT_RECORDS]: true,
+      [userPermissions.CAN_DELETE_RECORDS]: false,
+      [userPermissions.IS_CLINIC_ADMIN]: false,
+    },
+    caseworker_2: {
+      [userPermissions.CAN_REGISTER_PATIENTS]: true,
+      [userPermissions.CAN_VIEW_HISTORY]: true,
+      [userPermissions.CAN_EDIT_RECORDS]: true,
+      [userPermissions.CAN_DELETE_RECORDS]: false,
+      [userPermissions.IS_CLINIC_ADMIN]: false,
+    },
+    caseworker_3: {
+      [userPermissions.CAN_REGISTER_PATIENTS]: true,
+      [userPermissions.CAN_VIEW_HISTORY]: true,
+      [userPermissions.CAN_EDIT_RECORDS]: true,
+      [userPermissions.CAN_DELETE_RECORDS]: false,
+      [userPermissions.IS_CLINIC_ADMIN]: false,
+    },
+    caseworker_4: {
+      [userPermissions.CAN_REGISTER_PATIENTS]: true,
+      [userPermissions.CAN_VIEW_HISTORY]: true,
+      [userPermissions.CAN_EDIT_RECORDS]: true,
+      [userPermissions.CAN_DELETE_RECORDS]: false,
+      [userPermissions.IS_CLINIC_ADMIN]: false,
+    },
+    // Full Access Roles: Can see, edit, validate, and extract ALL forms (including submitted forms from all caseworkers)
+    // These roles have admin-level patient permissions to match their full form access
+    team_leader: {
+      [userPermissions.CAN_REGISTER_PATIENTS]: true,
+      [userPermissions.CAN_VIEW_HISTORY]: true,
+      [userPermissions.CAN_EDIT_RECORDS]: true,
+      [userPermissions.CAN_DELETE_RECORDS]: true,
+      [userPermissions.IS_CLINIC_ADMIN]: true,
+    },
+    technical_advisor: {
+      [userPermissions.CAN_REGISTER_PATIENTS]: true,
+      [userPermissions.CAN_VIEW_HISTORY]: true,
+      [userPermissions.CAN_EDIT_RECORDS]: true,
+      [userPermissions.CAN_DELETE_RECORDS]: true,
+      [userPermissions.IS_CLINIC_ADMIN]: true,
+    },
+    project_manager: {
+      [userPermissions.CAN_REGISTER_PATIENTS]: true,
+      [userPermissions.CAN_VIEW_HISTORY]: true,
+      [userPermissions.CAN_EDIT_RECORDS]: true,
+      [userPermissions.CAN_DELETE_RECORDS]: true,
+      [userPermissions.IS_CLINIC_ADMIN]: true,
+    },
+    me_officer: {
+      [userPermissions.CAN_REGISTER_PATIENTS]: true,
+      [userPermissions.CAN_VIEW_HISTORY]: true,
+      [userPermissions.CAN_EDIT_RECORDS]: true,
+      [userPermissions.CAN_DELETE_RECORDS]: true,
+      [userPermissions.IS_CLINIC_ADMIN]: true,
+    },
+    im_associate: {
+      [userPermissions.CAN_REGISTER_PATIENTS]: true,
+      [userPermissions.CAN_VIEW_HISTORY]: true,
+      [userPermissions.CAN_EDIT_RECORDS]: true,
+      [userPermissions.CAN_DELETE_RECORDS]: true,
+      [userPermissions.IS_CLINIC_ADMIN]: true,
+    },
+    super_admin_2: {
+      [userPermissions.CAN_REGISTER_PATIENTS]: true,
+      [userPermissions.CAN_VIEW_HISTORY]: true,
+      [userPermissions.CAN_EDIT_RECORDS]: true,
+      [userPermissions.CAN_DELETE_RECORDS]: true,
+      [userPermissions.IS_CLINIC_ADMIN]: true,
+    },
   };
 
   export type T = typeof UserClinicPermissionsSchema.Type;
