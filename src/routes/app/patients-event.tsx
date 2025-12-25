@@ -113,8 +113,14 @@ function RouteComponent() {
 
       for (const form of allForms as any[]) {
         const id = form.id as string;
-        const name = (form.name as string) || "";
+        let name = (form.name as string) || "";
         if (!id || !name) continue;
+
+        // Split name if it contains " // " (title // description format)
+        // For dropdown, we only show the title (part before " // ")
+        if (name.includes(" // ")) {
+          name = name.split(" // ")[0] || "";
+        }
 
         // Skip if we already have a translated name for this form and language
         if (translatedFormNames[id]) continue;
@@ -141,6 +147,7 @@ function RouteComponent() {
         } catch (err) {
           // On failure or rate limit, fall back to original name
           console.error("Failed to translate event form name:", err);
+          updates[id] = name;
         }
       }
 
@@ -160,8 +167,19 @@ function RouteComponent() {
     const cached = translatedFormHeader[id];
     if (cached && cached.name && cached.description) return;
 
-    const name: string = currentForm.name || "";
-    const description: string = currentForm.description || "";
+    let name: string = currentForm.name || "";
+    let description: string = currentForm.description || "";
+    
+    // Split name if it contains " // " (title // description format)
+    if (name.includes(" // ")) {
+      const parts = name.split(" // ");
+      name = parts[0] || "";
+      // If description is empty, use the part after " // " as description
+      if (!description && parts.length > 1) {
+        description = parts.slice(1).join(" // ");
+      }
+    }
+    
     if (!name && !description) return;
 
     const hasArabicChars = (text: string) => /[\u0600-\u06FF]/.test(text);
@@ -174,32 +192,33 @@ function RouteComponent() {
             ? "ar"
             : "en";
 
-    // If stored language already matches UI language, just cache originals
-    if (storedLang === targetLang) {
-      setTranslatedFormHeader((prev) => ({
-        ...prev,
-        [id]: { name, description },
-      }));
-      return;
-    }
-
     void (async () => {
       try {
         let translatedName = name;
         let translatedDescription = description;
 
+        // Translate title (name) based on UI language
         if (name) {
-          const resName = await translateText({
-            data: { text: name, from: storedLang, to: targetLang },
-          });
-          translatedName = resName.translated || name;
+          if (storedLang !== targetLang) {
+            const resName = await translateText({
+              data: { text: name, from: storedLang, to: targetLang },
+            });
+            translatedName = resName.translated || name;
+          }
         }
 
+        // Always translate description to Arabic (don't translate to English)
         if (description) {
-          const resDesc = await translateText({
-            data: { text: description, from: storedLang, to: targetLang },
-          });
-          translatedDescription = resDesc.translated || description;
+          const descHasArabic = hasArabicChars(description);
+          if (!descHasArabic) {
+            // Description is not in Arabic, translate it to Arabic
+            const descStoredLang = storedLang === "ar" ? "ar" : "en";
+            const resDesc = await translateText({
+              data: { text: description, from: descStoredLang, to: "ar" },
+            });
+            translatedDescription = resDesc.translated || description;
+          }
+          // If description already has Arabic characters, keep it as is
         }
 
         setTranslatedFormHeader((prev) => ({
@@ -209,6 +228,10 @@ function RouteComponent() {
       } catch (err) {
         // On failure or rate limiting, keep originals
         console.error("Failed to translate event form header:", err);
+        setTranslatedFormHeader((prev) => ({
+          ...prev,
+          [id]: { name, description },
+        }));
       }
     })();
   }, [currentForm, language, translatedFormHeader]);
@@ -763,10 +786,28 @@ function RouteComponent() {
             <div className="flex items-start justify-between">
               <div>
                 <CardTitle>
-                  {translatedFormHeader[currentForm.id]?.name || currentForm.name}
+                  {(() => {
+                    const translated = translatedFormHeader[currentForm.id];
+                    if (translated?.name) return translated.name;
+                    // Fallback: split name if it contains " // "
+                    const name = currentForm.name || "";
+                    return name.includes(" // ") ? name.split(" // ")[0] : name;
+                  })()}
                 </CardTitle>
                 <CardDescription>
-                  {translatedFormHeader[currentForm.id]?.description || currentForm.description}
+                  {(() => {
+                    const translated = translatedFormHeader[currentForm.id];
+                    if (translated?.description) return translated.description;
+                    // Fallback: use description field, or extract from name if it contains " // "
+                    const description = currentForm.description || "";
+                    const name = currentForm.name || "";
+                    if (description) return description;
+                    if (name.includes(" // ")) {
+                      const parts = name.split(" // ");
+                      return parts.slice(1).join(" // ");
+                    }
+                    return "";
+                  })()}
                 </CardDescription>
               </div>
               {isFormInDifferentLanguage && (
