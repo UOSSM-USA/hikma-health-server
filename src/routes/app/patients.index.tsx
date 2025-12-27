@@ -643,7 +643,11 @@ function RouteComponent() {
               >
                 <TableCell className="px-6" key={"actions"}>
                   <Button
-                    onClick={(evt) => handleCreateAppointment(evt, patient.id)}
+                    onClick={(evt) => {
+                      evt.stopPropagation();
+                      evt.preventDefault();
+                      openPatientChart(patient.id);
+                    }}
                     variant="outline"
                   >
                     <LucideCalendarPlus />
