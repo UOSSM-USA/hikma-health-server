@@ -189,13 +189,18 @@ function RouteComponent() {
             .filter((field) => field.visible && field.deleted !== true)
             .map((field, idx) => {
               if (field.fieldType === "text") {
+                const englishLabel = Language.getTranslation(field.label, "en") || "";
+                const arabicLabel = Language.getTranslation(field.label, "ar") || "";
                 return (
                   <div key={field.id} className="space-y-2">
                     <Label
                       htmlFor={field.column}
-                      className="text-muted-foreground"
+                      className="flex flex-col"
                     >
-                      {Language.getTranslation(field.label, language)}
+                      <span className="text-sm font-medium">{englishLabel}</span>
+                      {arabicLabel && arabicLabel !== englishLabel && (
+                        <span className="text-sm text-muted-foreground mt-0.5" dir="rtl">{arabicLabel}</span>
+                      )}
                     </Label>
                     <Input
                       data-testid={"register-patient-" + idx}
@@ -208,13 +213,23 @@ function RouteComponent() {
                 );
               }
               if (field.fieldType === "select") {
+                const englishLabel = Language.getTranslation(field.label, "en") || "";
+                const arabicLabel = Language.getTranslation(field.label, "ar") || "";
+                const bilingualLabel = (
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium">{englishLabel}</span>
+                    {arabicLabel && arabicLabel !== englishLabel && (
+                      <span className="text-sm text-muted-foreground mt-0.5" dir="rtl">{arabicLabel}</span>
+                    )}
+                  </div>
+                );
                 return (
                   <div key={field.id} className="space-y-2">
                     <SelectInput
                       className="w-full"
                       data-testid={"register-patient-" + idx}
                       data-inputtype={"select"}
-                      label={Language.getTranslation(field.label, language)}
+                      label={bilingualLabel}
                       data={field.column === "primary_clinic_id" 
                         ? clinicsList.map((clinic) => ({
                             label: clinic.name || t("sidebar.unknownClinic"),
@@ -232,13 +247,18 @@ function RouteComponent() {
                 );
               }
               if (field.fieldType === "number") {
+                const englishLabel = Language.getTranslation(field.label, "en") || "";
+                const arabicLabel = Language.getTranslation(field.label, "ar") || "";
                 return (
                   <div key={field.id} className="space-y-2">
                     <Label
                       htmlFor={field.column}
-                      className="text-muted-foreground"
+                      className="flex flex-col"
                     >
-                      {Language.getTranslation(field.label, language)}
+                      <span className="text-sm font-medium">{englishLabel}</span>
+                      {arabicLabel && arabicLabel !== englishLabel && (
+                        <span className="text-sm text-muted-foreground mt-0.5" dir="rtl">{arabicLabel}</span>
+                      )}
                     </Label>
                     <Input
                       data-inputtype={"number"}
@@ -250,13 +270,18 @@ function RouteComponent() {
                 );
               }
               if (field.fieldType === "date") {
+                const englishLabel = Language.getTranslation(field.label, "en") || "";
+                const arabicLabel = Language.getTranslation(field.label, "ar") || "";
                 return (
                   <div key={field.id} className="space-y-2">
                     <Label
                       htmlFor={field.column}
-                      className="text-muted-foreground"
+                      className="flex flex-col"
                     >
-                      {Language.getTranslation(field.label, language)}
+                      <span className="text-sm font-medium">{englishLabel}</span>
+                      {arabicLabel && arabicLabel !== englishLabel && (
+                        <span className="text-sm text-muted-foreground mt-0.5" dir="rtl">{arabicLabel}</span>
+                      )}
                     </Label>
                     <DatePickerInput
                       // valueFormat="YYYY MMM DD"

@@ -435,6 +435,18 @@ function RouteComponent() {
     return fallback;
   };
 
+  const getBilingualFieldLabel = (field: any): { english: string; arabic: string } => {
+    // Check if field.label is a translation object (like patient registration forms)
+    if (field.label && typeof field.label === "object" && !Array.isArray(field.label)) {
+      const englishLabel = Language.getTranslation(field.label, "en") || "";
+      const arabicLabel = Language.getTranslation(field.label, "ar") || "";
+      return { english: englishLabel, arabic: arabicLabel };
+    }
+    // If not a translation object, use the field name/label for both
+    const fallback = field.name || field.label || "";
+    return { english: fallback, arabic: fallback };
+  };
+
   // Get form language for display
   const isFormInDifferentLanguage = currentForm?.language && currentForm.language !== language;
 
@@ -465,10 +477,9 @@ function RouteComponent() {
       fieldType = "radio";
     }
     
-    const fieldLabel = getFieldLabel(field);
-    
-    // Ensure we have a label - if not, try to get it from name or generate a fallback
-    const displayLabel = fieldLabel || field.name || `Field ${field.id.substring(0, 8)}`;
+    const bilingualLabel = getBilingualFieldLabel(field);
+    const englishLabel = bilingualLabel.english || field.name || `Field ${field.id.substring(0, 8)}`;
+    const arabicLabel = bilingualLabel.arabic || "";
 
     // Get error message (translate if it's a translation key)
     let errorMessage = error;
@@ -481,14 +492,24 @@ function RouteComponent() {
         : translated;
     }
 
+    // Helper component to render bilingual label
+    const renderBilingualLabel = () => (
+      <div className="flex flex-col">
+        <span className="text-sm font-medium">{englishLabel}</span>
+        {arabicLabel && arabicLabel !== englishLabel && (
+          <span className="text-sm text-muted-foreground mt-0.5" dir="rtl">{arabicLabel}</span>
+        )}
+      </div>
+    );
+
     switch (fieldType) {
       case "text":
       case "free-text":
       case "short-text":
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {displayLabel}
+            <label className="flex items-start gap-2">
+              {renderBilingualLabel()}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input
@@ -511,8 +532,8 @@ function RouteComponent() {
       case "textarea":
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {displayLabel}
+            <label className="flex items-start gap-2">
+              {renderBilingualLabel()}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <textarea
@@ -538,8 +559,8 @@ function RouteComponent() {
         const maxRule = field.validation?.find((r: any) => r.type === "max");
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {displayLabel}
+            <label className="flex items-start gap-2">
+              {renderBilingualLabel()}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input
@@ -564,8 +585,8 @@ function RouteComponent() {
       case "select":
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {displayLabel}
+            <label className="flex items-start gap-2">
+              {renderBilingualLabel()}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <select
@@ -601,8 +622,8 @@ function RouteComponent() {
       case "checkbox":
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {displayLabel}
+            <label className="flex items-start gap-2">
+              {renderBilingualLabel()}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <div className="space-y-2">
@@ -641,8 +662,8 @@ function RouteComponent() {
       case "radio":
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {displayLabel}
+            <label className="flex items-start gap-2">
+              {renderBilingualLabel()}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <div className="space-y-2">
@@ -677,8 +698,8 @@ function RouteComponent() {
       case "date":
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {displayLabel}
+            <label className="flex items-start gap-2">
+              {renderBilingualLabel()}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input
@@ -700,8 +721,8 @@ function RouteComponent() {
       case "diagnosis":
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {displayLabel}
+            <label className="flex items-start gap-2">
+              {renderBilingualLabel()}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input
@@ -718,8 +739,8 @@ function RouteComponent() {
       default:
         return (
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {displayLabel}
+            <label className="flex items-start gap-2">
+              {renderBilingualLabel()}
               {field.required && <span className="text-red-500"> *</span>}
             </label>
             <input

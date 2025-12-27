@@ -37,7 +37,7 @@ export interface SelectInputProps {
   clearable?: boolean;
   allowDeselect?: boolean;
   // Form integration
-  label?: string;
+  label?: string | React.ReactNode;
   description?: string;
   error?: string | boolean;
   withAsterisk?: boolean;
