@@ -446,10 +446,29 @@ namespace User {
   }
 
   export function getInitials(user: User.T | User.EncodedT): string {
-    return user.name
-      .split(" ")
-      .map((name) => name[0].toUpperCase())
-      .join("");
+    if (!user.name || typeof user.name !== "string" || user.name.trim().length === 0) {
+      // Return initials from email if name is not available
+      if (user.email && typeof user.email === "string") {
+        const emailParts = user.email.split("@")[0].split(/[._-]/);
+        return emailParts
+          .filter(part => part.length > 0)
+          .map((part) => part[0]?.toUpperCase() || "")
+          .slice(0, 2)
+          .join("") || "U";
+      }
+      return "U"; // Default fallback
+    }
+    
+    const nameParts = user.name.trim().split(" ").filter(part => part.length > 0);
+    if (nameParts.length === 0) {
+      return "U"; // Fallback if name is empty after trimming
+    }
+    
+    return nameParts
+      .map((name) => name[0]?.toUpperCase() || "")
+      .filter(char => char.length > 0)
+      .slice(0, 2) // Limit to first 2 initials
+      .join("") || "U";
   }
 
   export const fromDbEntry = (

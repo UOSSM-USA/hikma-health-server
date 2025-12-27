@@ -181,6 +181,9 @@ function RouteComponent() {
   const [translatedClinicNames, setTranslatedClinicNames] = useState<Record<string, string>>({});
   const [translatedDepartmentNames, setTranslatedDepartmentNames] = useState<Record<string, string>>({});
   const [translatedNotes, setTranslatedNotes] = useState<string | null>(null);
+  const [availableDepartments, setAvailableDepartments] = useState<
+    ClinicDepartment.EncodedT[]
+  >([]);
 
   // Clear translation cache when language changes
   useEffect(() => {
@@ -329,10 +332,6 @@ function RouteComponent() {
   }, [language, providers, clinics, availableDepartments, isEditing, appointment]);
 
   console.log({ appointment });
-
-  const [availableDepartments, setAvailableDepartments] = useState<
-    ClinicDepartment.EncodedT[]
-  >([]);
 
   const form = useForm<Appointment.EncodedT>({
     defaultValues: {
