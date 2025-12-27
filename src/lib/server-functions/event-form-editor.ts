@@ -223,8 +223,16 @@ const _ensureCanAddEventForm = createServerFn({ method: "GET" })
   .middleware([permissionsMiddleware])
   .handler(async ({ context }) =>
     Sentry.startSpan({ name: "eventForms.ensureCanAdd" }, async () => {
-      const permContext = createPermissionContext(context);
-      checkEventFormPermission(permContext, PermissionOperation.ADD);
+      // Only admins and super admins can create/edit form templates
+      // Providers, caseworkers, and registrars can only submit data using forms, not edit form structure
+      const UserModel = (await import("@/models/user")).default;
+      const isAdmin = context.role === UserModel.ROLES.ADMIN;
+      const isSuperAdmin = context.isSuperAdmin || context.role === UserModel.ROLES.SUPER_ADMIN_2;
+      
+      if (!isAdmin && !isSuperAdmin) {
+        throw new Error("Unauthorized: Only admins and super admins can create form templates");
+      }
+      
       return true;
     }),
   );
@@ -234,8 +242,16 @@ const _ensureCanEditEventForm = createServerFn({ method: "GET" })
   .middleware([permissionsMiddleware])
   .handler(async ({ context }) =>
     Sentry.startSpan({ name: "eventForms.ensureCanEdit" }, async () => {
-      const permContext = createPermissionContext(context);
-      checkEventFormPermission(permContext, PermissionOperation.EDIT);
+      // Only admins and super admins can create/edit form templates
+      // Providers, caseworkers, and registrars can only submit data using forms, not edit form structure
+      const UserModel = (await import("@/models/user")).default;
+      const isAdmin = context.role === UserModel.ROLES.ADMIN;
+      const isSuperAdmin = context.isSuperAdmin || context.role === UserModel.ROLES.SUPER_ADMIN_2;
+      
+      if (!isAdmin && !isSuperAdmin) {
+        throw new Error("Unauthorized: Only admins and super admins can edit form templates");
+      }
+      
       return true;
     }),
   );

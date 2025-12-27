@@ -129,9 +129,24 @@ export function usePatientPermissions(role: User.RoleT | null | undefined) {
  * Hook for event forms module permissions
  * @param role - User's role
  * @returns CRUD permissions for event forms
+ * 
+ * Note: Form template editing (creating/editing form structure) is restricted to admins/super admins only.
+ * Providers, caseworkers, and registrars can only submit data using forms, not edit form templates.
  */
 export function useEventFormPermissions(role: User.RoleT | null | undefined) {
-  return useModuleCRUD(role, Module.EVENT_FORMS);
+  const crudPermissions = useModuleCRUD(role, Module.EVENT_FORMS);
+  const isAdmin = useIsAdmin(role);
+  
+  // Restrict form template editing to admins/super admins only
+  // Other roles can only submit data using forms, not edit form structure
+  return useMemo(() => {
+    return {
+      ...crudPermissions,
+      // Only admins/super admins can edit form templates
+      canEdit: crudPermissions.canEdit && isAdmin,
+      canAdd: crudPermissions.canAdd && isAdmin,
+    };
+  }, [crudPermissions, isAdmin]);
 }
 
 /**
