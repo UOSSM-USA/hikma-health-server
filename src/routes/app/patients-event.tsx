@@ -815,7 +815,7 @@ function RouteComponent() {
                     return name.includes(" // ") ? name.split(" // ")[0] : name;
                   })()}
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="min-h-[1.5rem]">
                   {(() => {
                     const translated = translatedFormHeader[currentForm.id];
                     if (translated?.description) return translated.description;
@@ -827,7 +827,7 @@ function RouteComponent() {
                       const parts = name.split(" // ");
                       return parts.slice(1).join(" // ");
                     }
-                    return "";
+                    return "\u00A0"; // Non-breaking space to ensure element is rendered
                   })()}
                 </CardDescription>
               </div>
