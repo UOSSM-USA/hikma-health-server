@@ -28,3 +28,14 @@ PERMISSION_SYSTEM_IMPLEMENTATION.md*
 users-with-passwords.csv
 Email Orphans project staff(EMAIL).csv
 users-simplified.csv
+user access credentials.csv
+docs/user access credentials.csv
+
+# Test files with exposed passwords (already applied to staging, no need to commit)
+tests/integration/user-permissions.test.ts
+tests/integration/clinic-filtering.test.ts
+tests/integration/README.md
+e2e/integration/user-access.spec.sh
+e2e/integration/README.md
+docs/user-access-testing-results.md
+docs/TEST_ORGANIZATION.md
