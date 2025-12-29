@@ -89,11 +89,33 @@ export const Route = createFileRoute("/app")({
     }
     
     // Filter clinics for non-super admins - ONLY show clinics from user_clinic_permissions
-    const clinics = isSuperAdmin
+    let clinics = isSuperAdmin
       ? allClinics
       : userClinicIds.length > 0
         ? allClinics.filter(c => userClinicIds.includes(c.id))
         : []; // Empty array if no permissions found - don't fall back to user.clinic_id
+    
+    // Role-based clinic restrictions: Orphan project roles should not see Nutrition clinic
+    if (!isSuperAdmin && user) {
+      const orphanProjectRoles = [
+        User.ROLES.TECHNICAL_ADVISOR,
+        User.ROLES.TEAM_LEADER,
+        User.ROLES.ME_OFFICER,
+        User.ROLES.IM_ASSOCIATE,
+        User.ROLES.PROJECT_MANAGER,
+        User.ROLES.CASEWORKER_1,
+        User.ROLES.CASEWORKER_2,
+        User.ROLES.CASEWORKER_3,
+        User.ROLES.CASEWORKER_4,
+      ];
+      
+      if (orphanProjectRoles.includes(user.role as User.RoleT)) {
+        // Exclude Nutrition clinic for Orphan project roles
+        clinics = clinics.filter(c => 
+          !c.name?.toLowerCase().includes("nutrition")
+        );
+      }
+    }
     
     if (!isSuperAdmin && clinics.length === 0) {
       console.warn(`[App Loader] Non-super admin user ${user?.email} has no accessible clinics!`);
