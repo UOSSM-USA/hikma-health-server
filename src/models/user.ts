@@ -545,9 +545,10 @@ namespace User {
       password: string,
       validHours: number = 2,
     ): Promise<{ user: User.EncodedT; token: string }> => {
+      // Use case-insensitive email matching
       const user = await db
         .selectFrom(Table.name)
-        .where("email", "=", email)
+        .where(sql`LOWER(${sql.id(Table.name)}.email)`, "=", email.toLowerCase())
         .where("is_deleted", "=", false)
         .selectAll()
         .executeTakeFirst();
