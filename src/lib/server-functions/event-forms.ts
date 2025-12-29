@@ -24,7 +24,40 @@ export const getEventForms = createServerFn({ method: "GET" })
         return []; // No clinic access = no forms
       }
 
-      const assignedFormIds = await ClinicEventForm.API.getFormIdsByClinics(context.clinicIds);
+      // Role-based clinic restrictions: Orphan project roles should not see Nutrition clinic
+      let filteredClinicIds = context.clinicIds;
+      if (context.role) {
+        const orphanProjectRoles = [
+          User.ROLES.TECHNICAL_ADVISOR,
+          User.ROLES.TEAM_LEADER,
+          User.ROLES.ME_OFFICER,
+          User.ROLES.IM_ASSOCIATE,
+          User.ROLES.PROJECT_MANAGER,
+          User.ROLES.CASEWORKER_1,
+          User.ROLES.CASEWORKER_2,
+          User.ROLES.CASEWORKER_3,
+          User.ROLES.CASEWORKER_4,
+        ];
+        
+        if (orphanProjectRoles.includes(context.role)) {
+          // Exclude Nutrition clinic for Orphan project roles
+          const ClinicModel = (await import("@/models/clinic")).default;
+          const allClinics = await ClinicModel.API.getAll();
+          const nutritionClinicIds = allClinics
+            .filter(c => c.name?.toLowerCase().includes("nutrition"))
+            .map(c => c.id);
+          
+          filteredClinicIds = context.clinicIds.filter(
+            id => !nutritionClinicIds.includes(id)
+          );
+        }
+      }
+
+      if (filteredClinicIds.length === 0) {
+        return []; // No accessible clinics after filtering
+      }
+
+      const assignedFormIds = await ClinicEventForm.API.getFormIdsByClinics(filteredClinicIds);
       
       if (assignedFormIds.length === 0) {
         return []; // No forms assigned to their clinics
@@ -58,8 +91,39 @@ export const getEventFormById = createServerFn({ method: "GET" })
     } else {
       // Non-super admins can only access forms assigned to their clinics
       if (context.clinicIds.length > 0) {
-        const assignedFormIds = await ClinicEventForm.API.getFormIdsByClinics(context.clinicIds);
-        hasAccess = assignedFormIds.includes(data.id);
+        // Role-based clinic restrictions: Orphan project roles should not see Nutrition clinic
+        let filteredClinicIds = context.clinicIds;
+        if (context.role) {
+          const orphanProjectRoles = [
+            User.ROLES.TECHNICAL_ADVISOR,
+            User.ROLES.TEAM_LEADER,
+            User.ROLES.ME_OFFICER,
+            User.ROLES.IM_ASSOCIATE,
+            User.ROLES.PROJECT_MANAGER,
+            User.ROLES.CASEWORKER_1,
+            User.ROLES.CASEWORKER_2,
+            User.ROLES.CASEWORKER_3,
+            User.ROLES.CASEWORKER_4,
+          ];
+          
+          if (orphanProjectRoles.includes(context.role)) {
+            // Exclude Nutrition clinic for Orphan project roles
+            const ClinicModel = (await import("@/models/clinic")).default;
+            const allClinics = await ClinicModel.API.getAll();
+            const nutritionClinicIds = allClinics
+              .filter(c => c.name?.toLowerCase().includes("nutrition"))
+              .map(c => c.id);
+            
+            filteredClinicIds = context.clinicIds.filter(
+              id => !nutritionClinicIds.includes(id)
+            );
+          }
+        }
+
+        if (filteredClinicIds.length > 0) {
+          const assignedFormIds = await ClinicEventForm.API.getFormIdsByClinics(filteredClinicIds);
+          hasAccess = assignedFormIds.includes(data.id);
+        }
       }
     }
 
