@@ -545,10 +545,10 @@ namespace User {
       password: string,
       validHours: number = 2,
     ): Promise<{ user: User.EncodedT; token: string }> => {
-      // Use case-insensitive email matching
+      // Use case-sensitive email matching - emails with different cases are different accounts
       const user = await db
         .selectFrom(Table.name)
-        .where(sql`LOWER(${sql.id(Table.name)}.email)`, "=", email.toLowerCase())
+        .where("email", "=", email)
         .where("is_deleted", "=", false)
         .selectAll()
         .executeTakeFirst();
@@ -601,6 +601,18 @@ namespace User {
       ): Promise<User.EncodedT["id"] | null> => {
         const entry = User.fromDbEntry(user);
         if (Either.isLeft(entry)) return null;
+
+        // Check for existing user with same email (case-sensitive)
+        const existing = await db
+          .selectFrom(Table.name)
+          .where("email", "=", user.email)
+          .where("is_deleted", "=", false)
+          .selectAll()
+          .executeTakeFirst();
+
+        if (existing) {
+          throw new Error(`User with email ${user.email} already exists`);
+        }
 
         const saltRounds = 10;
         const salt = bcrypt.genSaltSync(saltRounds);
