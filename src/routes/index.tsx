@@ -47,7 +47,7 @@ function Login() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        email: email.toLowerCase(),
+        email: email,
         password,
       }),
     });
