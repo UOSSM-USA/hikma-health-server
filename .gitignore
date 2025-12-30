@@ -39,3 +39,4 @@ e2e/integration/user-access.spec.sh
 e2e/integration/README.md
 docs/user-access-testing-results.md
 docs/TEST_ORGANIZATION.md
+docs/role-access-matrix.csv
