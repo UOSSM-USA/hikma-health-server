@@ -3,6 +3,7 @@ import EventForm from "@/models/event-form";
 import { permissionsMiddleware } from "@/middleware/auth";
 import ClinicEventForm from "@/models/clinic-event-form";
 import User from "@/models/user";
+import Clinic from "@/models/clinic";
 import { normalizeFormFields } from "./event-form-editor";
 
 /**
@@ -41,11 +42,10 @@ export const getEventForms = createServerFn({ method: "GET" })
         
         if (orphanProjectRoles.includes(context.role)) {
           // Exclude Nutrition clinic for Orphan project roles
-          const ClinicModel = (await import("@/models/clinic")).default;
-          const allClinics = await ClinicModel.API.getAll();
+          const allClinics = await Clinic.getAll({ includeUsers: false });
           const nutritionClinicIds = allClinics
-            .filter(c => c.name?.toLowerCase().includes("nutrition"))
-            .map(c => c.id);
+            .filter((c: Clinic.EncodedT) => c.name?.toLowerCase().includes("nutrition"))
+            .map((c: Clinic.EncodedT) => c.id);
           
           filteredClinicIds = context.clinicIds.filter(
             id => !nutritionClinicIds.includes(id)
@@ -108,11 +108,10 @@ export const getEventFormById = createServerFn({ method: "GET" })
           
           if (orphanProjectRoles.includes(context.role)) {
             // Exclude Nutrition clinic for Orphan project roles
-            const ClinicModel = (await import("@/models/clinic")).default;
-            const allClinics = await ClinicModel.API.getAll();
+            const allClinics = await Clinic.getAll({ includeUsers: false });
             const nutritionClinicIds = allClinics
-              .filter(c => c.name?.toLowerCase().includes("nutrition"))
-              .map(c => c.id);
+              .filter((c: Clinic.EncodedT) => c.name?.toLowerCase().includes("nutrition"))
+              .map((c: Clinic.EncodedT) => c.id);
             
             filteredClinicIds = context.clinicIds.filter(
               id => !nutritionClinicIds.includes(id)
