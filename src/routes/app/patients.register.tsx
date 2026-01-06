@@ -1,4 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
+import { checkDuplicateGovernmentId, checkPotentialDuplicates, generateNextPatientId } from "@/lib/server-functions/patients";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { DatePickerInput } from "@/components/date-picker-input";
 import { Button } from "@/components/ui/button";
@@ -73,27 +77,150 @@ function RouteComponent() {
   const { patientRegistrationForm, clinicsList } = Route.useLoaderData();
   const { language } = useLanguage();
   const t = useTranslation();
+  const navigate = useNavigate();
+
+  // State for two-step flow
+  const [step, setStep] = useState<"check-id" | "register" | "review-duplicates">("check-id");
+  const [governmentId, setGovernmentId] = useState("");
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [existingPatient, setExistingPatient] = useState<Patient.EncodedT | null>(null);
+  const [potentialDuplicates, setPotentialDuplicates] = useState<Patient.EncodedT[]>([]);
+  const [duplicateMatchReasons, setDuplicateMatchReasons] = useState<string[]>([]);
+  const [generatedPatientId, setGeneratedPatientId] = useState<string | null>(null);
+  const [formDataForDuplicateCheck, setFormDataForDuplicateCheck] = useState<any>(null);
 
   const { formState, handleSubmit, register, watch, setValue } = useForm({
     mode: "all",
-    // initialValues: {},
-
-    // validate: {},
   });
 
-  const onSubmit = async (data: any) => {
+  // Generate Patient ID when moving to registration step
+  useEffect(() => {
+    if (step === "register" && !generatedPatientId) {
+      generateNextPatientId().then((result) => {
+        if (result.patientId && !result.error) {
+          setGeneratedPatientId(result.patientId);
+          setValue("external_patient_id", result.patientId);
+        }
+      });
+    }
+  }, [step, generatedPatientId, setValue]);
+
+  // Auto-populate government_id when we have it
+  useEffect(() => {
+    if (governmentId && step === "register") {
+      setValue("government_id", governmentId);
+    }
+  }, [governmentId, step, setValue]);
+
+  // Handle Government ID check
+  const handleCheckGovernmentId = async () => {
+    if (!governmentId.trim()) {
+      toast.error("Please enter a Government ID");
+      return;
+    }
+
+    setCheckingDuplicate(true);
+    try {
+      const result = await checkDuplicateGovernmentId({ data: { government_id: governmentId.trim() } });
+      
+      if (result.exists && result.patient) {
+        // Duplicate found - show existing patient info
+        setExistingPatient(result.patient);
+        setValue("government_id", governmentId.trim());
+      } else {
+        // No duplicate - proceed to registration
+        setExistingPatient(null);
+        setValue("government_id", governmentId.trim());
+        setStep("register");
+      }
+    } catch (error) {
+      console.error("Error checking duplicate:", error);
+      toast.error("Failed to check for duplicate. Please try again.");
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  };
+
+  // Handle skip Government ID check (for patients without Government ID)
+  const handleSkipGovernmentId = () => {
+    setGovernmentId("");
+    setExistingPatient(null);
+    setStep("register");
+  };
+
+  // Handle continue to existing patient profile
+  const handleContinueToPatient = () => {
+    if (existingPatient) {
+      navigate({ to: `/app/patients/${existingPatient.id}` });
+    }
+  };
+
+  // Check for duplicates before submitting
+  const checkDuplicatesBeforeSubmit = async (data: any) => {
+    setCheckingDuplicate(true);
+    setFormDataForDuplicateCheck(data);
+    
+    try {
+      const result = await checkPotentialDuplicates({
+        data: {
+          government_id: data.government_id || governmentId || undefined,
+          given_name: data.given_name,
+          surname: data.surname,
+          date_of_birth: data.date_of_birth,
+          phone: data.phone,
+        },
+      });
+
+      if (result.duplicates && result.duplicates.length > 0) {
+        // Found potential duplicates - show review screen
+        setPotentialDuplicates(result.duplicates);
+        setDuplicateMatchReasons(result.matchReasons);
+        setStep("review-duplicates");
+      } else {
+        // No duplicates found - proceed with registration
+        await submitRegistration(data);
+      }
+    } catch (error) {
+      console.error("Error checking duplicates:", error);
+      toast.error("Failed to check for duplicates. Please try again.");
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  };
+
+  // Handle continue to existing patient from duplicates list
+  const handleContinueToDuplicatePatient = (patientId: string) => {
+    navigate({ to: `/app/patients/${patientId}` });
+  };
+
+  // Handle proceed with registration despite duplicates
+  const handleProceedDespiteDuplicates = async () => {
+    if (formDataForDuplicateCheck) {
+      await submitRegistration(formDataForDuplicateCheck);
+    }
+  };
+
+  // Actual registration submission
+  const submitRegistration = async (data: any) => {
+    // Ensure government_id and external_patient_id are set
+    const finalData = {
+      ...data,
+      government_id: data.government_id || governmentId,
+      external_patient_id: data.external_patient_id || generatedPatientId,
+    };
+
     const patient: Patient.T = {
       id: uuidv1(),
-      given_name: Option.fromNullable(data.given_name),
-      surname: Option.fromNullable(data.surname),
-      date_of_birth: Option.fromNullable(data.date_of_birth),
-      citizenship: Option.fromNullable(data.citizenship),
-      hometown: Option.fromNullable(data.hometown),
-      phone: Option.fromNullable(data.phone),
-      sex: Option.fromNullable(data.sex),
-      camp: Option.fromNullable(data.camp),
-      additional_data: data.additional_data || {},
-      image_timestamp: Option.fromNullable(data.image_timestamp),
+      given_name: Option.fromNullable(finalData.given_name),
+      surname: Option.fromNullable(finalData.surname),
+      date_of_birth: Option.fromNullable(finalData.date_of_birth),
+      citizenship: Option.fromNullable(finalData.citizenship),
+      hometown: Option.fromNullable(finalData.hometown),
+      phone: Option.fromNullable(finalData.phone),
+      sex: Option.fromNullable(finalData.sex),
+      camp: Option.fromNullable(finalData.camp),
+      additional_data: finalData.additional_data || {},
+      image_timestamp: Option.fromNullable(finalData.image_timestamp),
       is_deleted: false,
       created_at: new Date(),
       updated_at: new Date(),
@@ -101,10 +228,10 @@ function RouteComponent() {
       server_created_at: new Date(),
       deleted_at: Option.none(),
       metadata: {},
-      photo_url: Option.fromNullable(data.photo_url),
-      government_id: Option.fromNullable(data.government_id),
-      external_patient_id: Option.fromNullable(data.external_patient_id),
-      primary_clinic_id: Option.fromNullable(data.primary_clinic_id),
+      photo_url: Option.fromNullable(finalData.photo_url),
+      government_id: Option.fromNullable(finalData.government_id),
+      external_patient_id: Option.fromNullable(finalData.external_patient_id),
+      primary_clinic_id: Option.fromNullable(finalData.primary_clinic_id),
       last_modified_by: Option.none(),
       additional_attributes: {},
     };
@@ -153,15 +280,39 @@ function RouteComponent() {
       });
 
     try {
-      await createPatient({
+      const result = await createPatient({
         data: { baseFields: patient, additionalAttributes } as any,
       });
       toast.success(t("registration.success"));
+      
+      // Navigate to the newly created patient's profile
+      // Patient.register returns { id: string } from the database insert
+      if (result && typeof result === 'object' && 'id' in result && result.id) {
+        navigate({ to: `/app/patients/${result.id}` });
+      } else {
+        // Fallback: If we have a government_id, try to fetch by it
+        if (finalData.government_id && finalData.government_id.trim()) {
+          try {
+            const createdPatient = await Patient.API.getByGovernmentId(finalData.government_id);
+            if (createdPatient) {
+              navigate({ to: `/app/patients/${createdPatient.id}` });
+              return;
+            }
+          } catch (error) {
+            console.error("Failed to fetch patient by government_id:", error);
+          }
+        }
+        // Last resort: navigate to patients list
+        navigate({ to: "/app/patients" });
+      }
     } catch (error) {
       console.error("Failed to register patient:", error);
       toast.error(t("registration.error"));
     }
   };
+
+  // Override form submission to check duplicates first (defined after checkDuplicatesBeforeSubmit)
+  const onFormSubmit = handleSubmit(checkDuplicatesBeforeSubmit);
 
   if (!patientRegistrationForm) {
     return (
@@ -181,13 +332,213 @@ function RouteComponent() {
     );
   }
 
+  // Step 1: Check Government ID
+  if (step === "check-id") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>Register New Patient</CardTitle>
+            <CardDescription>
+              Enter the Government ID to check if this patient already exists in the system. If the patient doesn't have a Government ID, you can skip this step.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="government_id_check" className="flex flex-col">
+                <span className="text-sm font-medium">Government ID (Optional)</span>
+                <span className="text-sm text-muted-foreground mt-0.5" dir="rtl">الهوية الحكومية (اختياري)</span>
+              </Label>
+              <Input
+                id="government_id_check"
+                value={governmentId}
+                onChange={(e) => setGovernmentId(e.target.value)}
+                placeholder="Enter Government ID (optional)"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && governmentId.trim()) {
+                    e.preventDefault();
+                    handleCheckGovernmentId();
+                  }
+                }}
+                disabled={checkingDuplicate}
+              />
+            </div>
+
+            {existingPatient && (
+              <Card className="border-green-200 bg-green-50">
+                <CardContent className="pt-6">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <p className="font-semibold text-green-900">Patient already exists!</p>
+                    </div>
+                    <div className="text-sm space-y-1 text-green-800">
+                      <p><strong>Name:</strong> {Option.getOrElse(existingPatient.given_name, () => "")} {Option.getOrElse(existingPatient.surname, () => "")}</p>
+                      {existingPatient.external_patient_id && (
+                        <p><strong>Patient ID:</strong> {Option.getOrElse(existingPatient.external_patient_id, () => "")}</p>
+                      )}
+                    </div>
+                    <Button
+                      onClick={handleContinueToPatient}
+                      className="w-full mt-2"
+                    >
+                      Continue to Patient Profile
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                onClick={handleCheckGovernmentId}
+                disabled={checkingDuplicate || !governmentId.trim()}
+                className="flex-1"
+              >
+                {checkingDuplicate ? "Checking..." : "Check"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSkipGovernmentId}
+                disabled={checkingDuplicate}
+                className="flex-1"
+              >
+                Skip (No Government ID)
+              </Button>
+            </div>
+            {existingPatient && (
+              <div className="mt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setExistingPatient(null);
+                    setStep("register");
+                  }}
+                  className="w-full"
+                >
+                  Register New Patient Anyway
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Step 2.5: Review Potential Duplicates
+  if (step === "review-duplicates") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <Card className="w-full max-w-2xl">
+          <CardHeader>
+            <CardTitle>Potential Duplicate Patients Found</CardTitle>
+            <CardDescription>
+              We found {potentialDuplicates.length} patient(s) that may match the information you entered. Please review them before proceeding.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-3">
+              {potentialDuplicates.map((patient, idx) => (
+                <Card key={patient.id} className="border-yellow-200 bg-yellow-50">
+                  <CardContent className="pt-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold text-yellow-900">
+                            {Option.getOrElse(patient.given_name, () => "")} {Option.getOrElse(patient.surname, () => "")}
+                          </p>
+                          {patient.external_patient_id && (
+                            <p className="text-sm text-yellow-800">
+                              Patient ID: {Option.getOrElse(patient.external_patient_id, () => "")}
+                            </p>
+                          )}
+                          {patient.government_id && (
+                            <p className="text-sm text-yellow-800">
+                              Government ID: {Option.getOrElse(patient.government_id, () => "")}
+                            </p>
+                          )}
+                          {patient.phone && (
+                            <p className="text-sm text-yellow-800">
+                              Phone: {Option.getOrElse(patient.phone, () => "")}
+                            </p>
+                          )}
+                          {patient.date_of_birth && (
+                            <p className="text-sm text-yellow-800">
+                              Date of Birth: {new Date(Option.getOrElse(patient.date_of_birth, () => new Date())).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          onClick={() => handleContinueToDuplicatePatient(patient.id)}
+                          variant="outline"
+                        >
+                          View Patient
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-4">
+              <Button
+                type="button"
+                onClick={handleProceedDespiteDuplicates}
+                disabled={checkingDuplicate}
+                className="flex-1"
+              >
+                Register New Patient Anyway
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setStep("register");
+                  setPotentialDuplicates([]);
+                  setDuplicateMatchReasons([]);
+                }}
+                className="flex-1"
+              >
+                Go Back to Form
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Step 2: Full Registration Form
   return (
     <div>
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <div className="mb-4">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            setStep("check-id");
+            setExistingPatient(null);
+            setGovernmentId("");
+          }}
+        >
+          ← Back to Government ID Check
+        </Button>
+      </div>
+      <form onSubmit={onFormSubmit}>
         <div style={{ maxWidth: 500 }} className="space-y-4">
           {patientRegistrationForm?.fields
             .filter((field) => field.visible && field.deleted !== true)
             .map((field, idx) => {
+              const isGovernmentId = field.column === "government_id";
+              const isPatientId = field.column === "external_patient_id";
+              const isReadOnly = (isGovernmentId && governmentId) || (isPatientId && generatedPatientId);
+              // If Government ID was skipped, make it optional (not required)
+              const isOptional = isGovernmentId && !governmentId;
+
               if (field.fieldType === "text") {
                 const englishLabel = Language.getTranslation(field.label, "en") || "";
                 const arabicLabel = Language.getTranslation(field.label, "ar") || "";
@@ -208,6 +559,15 @@ function RouteComponent() {
                       data-column={field.column}
                       key={field.id}
                       {...register(field.column)}
+                      readOnly={isReadOnly}
+                      className={isReadOnly ? "bg-muted cursor-not-allowed" : ""}
+                      value={
+                        isGovernmentId && governmentId
+                          ? governmentId
+                          : isPatientId && generatedPatientId
+                          ? generatedPatientId
+                          : watch(field.column) || ""
+                      }
                     />
                   </div>
                 );

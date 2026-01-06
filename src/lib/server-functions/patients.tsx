@@ -150,3 +150,163 @@ export const getPatientById = createServerFn({
       };
     },
   );
+
+/**
+ * Check if a patient with the given government_id already exists
+ * Note: If government_id is empty/null, returns no match (allows registration)
+ */
+export const checkDuplicateGovernmentId = createServerFn({
+  method: "GET",
+})
+  .validator((data: { government_id: string }) => data)
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      patient: Patient.EncodedT | null;
+      exists: boolean;
+      error: { message: string } | null;
+    }> => {
+      return Sentry.startSpan({ name: "checkDuplicateGovernmentId" }, async () => {
+        try {
+          // If government_id is empty or null, don't check for duplicates
+          if (!data.government_id || !data.government_id.trim()) {
+            return {
+              patient: null,
+              exists: false,
+              error: null,
+            };
+          }
+
+          const patient = await Patient.API.getByGovernmentId(data.government_id.trim());
+          return {
+            patient: patient || null,
+            exists: !!patient,
+            error: null,
+          };
+        } catch (error) {
+          console.error("Error checking duplicate government ID:", error);
+          return {
+            patient: null,
+            exists: false,
+            error: {
+              message: error instanceof Error ? error.message : "Unknown error",
+            },
+          };
+        }
+      });
+    },
+  );
+
+/**
+ * Check for potential duplicate patients using multiple criteria
+ * Checks: Government ID, Name + DOB, Phone number
+ */
+export const checkPotentialDuplicates = createServerFn({
+  method: "GET",
+})
+  .validator((data: {
+    government_id?: string;
+    given_name?: string;
+    surname?: string;
+    date_of_birth?: string;
+    phone?: string;
+  }) => data)
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      duplicates: Patient.EncodedT[];
+      matchReasons: string[];
+      error: { message: string } | null;
+    }> => {
+      return Sentry.startSpan({ name: "checkPotentialDuplicates" }, async () => {
+        try {
+          const duplicates: Patient.EncodedT[] = [];
+          const matchReasons: string[] = [];
+          const foundIds = new Set<string>();
+
+          // 1. Check by Government ID (if provided)
+          if (data.government_id && data.government_id.trim()) {
+            const govIdPatient = await Patient.API.getByGovernmentId(data.government_id.trim());
+            if (govIdPatient && !foundIds.has(govIdPatient.id)) {
+              duplicates.push(govIdPatient);
+              foundIds.add(govIdPatient.id);
+              matchReasons.push(`Government ID: ${data.government_id.trim()}`);
+            }
+          }
+
+          // 2. Check by Name + Date of Birth (if both provided)
+          if (data.given_name && data.surname && data.date_of_birth) {
+            const nameDobMatches = await Patient.API.findByNameAndDOB({
+              given_name: data.given_name.trim(),
+              surname: data.surname.trim(),
+              date_of_birth: data.date_of_birth,
+            });
+            nameDobMatches.forEach((patient) => {
+              if (!foundIds.has(patient.id)) {
+                duplicates.push(patient);
+                foundIds.add(patient.id);
+                matchReasons.push(`Name + Date of Birth: ${data.given_name} ${data.surname}, DOB: ${data.date_of_birth}`);
+              }
+            });
+          }
+
+          // 3. Check by Phone number (if provided)
+          if (data.phone && data.phone.trim()) {
+            const phoneMatches = await Patient.API.findByPhone(data.phone.trim());
+            phoneMatches.forEach((patient) => {
+              if (!foundIds.has(patient.id)) {
+                duplicates.push(patient);
+                foundIds.add(patient.id);
+                matchReasons.push(`Phone: ${data.phone}`);
+              }
+            });
+          }
+
+          return {
+            duplicates,
+            matchReasons: matchReasons.length > 0 ? matchReasons : [],
+            error: null,
+          };
+        } catch (error) {
+          console.error("Error checking potential duplicates:", error);
+          return {
+            duplicates: [],
+            matchReasons: [],
+            error: {
+              message: error instanceof Error ? error.message : "Unknown error",
+            },
+          };
+        }
+      });
+    },
+  );
+
+/**
+ * Generate the next Patient ID in PID-000-0001 format
+ */
+export const generateNextPatientId = createServerFn({
+  method: "GET",
+}).handler(async (): Promise<{
+  patientId: string;
+  error: { message: string } | null;
+}> => {
+  return Sentry.startSpan({ name: "generateNextPatientId" }, async () => {
+    try {
+      const patientId = await Patient.API.generateNextPatientId();
+      return {
+        patientId,
+        error: null,
+      };
+    } catch (error) {
+      console.error("Error generating Patient ID:", error);
+      return {
+        patientId: "",
+        error: {
+          message: error instanceof Error ? error.message : "Unknown error",
+        },
+      };
+    }
+  });
+});

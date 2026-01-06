@@ -1126,6 +1126,152 @@ namespace Patient {
         return patient?.primary_clinic_id;
       },
     );
+
+    /**
+     * Get a patient by government_id (for duplicate checking)
+     */
+    export const getByGovernmentId = serverOnly(
+      async (governmentId: string): Promise<Patient.EncodedT | null> => {
+        const query = sql`
+          SELECT
+            p.*,
+            COALESCE(json_object_agg(
+              pa.attribute_id,
+              json_build_object(
+                'attribute', pa.attribute,
+                'number_value', pa.number_value,
+                'string_value', pa.string_value,
+                'date_value', pa.date_value,
+                'boolean_value', pa.boolean_value
+              )
+            ) FILTER (WHERE pa.attribute_id IS NOT NULL), '{}') AS additional_attributes
+          FROM patients p
+          LEFT JOIN patient_additional_attributes pa ON p.id = pa.patient_id
+          WHERE p.is_deleted = false
+          AND p.government_id = ${governmentId}
+          GROUP BY p.id
+          LIMIT 1
+        `.compile(db);
+
+        const patient = await executePatientQuery(query);
+        return patient?.[0] || null;
+      },
+    );
+
+    /**
+     * Find patients by Name and Date of Birth
+     * Used for duplicate detection
+     */
+    export const findByNameAndDOB = serverOnly(
+      async ({
+        given_name,
+        surname,
+        date_of_birth,
+      }: {
+        given_name: string;
+        surname: string;
+        date_of_birth: string | Date;
+      }): Promise<Patient.EncodedT[]> => {
+        const dobDate = typeof date_of_birth === "string" ? new Date(date_of_birth) : date_of_birth;
+        const dobString = dobDate.toISOString().split("T")[0]; // YYYY-MM-DD format
+
+        const query = sql`
+          SELECT
+            p.*,
+            COALESCE(json_object_agg(
+              pa.attribute_id,
+              json_build_object(
+                'attribute', pa.attribute,
+                'number_value', pa.number_value,
+                'string_value', pa.string_value,
+                'date_value', pa.date_value,
+                'boolean_value', pa.boolean_value
+              )
+            ) FILTER (WHERE pa.attribute_id IS NOT NULL), '{}') AS additional_attributes
+          FROM patients p
+          LEFT JOIN patient_additional_attributes pa ON p.id = pa.patient_id
+          WHERE p.is_deleted = false
+          AND LOWER(TRIM(p.given_name)) = LOWER(TRIM(${given_name}))
+          AND LOWER(TRIM(p.surname)) = LOWER(TRIM(${surname}))
+          AND p.date_of_birth::text = ${dobString}
+          GROUP BY p.id
+          LIMIT 10
+        `.compile(db);
+
+        const patients = await executePatientQuery(query);
+        return patients || [];
+      },
+    );
+
+    /**
+     * Find patients by Phone number
+     * Used for duplicate detection
+     */
+    export const findByPhone = serverOnly(
+      async (phone: string): Promise<Patient.EncodedT[]> => {
+        const query = sql`
+          SELECT
+            p.*,
+            COALESCE(json_object_agg(
+              pa.attribute_id,
+              json_build_object(
+                'attribute', pa.attribute,
+                'number_value', pa.number_value,
+                'string_value', pa.string_value,
+                'date_value', pa.date_value,
+                'boolean_value', pa.boolean_value
+              )
+            ) FILTER (WHERE pa.attribute_id IS NOT NULL), '{}') AS additional_attributes
+          FROM patients p
+          LEFT JOIN patient_additional_attributes pa ON p.id = pa.patient_id
+          WHERE p.is_deleted = false
+          AND LOWER(TRIM(p.phone)) = LOWER(TRIM(${phone}))
+          GROUP BY p.id
+          LIMIT 10
+        `.compile(db);
+
+        const patients = await executePatientQuery(query);
+        return patients || [];
+      },
+    );
+
+    /**
+     * Generate the next Patient ID in PID-000-0001 format
+     * Finds the highest existing Patient ID and increments it
+     */
+    export const generateNextPatientId = serverOnly(
+      async (): Promise<string> => {
+        // Find the highest existing Patient ID that matches PID-000-XXXX format
+        const result = await db
+          .selectFrom("patients")
+          .select("external_patient_id")
+          .where("external_patient_id", "like", "PID-%")
+          .where("is_deleted", "=", false)
+          .orderBy("external_patient_id", "desc")
+          .limit(1)
+          .executeTakeFirst();
+
+        if (!result || !result.external_patient_id) {
+          // No existing Patient IDs, start with PID-000-0001
+          return "PID-000-0001";
+        }
+
+        // Extract the number part from the last Patient ID
+        // Format: PID-000-0001 -> extract 0001
+        const match = result.external_patient_id.match(/PID-\d+-(\d+)$/);
+        if (!match) {
+          // Invalid format, start fresh
+          return "PID-000-0001";
+        }
+
+        const lastNumber = parseInt(match[1], 10);
+        const nextNumber = lastNumber + 1;
+        
+        // Format: PID-000-0002 (pad with zeros to 4 digits)
+        const paddedNumber = nextNumber.toString().padStart(4, "0");
+        return `PID-000-${paddedNumber}`;
+      },
+    );
   }
 
   export const getPatientClinicId = serverOnly(async (id: string) => {
