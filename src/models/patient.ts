@@ -771,6 +771,11 @@ namespace Patient {
 
         // Build the query using the base query and adding search condition with pagination
         // Search across multiple patient fields and additional attributes
+        // Also support searching by last 4 digits of Patient ID (PID-000-XXXX format)
+        const trimmedQuery = searchQuery.trim();
+        const isLast4Digits = /^\d{4}$/.test(trimmedQuery);
+        const last4DigitsPattern = isLast4Digits ? `%-${trimmedQuery}` : null;
+        
         const query = sql`
       ${buildPatientAttributesBaseQuery(allClinicIds, userId, isCaseworker)}
       AND (
@@ -780,7 +785,10 @@ namespace Patient {
         OR LOWER(COALESCE(p.camp, '')) LIKE LOWER(${searchPattern})
         OR LOWER(COALESCE(p.citizenship, '')) LIKE LOWER(${searchPattern})
         OR LOWER(COALESCE(p.hometown, '')) LIKE LOWER(${searchPattern})
+        OR LOWER(COALESCE(p.government_id, '')) LIKE LOWER(${searchPattern})
         OR LOWER(CAST(p.id AS TEXT)) = LOWER(${searchQuery})
+        OR LOWER(COALESCE(p.external_patient_id, '')) LIKE LOWER(${searchPattern})
+        ${last4DigitsPattern ? sql`OR p.external_patient_id LIKE ${last4DigitsPattern}` : sql``}
         OR EXISTS (
           SELECT 1
           FROM patient_additional_attributes paa
@@ -808,44 +816,62 @@ namespace Patient {
         // Get total count if requested
         let totalCount = 0;
         if (includeCount) {
-          const countQuery = sql`
-          SELECT COUNT(*) as total
-          FROM patients p
-          WHERE p.is_deleted = false
-          AND (
-            ${allClinicIds.length > 0 ? sql`p.primary_clinic_id IN (${sql.join(allClinicIds)})` : sql`false`}
-            ${allClinicIds.length > 0 ? sql`OR p.primary_clinic_id IS NULL` : sql`OR p.primary_clinic_id IS NULL`}
-            ${userId ? sql`OR p.last_modified_by = ${userId}` : sql``}
-          )
-          AND (
-            LOWER(p.given_name) LIKE LOWER(${searchPattern})
-            OR LOWER(p.surname) LIKE LOWER(${searchPattern})
-            OR LOWER(COALESCE(p.phone, '')) LIKE LOWER(${searchPattern})
-            OR LOWER(COALESCE(p.camp, '')) LIKE LOWER(${searchPattern})
-            OR LOWER(COALESCE(p.citizenship, '')) LIKE LOWER(${searchPattern})
-            OR LOWER(COALESCE(p.hometown, '')) LIKE LOWER(${searchPattern})
-            OR LOWER(CAST(p.id AS TEXT)) = LOWER(${searchQuery})
-            OR EXISTS (
-              SELECT 1
-              FROM patient_additional_attributes paa
-              WHERE paa.patient_id = p.id
-              AND (
-                LOWER(COALESCE(paa.string_value, '')) LIKE LOWER(${searchPattern})
-                OR CAST(paa.number_value AS TEXT) LIKE ${searchPattern}
-                OR CASE WHEN paa.boolean_value = true AND LOWER(${searchQuery}) IN ('true', 'yes', '1') THEN true
-                    WHEN paa.boolean_value = false AND LOWER(${searchQuery}) IN ('false', 'no', '0') THEN true
-                    ELSE false
-                   END
-                OR LOWER(COALESCE(paa.attribute, '')) LIKE LOWER(${searchPattern})
+          // Build clinic/user conditions for count query
+          const countConditions: Array<ReturnType<typeof sql>> = [];
+          
+          if (isCaseworker && userId) {
+            countConditions.push(sql`p.last_modified_by = ${userId}`);
+          } else {
+            if (allClinicIds.length > 0) {
+              countConditions.push(sql`p.primary_clinic_id IN (${sql.join(allClinicIds)})`);
+              countConditions.push(sql`p.primary_clinic_id IS NULL`);
+            }
+            if (userId) {
+              countConditions.push(sql`p.last_modified_by = ${userId}`);
+            }
+          }
+          
+          if (countConditions.length === 0) {
+            totalCount = 0;
+          } else {
+            const countQuery = sql`
+            SELECT COUNT(DISTINCT p.id) as total
+            FROM patients p
+            WHERE p.is_deleted = false
+            AND (${sql.join(countConditions, sql` OR `)})
+            AND (
+              LOWER(p.given_name) LIKE LOWER(${searchPattern})
+              OR LOWER(p.surname) LIKE LOWER(${searchPattern})
+              OR LOWER(COALESCE(p.phone, '')) LIKE LOWER(${searchPattern})
+              OR LOWER(COALESCE(p.camp, '')) LIKE LOWER(${searchPattern})
+              OR LOWER(COALESCE(p.citizenship, '')) LIKE LOWER(${searchPattern})
+              OR LOWER(COALESCE(p.hometown, '')) LIKE LOWER(${searchPattern})
+              OR LOWER(COALESCE(p.government_id, '')) LIKE LOWER(${searchPattern})
+              OR LOWER(CAST(p.id AS TEXT)) = LOWER(${searchQuery})
+              OR LOWER(COALESCE(p.external_patient_id, '')) LIKE LOWER(${searchPattern})
+              ${last4DigitsPattern ? sql`OR p.external_patient_id LIKE ${last4DigitsPattern}` : sql``}
+              OR EXISTS (
+                SELECT 1
+                FROM patient_additional_attributes paa
+                WHERE paa.patient_id = p.id
+                AND (
+                  LOWER(COALESCE(paa.string_value, '')) LIKE LOWER(${searchPattern})
+                  OR CAST(paa.number_value AS TEXT) LIKE ${searchPattern}
+                  OR CASE WHEN paa.boolean_value = true AND LOWER(${searchQuery}) IN ('true', 'yes', '1') THEN true
+                      WHEN paa.boolean_value = false AND LOWER(${searchQuery}) IN ('false', 'no', '0') THEN true
+                      ELSE false
+                     END
+                  OR LOWER(COALESCE(paa.attribute, '')) LIKE LOWER(${searchPattern})
+                )
               )
             )
-          )
-        `.compile(db);
+          `.compile(db);
 
-          const countResult = await db.executeQuery<{ total: number }>(
-            countQuery,
-          );
-          totalCount = countResult.rows[0]?.total || 0;
+            const countResult = await db.executeQuery<{ total: number }>(
+              countQuery,
+            );
+            totalCount = countResult.rows[0]?.total || 0;
+          }
         }
 
         // Return both the patients and pagination metadata

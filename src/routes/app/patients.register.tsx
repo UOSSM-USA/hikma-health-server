@@ -373,9 +373,23 @@ function RouteComponent() {
                       <p className="font-semibold text-green-900">Patient already exists!</p>
                     </div>
                     <div className="text-sm space-y-1 text-green-800">
-                      <p><strong>Name:</strong> {Option.getOrElse(existingPatient.given_name, () => "")} {Option.getOrElse(existingPatient.surname, () => "")}</p>
-                      {existingPatient.external_patient_id && (
-                        <p><strong>Patient ID:</strong> {Option.getOrElse(existingPatient.external_patient_id, () => "")}</p>
+                      <p>
+                        <strong>Name:</strong>{" "}
+                        {(() => {
+                          const firstName = existingPatient.given_name || "";
+                          const lastName = existingPatient.surname || "";
+                          const fullName = `${firstName} ${lastName}`.trim();
+                          return fullName || "Not provided";
+                        })()}
+                      </p>
+                      <p>
+                        <strong>Patient ID:</strong>{" "}
+                        {existingPatient.external_patient_id || "Not assigned"}
+                      </p>
+                      {existingPatient.government_id && (
+                        <p>
+                          <strong>Government ID:</strong> {existingPatient.government_id}
+                        </p>
                       )}
                     </div>
                     <Button
