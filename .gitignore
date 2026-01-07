@@ -15,9 +15,9 @@ count.txt
 .tanstack/*
 documentation.pdf*
 uossm.pdf*
-uossm.md*
 uossm.docx*
 PERMISSION_SYSTEM_IMPLEMENTATION.md*
+docs/TESTING_GUIDE_PRE_GO_LIVE.md
 
 # Playwright
 /test-results/
