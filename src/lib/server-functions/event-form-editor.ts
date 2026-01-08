@@ -71,8 +71,12 @@ export function normalizeFormFields(form: EventForm.EncodedT): EventForm.Encoded
 
         // Handle legacy fields that use 'type' instead of 'fieldType'
         if (field.type && !field.fieldType) {
-          // Map simple types to fieldType
-          if (field.type === "text" || field.type === "textarea" || field.type === "number" || field.type === "email" || field.type === "tel") {
+          // Handle section headers
+          if (field.type === "section") {
+            field.fieldType = "section";
+            field.inputType = "text";
+            // Don't delete type for section fields, keep it for rendering
+          } else if (field.type === "text" || field.type === "textarea" || field.type === "number" || field.type === "email" || field.type === "tel") {
             field.fieldType = "free-text";
             field.inputType = field.type === "textarea" ? "textarea" : field.type;
             if (field.type === "textarea") {
@@ -95,8 +99,10 @@ export function normalizeFormFields(form: EventForm.EncodedT): EventForm.Encoded
             field.inputType = field.type || "text";
             field.length = "short";
           }
-          // Remove the old 'type' property
-          delete field.type;
+          // Remove the old 'type' property only if not a section
+          if (field.type !== "section") {
+            delete field.type;
+          }
         }
 
         // Normalize inputType for textarea
@@ -113,16 +119,20 @@ export function normalizeFormFields(form: EventForm.EncodedT): EventForm.Encoded
           field.length = field.length || "short";
         }
 
-        // Ensure _tag is set
-        try {
-          field._tag = EventForm.getFieldTag(field.fieldType);
-        } catch (error) {
-          console.error(`Failed to get field tag for fieldType "${field.fieldType}":`, error);
-          // Fallback to free-text if fieldType is unknown
-          field.fieldType = "free-text";
-          field._tag = "free-text";
-          field.inputType = field.inputType || "text";
-          field.length = field.length || "short";
+        // Ensure _tag is set (skip for section fields)
+        if (field.fieldType === "section") {
+          field._tag = "section";
+        } else {
+          try {
+            field._tag = EventForm.getFieldTag(field.fieldType);
+          } catch (error) {
+            console.error(`Failed to get field tag for fieldType "${field.fieldType}":`, error);
+            // Fallback to free-text if fieldType is unknown
+            field.fieldType = "free-text";
+            field._tag = "free-text";
+            field.inputType = field.inputType || "text";
+            field.length = field.length || "short";
+          }
         }
 
         // Ensure required properties exist for all field types

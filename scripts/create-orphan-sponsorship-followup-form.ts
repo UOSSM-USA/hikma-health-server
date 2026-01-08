@@ -34,8 +34,18 @@ type SkipLogic = {
 type SimpleField =
   | {
       id: string;
+      type: "section";
+      name?: string;
+      description?: string;
+      label: BilingualLabel;
+      required: false;
+      skipLogic?: SkipLogic;
+    }
+  | {
+      id: string;
       type: "text" | "textarea" | "number" | "date" | "integer";
       name?: string;
+      description?: string;
       label: BilingualLabel;
       required: boolean;
       placeholder?: string;
@@ -45,6 +55,7 @@ type SimpleField =
       id: string;
       type: "select";
       name?: string;
+      description?: string;
       label: BilingualLabel;
       required: boolean;
       multi?: boolean;
@@ -55,6 +66,7 @@ type SimpleField =
       id: string;
       type: "checkbox";
       name?: string;
+      description?: string;
       label: BilingualLabel;
       required: boolean;
       multi: true;
@@ -137,6 +149,13 @@ function parseSkipCondition(
  * Field ID mapping - will be populated with existing IDs or new ones
  */
 type FieldIdMap = {
+  // Section Headers
+  section1Header: string;
+  section2Header: string;
+  section3Header: string;
+  section4Header: string;
+  section5Header: string;
+  section6Header: string;
   // Section 1
   donorId: string;
   orphanName: string;
@@ -352,15 +371,34 @@ function generateFieldIds(existingFields: any[] | null): FieldIdMap {
 }
 
 /**
+ * Helper to create bilingual description string from label object
+ */
+function createDescription(label: BilingualLabel): string {
+  return `${label.en} | ${label.ar}`;
+}
+
+/**
  * Build form fields with preserved field IDs
  */
 function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
   return [
     // Section 1: Basic Information
     {
+      id: fieldIds.section1Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 1: المعلومات الأساسية",
+        en: "Section 1: Basic Information",
+      },
+      required: false,
+    },
+    {
       id: fieldIds.donorId,
       type: "text",
       name: "donor_id",
+      description: "Donor Name / ID | اسم المتبرع / الرقم التعريفي للمتبرع",
       label: {
         ar: "اسم المتبرع / الرقم التعريفي للمتبرع",
         en: "Donor Name / ID",
@@ -371,6 +409,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.orphanName,
       type: "text",
       name: "orphan_name",
+      description: "Orphan Name | اسم اليتيم",
       label: {
         ar: "اسم اليتيم",
         en: "Orphan Name",
@@ -381,6 +420,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.orphanId,
       type: "text",
       name: "orphan_id",
+      description: "ID | الرقم التعريفي",
       label: {
         ar: "الرقم التعريفي",
         en: "ID",
@@ -391,6 +431,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.project,
       type: "text",
       name: "project",
+      description: "Location | الموقع",
       label: {
         ar: "الموقع",
         en: "Location",
@@ -401,6 +442,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.period,
       type: "text",
       name: "period",
+      description: "Reporting Period (e.g., January – March 2026) | فترة التقرير (مثال: يناير – مارس 2026)",
       label: {
         ar: "فترة التقرير (مثال: يناير – مارس 2026)",
         en: "Reporting Period (e.g., January – March 2026)",
@@ -411,6 +453,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.date,
       type: "date",
       name: "date",
+      description: "Date | التاريخ",
       label: {
         ar: "التاريخ",
         en: "Date",
@@ -420,9 +463,21 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
     
     // Section 2: General Update on the Orphan
     {
+      id: fieldIds.section2Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 2: تحديث عام عن اليتيم",
+        en: "Section 2: General Update on the Orphan",
+      },
+      required: false,
+    },
+    {
       id: fieldIds.age,
       type: "integer",
       name: "age",
+      description: "Age | العمر",
       label: {
         ar: "العمر",
         en: "Age",
@@ -433,6 +488,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.educationGrade,
       type: "select",
       name: "education_grade",
+      description: "Education Grade | المرحلة التعليمية",
       label: {
         ar: "المرحلة التعليمية",
         en: "Education Grade",
@@ -449,6 +505,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.specify,
       type: "select",
       name: "specify",
+      description: "Why | لماذا",
       label: {
         ar: "لماذا",
         en: "Why",
@@ -468,6 +525,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.caregiverEducation,
       type: "select",
       name: "caregiver_education",
+      description: "Education Level | الصف الدراسي",
       label: {
         ar: "الصف الدراسي",
         en: "Education Level",
@@ -489,10 +547,9 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
         { value: "Thirteenth", label: "Grade 13 | الصف الثالث عشر" },
       ],
       skipLogic: {
-        showWhen: [
-          { fieldId: fieldIds.educationGrade, operator: "equals", value: "Primary" },
-          { fieldId: fieldIds.educationGrade, operator: "equals", value: "Secondary" },
-          { fieldId: fieldIds.educationGrade, operator: "equals", value: "High" },
+        hideWhen: [
+          { fieldId: fieldIds.educationGrade, operator: "equals", value: "لا_يدرس" },
+          { fieldId: fieldIds.educationGrade, operator: "isEmpty", value: "" },
         ],
       },
     },
@@ -500,17 +557,15 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.levelEducationNote,
       type: "textarea",
       name: "level_education_note",
+      description: "Explanation about the Education Grade | توضيح عن المستوى التعليمي",
       label: {
         ar: "توضيح عن المستوى التعليمي",
         en: "Explanation about the Education Grade",
       },
       required: false,
       skipLogic: {
-        showWhen: [
-          { fieldId: fieldIds.educationGrade, operator: "equals", value: "Primary" },
-          { fieldId: fieldIds.educationGrade, operator: "equals", value: "Secondary" },
-          { fieldId: fieldIds.educationGrade, operator: "equals", value: "High" },
-          { fieldId: fieldIds.educationGrade, operator: "equals", value: "لا_يدرس" },
+        hideWhen: [
+          { fieldId: fieldIds.educationGrade, operator: "isEmpty", value: "" },
         ],
       },
     },
@@ -518,6 +573,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.attendance,
       type: "select",
       name: "attendance",
+      description: "School Attendance | الحضور المدرسي",
       label: {
         ar: "الحضور المدرسي",
         en: "School Attendance",
@@ -532,6 +588,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.attendanceReason,
       type: "textarea",
       name: "attendance_reason",
+      description: "If irregular, explain why | إذا كان غير منتظم، يرجى توضيح السبب",
       label: {
         ar: "إذا كان غير منتظم، يرجى توضيح السبب",
         en: "If irregular, explain why",
@@ -547,6 +604,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.academic,
       type: "select",
       name: "academic",
+      description: "Academic Performance | الأداء الأكاديمي",
       label: {
         ar: "الأداء الأكاديمي",
         en: "Academic Performance",
@@ -563,15 +621,17 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.academicReason,
       type: "textarea",
       name: "academic_reason",
+      description: "If not good or excellent, explain why | إذا لم يكن جيدًا أو ممتازًا، يرجى توضيح السبب",
       label: {
         ar: "إذا لم يكن جيدًا أو ممتازًا، يرجى توضيح السبب",
         en: "If not good or excellent, explain why",
       },
       required: false,
       skipLogic: {
-        showWhen: [
-          { fieldId: fieldIds.academic, operator: "equals", value: "average" },
-          { fieldId: fieldIds.academic, operator: "equals", value: "needs_improvement" },
+        hideWhen: [
+          { fieldId: fieldIds.academic, operator: "equals", value: "excellent" },
+          { fieldId: fieldIds.academic, operator: "equals", value: "good" },
+          { fieldId: fieldIds.academic, operator: "isEmpty", value: "" },
         ],
       },
     },
@@ -579,6 +639,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.nutritionStatus,
       type: "select",
       name: "nutrition_status",
+      description: "Nutritional Status | الحالة التغذوية",
       label: {
         ar: "الحالة التغذوية",
         en: "Nutritional Status",
@@ -595,15 +656,17 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.nutritionReason,
       type: "textarea",
       name: "nutrition_reason",
+      description: "If not good or excellent, explain why | إذا لم تكن جيدة أو ممتازة، يرجى توضيح السبب",
       label: {
         ar: "إذا لم تكن جيدة أو ممتازة، يرجى توضيح السبب",
         en: "If not good or excellent, explain why",
       },
       required: false,
       skipLogic: {
-        showWhen: [
-          { fieldId: fieldIds.nutritionStatus, operator: "equals", value: "average" },
-          { fieldId: fieldIds.nutritionStatus, operator: "equals", value: "needs_support" },
+        hideWhen: [
+          { fieldId: fieldIds.nutritionStatus, operator: "equals", value: "excellent" },
+          { fieldId: fieldIds.nutritionStatus, operator: "equals", value: "good" },
+          { fieldId: fieldIds.nutritionStatus, operator: "isEmpty", value: "" },
         ],
       },
     },
@@ -611,15 +674,17 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.nutritionFollowup,
       type: "textarea",
       name: "nutrition_followup",
+      description: "If medical follow-up is needed, explain type | إذا كانت هناك حاجة لمتابعة طبية، يرجى تحديد النوع",
       label: {
         ar: "إذا كانت هناك حاجة لمتابعة طبية، يرجى تحديد النوع",
         en: "If medical follow-up is needed, explain type",
       },
       required: false,
       skipLogic: {
-        showWhen: [
-          { fieldId: fieldIds.nutritionStatus, operator: "notEquals", value: "excellent" },
-          { fieldId: fieldIds.nutritionStatus, operator: "notEquals", value: "good" },
+        hideWhen: [
+          { fieldId: fieldIds.nutritionStatus, operator: "equals", value: "excellent" },
+          { fieldId: fieldIds.nutritionStatus, operator: "equals", value: "good" },
+          { fieldId: fieldIds.nutritionStatus, operator: "isEmpty", value: "" },
         ],
       },
     },
@@ -627,6 +692,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.healthStatus,
       type: "select",
       name: "health_status",
+      description: "Health Status | الحالة الصحية",
       label: {
         ar: "الحالة الصحية",
         en: "Health Status",
@@ -643,15 +709,17 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.healthFollowup,
       type: "textarea",
       name: "health_followup",
+      description: "If medical follow-up is needed, explain type | إذا كانت هناك حاجة لمتابعة طبية، يرجى تحديد النوع",
       label: {
         ar: "إذا كانت هناك حاجة لمتابعة طبية، يرجى تحديد النوع",
         en: "If medical follow-up is needed, explain type",
       },
       required: false,
       skipLogic: {
-        showWhen: [
-          { fieldId: fieldIds.healthStatus, operator: "equals", value: "average" },
-          { fieldId: fieldIds.healthStatus, operator: "equals", value: "needs_support" },
+        hideWhen: [
+          { fieldId: fieldIds.healthStatus, operator: "equals", value: "excellent" },
+          { fieldId: fieldIds.healthStatus, operator: "equals", value: "good" },
+          { fieldId: fieldIds.healthStatus, operator: "isEmpty", value: "" },
         ],
       },
     },
@@ -659,6 +727,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.healthDetails,
       type: "textarea",
       name: "health_details",
+      description: "Details of recent check-ups or treatments | تفاصيل الفحوصات أو العلاجات الأخيرة",
       label: {
         ar: "تفاصيل الفحوصات أو العلاجات الأخيرة",
         en: "Details of recent check-ups or treatments",
@@ -669,6 +738,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.pssState,
       type: "select",
       name: "pss_state",
+      description: "Psychological / Emotional State | الحالة النفسية / العاطفية",
       label: {
         ar: "الحالة النفسية / العاطفية",
         en: "Psychological / Emotional State",
@@ -684,6 +754,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.pssType,
       type: "textarea",
       name: "pss_type",
+      description: "If PSS needed, specify type | إذا كانت هناك حاجة لدعم نفسي-اجتماعي، يرجى تحديد النوع",
       label: {
         ar: "إذا كانت هناك حاجة لدعم نفسي-اجتماعي، يرجى تحديد النوع",
         en: "If PSS needed, specify type",
@@ -699,6 +770,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.pssImpact,
       type: "checkbox",
       name: "pss_impact",
+      description: "Has PSS affected the following (select all that apply) | هل أثّرت جلسات الدعم النفسي على ما يلي (اختر كل ما ينطبق)",
       label: {
         ar: "هل أثّرت جلسات الدعم النفسي على ما يلي (اختر كل ما ينطبق)",
         en: "Has PSS affected the following (select all that apply)",
@@ -720,23 +792,37 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.pssImpactReason,
       type: "textarea",
       name: "pss_impact_reason",
+      description: "Explain how PSS affected the child | اشرح كيف أثّرت جلسات الدعم النفسي على الطفل",
       label: {
         ar: "اشرح كيف أثّرت جلسات الدعم النفسي على الطفل",
         en: "Explain how PSS affected the child",
       },
       required: false,
       skipLogic: {
-        showWhen: [
+        hideWhen: [
           { fieldId: fieldIds.pssImpact, operator: "notContains", value: "none" },
+          { fieldId: fieldIds.pssImpact, operator: "isEmpty", value: "" },
         ],
       },
     },
     
     // Section 3: Living and Family Conditions
     {
+      id: fieldIds.section3Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 3: ظروف المعيشة والأسرة",
+        en: "Section 3: Living and Family Conditions",
+      },
+      required: false,
+    },
+    {
       id: fieldIds.residence,
       type: "select",
       name: "residence",
+      description: "Place of Residence | مكان الإقامة",
       label: {
         ar: "مكان الإقامة",
         en: "Place of Residence",
@@ -753,6 +839,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.other,
       type: "text",
       name: "other",
+      description: "If other, please specify | اذا اخرى اذكرها",
       label: {
         ar: "اذا اخرى اذكرها",
         en: "If other, please specify",
@@ -768,6 +855,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.housingImpact,
       type: "checkbox",
       name: "housing_impact",
+      description: "Housing condition affecting child (select all that apply) | هل أثّرت حالة السكن على الطفل (اختر كل ما ينطبق)",
       label: {
         ar: "هل أثّرت حالة السكن على الطفل (اختر كل ما ينطبق)",
         en: "Housing condition affecting child (select all that apply)",
@@ -789,6 +877,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.housingImpactReason,
       type: "textarea",
       name: "housing_impact_reason",
+      description: "Explain housing condition effect | اشرح كيف أثّرت حالة السكن",
       label: {
         ar: "اشرح كيف أثّرت حالة السكن",
         en: "Explain housing condition effect",
@@ -796,7 +885,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       required: false,
       skipLogic: {
         showWhen: [
-          { fieldId: fieldIds.housingImpact, operator: "notContains", value: "none" },
+          { fieldId: fieldIds.housingImpact, operator: "contains", value: "none" },
         ],
       },
     },
@@ -804,6 +893,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.familyImpact,
       type: "checkbox",
       name: "family_impact",
+      description: "Family conditions affecting child (select all that apply) | هل أثّرت ظروف الأسرة على الطفل (اختر كل ما ينطبق)",
       label: {
         ar: "هل أثّرت ظروف الأسرة على الطفل (اختر كل ما ينطبق)",
         en: "Family conditions affecting child (select all that apply)",
@@ -825,6 +915,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.familyImpactReason,
       type: "textarea",
       name: "family_impact_reason",
+      description: "Explain family condition effect | اشرح كيف أثّرت ظروف الأسرة",
       label: {
         ar: "اشرح كيف أثّرت ظروف الأسرة",
         en: "Explain family condition effect",
@@ -832,7 +923,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       required: false,
       skipLogic: {
         showWhen: [
-          { fieldId: fieldIds.familyImpact, operator: "notContains", value: "none" },
+          { fieldId: fieldIds.familyImpact, operator: "contains", value: "none" },
         ],
       },
     },
@@ -840,6 +931,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.residenceChange,
       type: "select",
       name: "residence_change",
+      description: "Any change in residence since last report? | هل حدث تغيير في مكان الإقامة منذ التقرير السابق؟",
       label: {
         ar: "هل حدث تغيير في مكان الإقامة منذ التقرير السابق؟",
         en: "Any change in residence since last report?",
@@ -854,6 +946,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.residenceChangeReason,
       type: "textarea",
       name: "residence_change_reason",
+      description: "Explain change | اشرح التغيير",
       label: {
         ar: "اشرح التغيير",
         en: "Explain change",
@@ -869,6 +962,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.housingCondition,
       type: "select",
       name: "housing_condition",
+      description: "Housing Condition | حالة السكن",
       label: {
         ar: "حالة السكن",
         en: "Housing Condition",
@@ -884,6 +978,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.basicNeeds,
       type: "checkbox",
       name: "basic_needs",
+      description: "Availability of Basic Needs (select all that apply) | توفر الاحتياجات الأساسية (اختر كل ما ينطبق)",
       label: {
         ar: "توفر الاحتياجات الأساسية (اختر كل ما ينطبق)",
         en: "Availability of Basic Needs (select all that apply)",
@@ -902,6 +997,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.basicNeedsShortage,
       type: "textarea",
       name: "basic_needs_shortage",
+      description: "Explain shortages | اشرح النواقص/النقص إن وجد",
       label: {
         ar: "اشرح النواقص/النقص إن وجد",
         en: "Explain shortages",
@@ -911,9 +1007,21 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
     
     // Section 4: Personal Development
     {
+      id: fieldIds.section4Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 4: التطور الشخصي",
+        en: "Section 4: Personal Development",
+      },
+      required: false,
+    },
+    {
       id: fieldIds.activities,
       type: "select",
       name: "activities",
+      description: "Activities participated in | هل شارك في أنشطة؟",
       label: {
         ar: "هل شارك في أنشطة؟",
         en: "Activities participated in",
@@ -928,6 +1036,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.activitiesYes,
       type: "textarea",
       name: "activities_yes",
+      description: "If yes, explain | إذا نعم، يرجى الشرح",
       label: {
         ar: "إذا نعم، يرجى الشرح",
         en: "If yes, explain",
@@ -943,6 +1052,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.activitiesNo,
       type: "textarea",
       name: "activities_no",
+      description: "If no, explain | إذا لا، يرجى الشرح",
       label: {
         ar: "إذا لا، يرجى الشرح",
         en: "If no, explain",
@@ -958,6 +1068,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.changes,
       type: "textarea",
       name: "changes",
+      description: "Any changes from last visit | هل توجد تغييرات منذ الزيارة السابقة؟",
       label: {
         ar: "هل توجد تغييرات منذ الزيارة السابقة؟",
         en: "Any changes from last visit",
@@ -968,6 +1079,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.achievements,
       type: "textarea",
       name: "achievements",
+      description: "Notable achievements or improvements | إنجازات أو تحسّنات ملحوظة",
       label: {
         ar: "إنجازات أو تحسّنات ملحوظة",
         en: "Notable achievements or improvements",
@@ -978,6 +1090,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.challenges,
       type: "textarea",
       name: "challenges",
+      description: "Explain 3 major challenges or needs | اشرح 3 تحديات أو احتياجات رئيسية",
       label: {
         ar: "اشرح 3 تحديات أو احتياجات رئيسية",
         en: "Explain 3 major challenges or needs",
@@ -987,9 +1100,21 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
     
     // Section 5: Attachments and Media
     {
+      id: fieldIds.section5Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 5: المرفقات والوسائط",
+        en: "Section 5: Attachments and Media",
+      },
+      required: false,
+    },
+    {
       id: fieldIds.photo,
       type: "select",
       name: "photo",
+      description: "Recent photo attached | هل أُرفقت صورة حديثة؟",
       label: {
         ar: "هل أُرفقت صورة حديثة؟",
         en: "Recent photo attached",
@@ -1004,6 +1129,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.video,
       type: "select",
       name: "video",
+      description: "Video message from orphan | هل توجد رسالة فيديو من اليتيم؟",
       label: {
         ar: "هل توجد رسالة فيديو من اليتيم؟",
         en: "Video message from orphan",
@@ -1018,6 +1144,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.staff,
       type: "text",
       name: "staff",
+      description: "Field staff name and visit date | اسم موظف الميدان وتاريخ الزيارة",
       label: {
         ar: "اسم موظف الميدان وتاريخ الزيارة",
         en: "Field staff name and visit date",
@@ -1027,9 +1154,21 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
     
     // Section 6: Summary for Donor
     {
+      id: fieldIds.section6Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 6: ملخص للمتبرع",
+        en: "Section 6: Summary for Donor",
+      },
+      required: false,
+    },
+    {
       id: fieldIds.comparison,
       type: "select",
       name: "comparison",
+      description: "Compare this report with last report | قارن هذا التقرير بالتقرير السابق",
       label: {
         ar: "قارن هذا التقرير بالتقرير السابق",
         en: "Compare this report with last report",
@@ -1045,6 +1184,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.comparisonReason,
       type: "textarea",
       name: "comparison_reason",
+      description: "Explain change | اشرح التغيير",
       label: {
         ar: "اشرح التغيير",
         en: "Explain change",
@@ -1060,6 +1200,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.summary,
       type: "textarea",
       name: "summary",
+      description: "General summary (2–3 sentences) | ملخص عام (جملتان إلى ثلاث)",
       label: {
         ar: "ملخص عام (جملتان إلى ثلاث)",
         en: "General summary (2–3 sentences)",
@@ -1070,6 +1211,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.impactSummary,
       type: "textarea",
       name: "impact_summary",
+      description: "How is sponsorship helping the child? | كيف تساعد الكفالة الطفل؟",
       label: {
         ar: "كيف تساعد الكفالة الطفل؟",
         en: "How is sponsorship helping the child?",
@@ -1080,6 +1222,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.improvementArea,
       type: "checkbox",
       name: "improvement_area",
+      description: "Major improvement in last period (select all that apply) | أكبر تحسّن في الفترة الماضية (اختر كل ما ينطبق)",
       label: {
         ar: "أكبر تحسّن في الفترة الماضية (اختر كل ما ينطبق)",
         en: "Major improvement in last period (select all that apply)",
@@ -1098,6 +1241,7 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       id: fieldIds.recommendations,
       type: "textarea",
       name: "recommendations",
+      description: "Recommendations or future needs | توصيات أو احتياجات مستقبلية",
       label: {
         ar: "توصيات أو احتياجات مستقبلية",
         en: "Recommendations or future needs",
