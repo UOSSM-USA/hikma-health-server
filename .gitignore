@@ -7,12 +7,14 @@ count.txt
 .env
 .output
 .vinxi
+.nitro
 count.txt
 
 .env.*
 
 
 .tanstack/*
+src/routeTree.gen.ts
 documentation.pdf*
 uossm.pdf*
 uossm.docx*

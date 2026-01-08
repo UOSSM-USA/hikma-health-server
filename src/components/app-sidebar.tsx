@@ -52,7 +52,7 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const t = useTranslation();
   const { language } = useLanguage();
-  const { setSelectedClinicId } = useClinicContext();
+  const { selectedClinicId, setSelectedClinicId } = useClinicContext();
   
   const isSuperAdmin =
     currentUser?.role === "super_admin" ||
@@ -89,6 +89,12 @@ export function AppSidebar({
     currentUser?.role,
   );
 
+  // Check if Orphan Location is selected
+  const isOrphanLocationSelected = React.useMemo(() => {
+    const orphanClinic = clinics.find(c => c.name === "Orphan Location");
+    return orphanClinic && selectedClinicId === orphanClinic.id;
+  }, [clinics, selectedClinicId]);
+
   // Generate navigation data with translations
   const navMain = React.useMemo(
     () => [
@@ -110,7 +116,7 @@ export function AppSidebar({
             url: "/app/patients",
           },
           {
-            title: t("nav.registerNewPatient"),
+            title: isOrphanLocationSelected ? t("nav.registerOrphan") : t("nav.registerNewPatient"),
             url: "/app/patients/register",
           },
           {
@@ -232,7 +238,7 @@ export function AppSidebar({
         ],
       },
     ],
-    [t]
+    [t, isOrphanLocationSelected]
   );
 
   const onBeforeNavigate = React.useCallback(

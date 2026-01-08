@@ -25,6 +25,7 @@ import {
 import { PermissionOperation } from "@/models/permissions";
 import { useLanguage, useTranslation } from "@/lib/i18n/context";
 import { toast } from "sonner";
+import { useClinicContext } from "@/contexts/clinic-context";
 
 export const createPatient = createServerFn({ method: "POST" })
   .middleware([permissionsMiddleware])
@@ -67,17 +68,26 @@ export const getAllPatientRegistrationForms = createServerFn({
 export const Route = createFileRoute("/app/patients/register")({
   component: RouteComponent,
   loader: async () => {
-    const patientRegistrationForm = await getAllPatientRegistrationForms();
+    const allForms = await getAllPatientRegistrationForms();
     const clinicsList = await getAllClinics();
-    return { patientRegistrationForm: patientRegistrationForm[0], clinicsList };
+    
+    // Get default form (clinic_id = null) or first form if no default
+    const defaultForm = allForms.find(f => f.clinic_id === null) || allForms[0] || null;
+    
+    return { 
+      allForms: allForms || [], 
+      patientRegistrationForm: defaultForm, 
+      clinicsList: clinicsList || []
+    };
   },
 });
 
 function RouteComponent() {
-  const { patientRegistrationForm, clinicsList } = Route.useLoaderData();
+  const { allForms, patientRegistrationForm: defaultForm, clinicsList } = Route.useLoaderData();
   const { language } = useLanguage();
   const t = useTranslation();
   const navigate = useNavigate();
+  const { selectedClinicId } = useClinicContext();
 
   // State for two-step flow
   const [step, setStep] = useState<"check-id" | "register" | "review-duplicates">("check-id");
@@ -92,6 +102,69 @@ function RouteComponent() {
   const { formState, handleSubmit, register, watch, setValue } = useForm({
     mode: "all",
   });
+  
+  // Auto-select clinic from global context (sidebar selector)
+  useEffect(() => {
+    if (selectedClinicId && selectedClinicId !== "all" && !watch("primary_clinic_id")) {
+      setValue("primary_clinic_id", selectedClinicId);
+    }
+  }, [selectedClinicId, setValue]);
+
+  // Get the active form based on selected clinic (from form field or global context)
+  const formClinicId = watch("primary_clinic_id");
+  const effectiveClinicId = formClinicId || (selectedClinicId !== "all" ? selectedClinicId : null);
+  
+  const activeForm = effectiveClinicId && allForms.length > 0
+    ? (allForms.find(f => f.clinic_id === effectiveClinicId) || defaultForm)
+    : defaultForm;
+
+  // Helper function to check skip logic
+  const shouldShowField = (field: PatientRegistrationForm.Field) => {
+    if (!field.skipLogic) return true;
+
+    const formValues = watch();
+    
+    // Check hideWhen conditions
+    if (field.skipLogic.hideWhen) {
+      for (const condition of field.skipLogic.hideWhen) {
+        const fieldValue = formValues[condition.fieldColumn];
+        
+        if (condition.operator === "equals" && fieldValue === condition.value) {
+          return false;
+        }
+        if (condition.operator === "isEmpty" && (!fieldValue || fieldValue === "")) {
+          return false;
+        }
+        if (condition.operator === "isNotEmpty" && fieldValue && fieldValue !== "") {
+          return false;
+        }
+      }
+    }
+    
+    // Check showWhen conditions
+    if (field.skipLogic.showWhen) {
+      let shouldShow = false;
+      for (const condition of field.skipLogic.showWhen) {
+        const fieldValue = formValues[condition.fieldColumn];
+        
+        if (condition.operator === "equals" && fieldValue === condition.value) {
+          shouldShow = true;
+          break;
+        }
+        if (condition.operator === "isEmpty" && (!fieldValue || fieldValue === "")) {
+          shouldShow = true;
+          break;
+        }
+        if (condition.operator === "isNotEmpty" && fieldValue && fieldValue !== "") {
+          shouldShow = true;
+          break;
+        }
+      }
+      return shouldShow;
+    }
+    
+    return true;
+  };
 
   // Generate Patient ID when moving to registration step
   useEffect(() => {
@@ -239,7 +312,7 @@ function RouteComponent() {
     const patientBaseData: Record<string, any> = {};
     const additionalAttributes: PatientAdditionalAttribute.T[] = [];
 
-    patientRegistrationForm?.fields
+    activeForm?.fields
       .filter((field) => field.deleted !== true && field.visible)
       .forEach((field) => {
         if (field.baseField) {
@@ -314,7 +387,7 @@ function RouteComponent() {
   // Override form submission to check duplicates first (defined after checkDuplicatesBeforeSubmit)
   const onFormSubmit = handleSubmit(checkDuplicatesBeforeSubmit);
 
-  if (!patientRegistrationForm) {
+  if (!activeForm) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
         <div className="text-center space-y-4">
@@ -544,8 +617,8 @@ function RouteComponent() {
       </div>
       <form onSubmit={onFormSubmit}>
         <div style={{ maxWidth: 500 }} className="space-y-4">
-          {patientRegistrationForm?.fields
-            .filter((field) => field.visible && field.deleted !== true)
+          {activeForm?.fields
+            .filter((field) => field.visible && field.deleted !== true && shouldShowField(field))
             .map((field, idx) => {
               const isGovernmentId = field.column === "government_id";
               const isPatientId = field.column === "external_patient_id";

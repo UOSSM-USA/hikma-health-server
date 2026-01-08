@@ -111,15 +111,19 @@ function RouteComponent() {
   const [loading, setLoading] = React.useState(false);
 
   // Define fields early so it can be used in useEffect hooks
-  const fields = patientRegistrationForm?.fields.filter((f) => !f.deleted);
+  const fields = patientRegistrationForm?.fields?.filter((f) => !f.deleted) || [];
   // Use current language for field labels instead of always English
-  const headers = fields?.map((f) => {
+  const headers = fields.map((f, index) => {
+    let label = '';
     if (typeof f.label === 'object' && f.label !== null && !Array.isArray(f.label)) {
       const labelObj = f.label as Record<string, string>;
-      return labelObj[language] || labelObj.en || '';
+      label = labelObj[language] || labelObj.en || '';
+    } else {
+      label = typeof f.label === 'string' ? f.label : '';
     }
-    return typeof f.label === 'string' ? f.label : '';
-  }) || [];
+    // Use field.id as key to ensure uniqueness, fallback to index
+    return { id: f.id || `field-${index}`, label };
+  });
 
   // State for translated clinic names and patient field values
   const [translatedClinicNames, setTranslatedClinicNames] = React.useState<Record<string, { en?: string; ar?: string }>>({});
@@ -181,8 +185,8 @@ function RouteComponent() {
 
   // Auto-translate patient field values (text fields only)
   React.useEffect(() => {
-    if (language !== "en" && language !== "ar" || !patientsList || patientsList.length === 0 || !fields) {
-      console.log("[Patients List] Translation skipped:", { language, patientsCount: patientsList?.length, fieldsCount: fields?.length });
+    if (language !== "en" && language !== "ar" || !patientsList || patientsList.length === 0 || fields.length === 0) {
+      console.log("[Patients List] Translation skipped:", { language, patientsCount: patientsList?.length, fieldsCount: fields.length });
       return;
     }
     const targetLang = language;
@@ -487,7 +491,7 @@ function RouteComponent() {
         const rowData = [patient.id];
 
         // Add data for each field in the registration form
-        fields?.forEach((field) => {
+        fields.forEach((field) => {
           if (field.baseField) {
             if (field.column === "primary_clinic_id") {
               const name =
@@ -549,7 +553,13 @@ function RouteComponent() {
       link.download = fileName;
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
+      // Use setTimeout to ensure the click event completes before removing
+      setTimeout(() => {
+        if (link.parentNode) {
+          document.body.removeChild(link);
+        }
+        URL.revokeObjectURL(url);
+      }, 100);
     } catch (error: any) {
       console.error("Error exporting patients:", error, error.message);
       toast.error(t("patientsList.exportError"), error.message);
@@ -628,8 +638,8 @@ function RouteComponent() {
                 {t("patientsList.idHeader")}
               </TableHead>
               {headers.map((header) => (
-                <TableHead className="px-6" key={header}>
-                  {header}
+                <TableHead className="px-6" key={header.id}>
+                  {header.label}
                 </TableHead>
               ))}
             </TableRow>
@@ -656,7 +666,7 @@ function RouteComponent() {
                 <TableCell className="px-6" key={"id"}>
                   {truncate(patient.id, { length: 12, omission: "…" })}
                 </TableCell>
-                {fields?.map((field) => {
+                {fields.map((field) => {
                   let displayValue: string | number | boolean;
 
                   if (field.baseField) {
