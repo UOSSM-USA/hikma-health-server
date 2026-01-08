@@ -34,6 +34,15 @@ type SkipLogic = {
 type SimpleField =
   | {
       id: string;
+      type: "section";
+      name?: string;
+      description?: string;
+      label: BilingualLabel;
+      required: false;
+      skipLogic?: SkipLogic;
+    }
+  | {
+      id: string;
       type: "text" | "textarea" | "number" | "date" | "integer";
       name?: string;
       description?: string;
@@ -140,6 +149,13 @@ function parseSkipCondition(
  * Field ID mapping - will be populated with existing IDs or new ones
  */
 type FieldIdMap = {
+  // Section Headers
+  section1Header: string;
+  section2Header: string;
+  section3Header: string;
+  section4Header: string;
+  section5Header: string;
+  section6Header: string;
   // Section 1
   donorId: string;
   orphanName: string;
@@ -368,6 +384,17 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
   return [
     // Section 1: Basic Information
     {
+      id: fieldIds.section1Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 1: المعلومات الأساسية",
+        en: "Section 1: Basic Information",
+      },
+      required: false,
+    },
+    {
       id: fieldIds.donorId,
       type: "text",
       name: "donor_id",
@@ -435,6 +462,17 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
     },
     
     // Section 2: General Update on the Orphan
+    {
+      id: fieldIds.section2Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 2: تحديث عام عن اليتيم",
+        en: "Section 2: General Update on the Orphan",
+      },
+      required: false,
+    },
     {
       id: fieldIds.age,
       type: "integer",
@@ -761,13 +799,25 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
       },
       required: false,
       skipLogic: {
-        showWhen: [
+        hideWhen: [
           { fieldId: fieldIds.pssImpact, operator: "notContains", value: "none" },
+          { fieldId: fieldIds.pssImpact, operator: "isEmpty", value: "" },
         ],
       },
     },
     
     // Section 3: Living and Family Conditions
+    {
+      id: fieldIds.section3Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 3: ظروف المعيشة والأسرة",
+        en: "Section 3: Living and Family Conditions",
+      },
+      required: false,
+    },
     {
       id: fieldIds.residence,
       type: "select",
@@ -957,6 +1007,17 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
     
     // Section 4: Personal Development
     {
+      id: fieldIds.section4Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 4: التطور الشخصي",
+        en: "Section 4: Personal Development",
+      },
+      required: false,
+    },
+    {
       id: fieldIds.activities,
       type: "select",
       name: "activities",
@@ -1039,6 +1100,17 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
     
     // Section 5: Attachments and Media
     {
+      id: fieldIds.section5Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 5: المرفقات والوسائط",
+        en: "Section 5: Attachments and Media",
+      },
+      required: false,
+    },
+    {
       id: fieldIds.photo,
       type: "select",
       name: "photo",
@@ -1081,6 +1153,17 @@ function buildFormFields(fieldIds: FieldIdMap): SimpleField[] {
     },
     
     // Section 6: Summary for Donor
+    {
+      id: fieldIds.section6Header,
+      type: "section",
+      name: "__section__",
+      description: "__section__",
+      label: {
+        ar: "القسم 6: ملخص للمتبرع",
+        en: "Section 6: Summary for Donor",
+      },
+      required: false,
+    },
     {
       id: fieldIds.comparison,
       type: "select",

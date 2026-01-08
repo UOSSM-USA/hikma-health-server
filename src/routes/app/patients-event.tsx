@@ -3,6 +3,8 @@ import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
+import { ChevronDown } from "lucide-react";
 import { getEventForms, getEventFormById } from "@/lib/server-functions/event-forms";
 import { saveEvent } from "@/lib/server-functions/events";
 import { getPatientById } from "@/lib/server-functions/patients";
@@ -40,6 +42,23 @@ function RouteComponent() {
   const [translatedFormHeader, setTranslatedFormHeader] = useState<
     Record<string, { name?: string; description?: string }>
   >({});
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  
+  // Initialize all sections as expanded when form loads
+  useEffect(() => {
+    if (currentForm?.form_fields && Array.isArray(currentForm.form_fields)) {
+      const sectionIds = currentForm.form_fields
+        .filter((field: any) => {
+          const fieldType = field._tag || field.fieldType || field.type;
+          return fieldType === "section" || field.name?.startsWith("__section__") || field.description?.startsWith("__section__");
+        })
+        .map((field: any) => field.id);
+      
+      if (sectionIds.length > 0) {
+        setExpandedSections(new Set(sectionIds));
+      }
+    }
+  }, [currentForm?.id]);
 
   // Load patient on mount
   useEffect(() => {
@@ -502,6 +521,12 @@ function RouteComponent() {
       </div>
     );
 
+    // Section headers are now handled in the grouped rendering logic above
+    // This check prevents section headers from being rendered as regular fields
+    if (fieldType === "section" || field.name?.startsWith("__section__") || field.description?.startsWith("__section__")) {
+      return null; // Section headers are rendered separately in the grouped view
+    }
+
     switch (fieldType) {
       case "text":
       case "free-text":
@@ -844,11 +869,102 @@ function RouteComponent() {
           <CardContent className="space-y-4">
             {currentForm.form_fields && Array.isArray(currentForm.form_fields) ? (
               visibleFields.length > 0 ? (
-                visibleFields.map((field: any, index: number) => (
-                  <div key={field.id || index}>
-                    {renderField(field)}
-                  </div>
-                ))
+                (() => {
+                  // Group fields by section
+                  const sections: Array<{ sectionHeader: any; fields: any[] }> = [];
+                  let currentSection: { sectionHeader: any; fields: any[] } | null = null;
+
+                  visibleFields.forEach((field: any) => {
+                    const fieldType = field._tag || field.fieldType || field.type;
+                    const isSection = fieldType === "section" || field.name?.startsWith("__section__") || field.description?.startsWith("__section__");
+                    
+                    if (isSection) {
+                      // Start a new section
+                      if (currentSection) {
+                        sections.push(currentSection);
+                      }
+                      currentSection = { sectionHeader: field, fields: [] };
+                    } else {
+                      // Add field to current section or create a default section
+                      if (!currentSection) {
+                        currentSection = { sectionHeader: null, fields: [] };
+                      }
+                      currentSection.fields.push(field);
+                    }
+                  });
+
+                  // Add the last section
+                  if (currentSection) {
+                    sections.push(currentSection);
+                  }
+
+                  // Render sections with collapsible headers
+                  return sections.map((section, sectionIndex) => {
+                    const sectionId = section.sectionHeader?.id || `section-${sectionIndex}`;
+                    const isExpanded = expandedSections.has(sectionId);
+                    
+                    if (!section.sectionHeader) {
+                      // No section header, render fields directly
+                      return section.fields.map((field: any, index: number) => (
+                        <div key={field.id || index}>
+                          {renderField(field)}
+                        </div>
+                      ));
+                    }
+
+                    const sectionTitle = (() => {
+                      const bilingualLabel = getBilingualFieldLabel(section.sectionHeader);
+                      return bilingualLabel.english || section.sectionHeader.name || "";
+                    })();
+                    const sectionTitleAr = (() => {
+                      const bilingualLabel = getBilingualFieldLabel(section.sectionHeader);
+                      return bilingualLabel.arabic || "";
+                    })();
+
+                    return (
+                      <Collapsible
+                        key={sectionId}
+                        open={isExpanded}
+                        onOpenChange={(open) => {
+                          setExpandedSections((prev) => {
+                            const next = new Set(prev);
+                            if (open) {
+                              next.add(sectionId);
+                            } else {
+                              next.delete(sectionId);
+                            }
+                            return next;
+                          });
+                        }}
+                      >
+                        <CollapsibleTrigger className="w-full">
+                          <div className="mt-8 mb-4 pt-6 border-t border-border flex items-center justify-between w-full hover:bg-muted/50 p-2 rounded-md transition-colors cursor-pointer">
+                            <div className="flex-1">
+                              <h3 className="text-lg font-semibold text-foreground">{sectionTitle}</h3>
+                              {sectionTitleAr && sectionTitleAr !== sectionTitle && (
+                                <h3 className="text-lg font-semibold text-foreground mt-1" dir="rtl">{sectionTitleAr}</h3>
+                              )}
+                            </div>
+                            <ChevronDown
+                              className={`h-5 w-5 text-muted-foreground transition-transform duration-200 ${
+                                isExpanded ? "rotate-180" : ""
+                              }`}
+                            />
+                          </div>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <div className="space-y-4 pb-4">
+                            {section.fields.map((field: any, index: number) => (
+                              <div key={field.id || index}>
+                                {renderField(field)}
+                              </div>
+                            ))}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    );
+                  });
+                })()
               ) : (
                 <div className="text-muted-foreground">
                   {t("eventForm.noFieldsVisible")}
