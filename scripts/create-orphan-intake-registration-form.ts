@@ -242,10 +242,10 @@ function buildFormFields(fieldIds: Record<string, string>): FieldDefinition[] {
       },
       fieldType: "select",
       options: [
-        { en: "Primary", ar: "المرحلة الابتدائية" },
-        { en: "Secondary", ar: "المرحلة الأساسية" },
-        { en: "High", ar: "المرحلة الثانوية" },
-        { en: "لا_يدرس", ar: "لا يدرس" },
+        { en: "Primary Stage", ar: "المرحلة الابتدائية" },
+        { en: "Basic Education Stage", ar: "المرحلة الأساسية" },
+        { en: "Secondary Education Stage", ar: "المرحلة الثانوية" },
+        { en: "Not Studying", ar: "لا يدرس" },
       ],
       required: true,
     },
@@ -259,8 +259,8 @@ function buildFormFields(fieldIds: Record<string, string>): FieldDefinition[] {
       },
       fieldType: "select",
       options: [
-        { en: "____", ar: "منقطع عن التعليم" },
-        { en: "_____1", ar: "دون سن الدراسة" },
+        { en: "Dropped out of school", ar: "منقطع عن التعليم" },
+        { en: "Below school age", ar: "دون سن الدراسة" },
       ],
       required: true,
       skipLogic: {
@@ -268,7 +268,7 @@ function buildFormFields(fieldIds: Record<string, string>): FieldDefinition[] {
           {
             fieldColumn: "education_grade",
             operator: "equals",
-            value: "لا_يدرس",
+            value: "Not Studying",
           },
         ],
       },
@@ -303,7 +303,7 @@ function buildFormFields(fieldIds: Record<string, string>): FieldDefinition[] {
           {
             fieldColumn: "education_grade",
             operator: "equals",
-            value: "لا_يدرس",
+            value: "Not Studying",
           },
           {
             fieldColumn: "education_grade",

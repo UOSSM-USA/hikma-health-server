@@ -118,6 +118,54 @@ function RouteComponent() {
     ? (allForms.find(f => f.clinic_id === effectiveClinicId) || defaultForm)
     : defaultForm;
 
+  // Helper function to check skip logic
+  const shouldShowField = (field: PatientRegistrationForm.Field) => {
+    if (!field.skipLogic) return true;
+
+    const formValues = watch();
+    
+    // Check hideWhen conditions
+    if (field.skipLogic.hideWhen) {
+      for (const condition of field.skipLogic.hideWhen) {
+        const fieldValue = formValues[condition.fieldColumn];
+        
+        if (condition.operator === "equals" && fieldValue === condition.value) {
+          return false;
+        }
+        if (condition.operator === "isEmpty" && (!fieldValue || fieldValue === "")) {
+          return false;
+        }
+        if (condition.operator === "isNotEmpty" && fieldValue && fieldValue !== "") {
+          return false;
+        }
+      }
+    }
+    
+    // Check showWhen conditions
+    if (field.skipLogic.showWhen) {
+      let shouldShow = false;
+      for (const condition of field.skipLogic.showWhen) {
+        const fieldValue = formValues[condition.fieldColumn];
+        
+        if (condition.operator === "equals" && fieldValue === condition.value) {
+          shouldShow = true;
+          break;
+        }
+        if (condition.operator === "isEmpty" && (!fieldValue || fieldValue === "")) {
+          shouldShow = true;
+          break;
+        }
+        if (condition.operator === "isNotEmpty" && fieldValue && fieldValue !== "") {
+          shouldShow = true;
+          break;
+        }
+      }
+      return shouldShow;
+    }
+    
+    return true;
+  };
+
   // Generate Patient ID when moving to registration step
   useEffect(() => {
     if (step === "register" && !generatedPatientId) {
@@ -570,7 +618,7 @@ function RouteComponent() {
       <form onSubmit={onFormSubmit}>
         <div style={{ maxWidth: 500 }} className="space-y-4">
           {activeForm?.fields
-            .filter((field) => field.visible && field.deleted !== true)
+            .filter((field) => field.visible && field.deleted !== true && shouldShowField(field))
             .map((field, idx) => {
               const isGovernmentId = field.column === "government_id";
               const isPatientId = field.column === "external_patient_id";

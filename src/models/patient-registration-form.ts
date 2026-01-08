@@ -41,6 +41,27 @@ namespace PatientRegistrationForm {
 
   export type InputType = (typeof inputTypes)[number];
 
+  export const skipConditionOperators = [
+    "equals",
+    "notEquals",
+    "isEmpty",
+    "isNotEmpty",
+    "contains",
+  ] as const;
+
+  export type SkipConditionOperator = (typeof skipConditionOperators)[number];
+
+  export type SkipCondition = {
+    fieldColumn: string;
+    operator: SkipConditionOperator;
+    value: any;
+  };
+
+  export type SkipLogic = {
+    showWhen?: SkipCondition[];
+    hideWhen?: SkipCondition[];
+  };
+
   export type Field = {
     id: string;
     position: number;
@@ -54,7 +75,8 @@ namespace PatientRegistrationForm {
     visible: boolean; // Whether or not it displays in the app
     deleted: boolean; // Whether or not this field has been marked as "deleted" - soft delete allows for field values to still be retrievable
     showsInSummary: boolean; // Whether or not this field is shown on the patient file
-    isSearchField: boolean; // Whether or not this field can be sea
+    isSearchField: boolean; // Whether or not this field can be searched
+    skipLogic?: SkipLogic; // Conditional display logic for this field
   };
 
   export type EncodedT = {
