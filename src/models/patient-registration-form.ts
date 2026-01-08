@@ -215,20 +215,45 @@ namespace PatientRegistrationForm {
    */
   export const getAll = serverOnly(
     async (): Promise<PatientRegistrationForm.EncodedT[]> => {
-      const result = await db.selectFrom(Table.name).selectAll().execute();
+      const result = await db
+        .selectFrom(Table.name)
+        .selectAll()
+        .where("is_deleted", "=", false)
+        .execute();
 
       // Merge with all base fields to support adding base fields on the fly
+      // BUT only for the default form (clinic_id = null)
+      // Clinic-specific forms should use only their explicitly defined fields
       return result.map((form) => {
-        const existingBaseFieldIds = form.fields
-          .filter((f) => f.baseField)
-          .map((f) => f.id);
-        const missingBaseFields = baseFields.filter(
-          (f) => !existingBaseFieldIds.includes(f.id),
-        );
+        let fields = form.fields;
+        
+        // Only add base fields to the default form (clinic_id = null)
+        if (form.clinic_id === null) {
+          const existingBaseFieldIds = form.fields
+            .filter((f) => f.baseField)
+            .map((f) => f.id);
+          const missingBaseFields = baseFields.filter(
+            (f) => !existingBaseFieldIds.includes(f.id),
+          );
+          fields = [...form.fields, ...missingBaseFields];
+        }
+        
+        fields.sort((a, b) => a.position - b.position);
 
-        form.fields = [...form.fields, ...missingBaseFields];
-        form.fields.sort((a, b) => a.position - b.position);
-        return form;
+        // Convert to EncodedT format
+        return {
+          id: form.id,
+          clinic_id: form.clinic_id,
+          name: form.name || "",
+          fields: fields,
+          metadata: form.metadata,
+          is_deleted: form.is_deleted,
+          created_at: new Date(form.created_at as any),
+          updated_at: new Date(form.updated_at as any),
+          last_modified: new Date(form.last_modified as any),
+          server_created_at: new Date(form.server_created_at as any),
+          deleted_at: form.deleted_at ? new Date(form.deleted_at as any) : null,
+        };
       });
     },
   );
