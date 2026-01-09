@@ -677,15 +677,39 @@ function RouteComponent() {
                       data-testid={"register-patient-" + idx}
                       data-inputtype={"select"}
                       label={bilingualLabel}
-                      data={field.column === "primary_clinic_id" 
-                        ? clinicsList.map((clinic) => ({
-                            label: clinic.name || t("sidebar.unknownClinic"),
-                            value: clinic.id,
-                          }))
-                        : field.options?.map((option) => ({
-                            label: Language.getTranslation(option, language),
-                            value: Language.getTranslation(option, language),
-                          })) || []
+                      data={
+                        field.column === "primary_clinic_id"
+                          ? (() => {
+                              // When a specific clinic is selected in the sidebar (e.g. Orphan Location),
+                              // lock the primary clinic field to that clinic and hide all others.
+                              if (selectedClinicId && selectedClinicId !== "all") {
+                                const clinic = clinicsList.find(
+                                  (c) => c.id === selectedClinicId,
+                                );
+                                if (clinic) {
+                                  return [
+                                    {
+                                      label:
+                                        clinic.name ||
+                                        t("sidebar.unknownClinic"),
+                                      value: clinic.id,
+                                    },
+                                  ];
+                                }
+                              }
+
+                              // Fallback: show all clinics (non-orphan or no clinic selected yet)
+                              return clinicsList.map((clinic) => ({
+                                label:
+                                  clinic.name ||
+                                  t("sidebar.unknownClinic"),
+                                value: clinic.id,
+                              }));
+                            })()
+                          : field.options?.map((option) => ({
+                              label: Language.getTranslation(option, language),
+                              value: Language.getTranslation(option, language),
+                            })) || []
                       }
                       value={watch(field.column)}
                       onChange={(v) => setValue(field.column, v)}
