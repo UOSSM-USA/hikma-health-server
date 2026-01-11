@@ -47,6 +47,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePrescriptionPermissions } from "@/hooks/use-permissions";
 import { useLanguage, useTranslation } from "@/lib/i18n/context";
 import { translateText } from "@/lib/server-functions/translate";
+import { SpeechInputWithLanguage } from "@/components/speech-input-with-language";
 
 // Simple heuristic to detect if text contains Arabic characters
 const hasArabicChars = (text: string): boolean => /[\u0600-\u06FF]/.test(text);
@@ -201,68 +202,6 @@ function RouteComponent() {
   });
   const isSubmitting = form.formState.isSubmitting;
 
-  // Bilingual notes state (in-memory); for now we derive from single notes field
-  const [notesBilingual, setNotesBilingual] = useState<{ en: string; ar: string }>(() => {
-    const existing = prescription?.notes ?? "";
-    // naive guess: if UI is AR, treat existing as ar; otherwise as en
-    if (language === "ar") {
-      return { en: "", ar: existing };
-    }
-    return { en: existing, ar: "" };
-  });
-
-  // Track if we've already auto-translated for this form instance to avoid repeat calls
-  const hasAutoTranslatedRef = useRef<{ en?: boolean; ar?: boolean }>({});
-
-  // When UI language is English or Arabic and we only have the opposite language,
-  // auto-translate once into the active UI language for admins.
-  useEffect(() => {
-    if (isReadOnly) return;
-
-    const wantsEnglish =
-      language === "en" &&
-      !!notesBilingual.ar &&
-      !notesBilingual.en &&
-      !hasAutoTranslatedRef.current.en;
-
-    const wantsArabic =
-      language === "ar" &&
-      !!notesBilingual.en &&
-      !notesBilingual.ar &&
-      !hasAutoTranslatedRef.current.ar;
-
-    if (!wantsEnglish && !wantsArabic) return;
-
-    (async () => {
-      try {
-        const from = wantsEnglish ? "ar" : "en";
-        const to = wantsEnglish ? "en" : "ar";
-        const sourceText = wantsEnglish ? notesBilingual.ar : notesBilingual.en;
-
-        const res = await translateText({
-          data: {
-            text: sourceText,
-            from,
-            to,
-          },
-        });
-
-        setNotesBilingual((prev) => ({
-          ...prev,
-          [to]: res.translated || (prev as any)[to] || sourceText,
-        }));
-
-        if (wantsEnglish) {
-          hasAutoTranslatedRef.current.en = true;
-        }
-        if (wantsArabic) {
-          hasAutoTranslatedRef.current.ar = true;
-        }
-      } catch (err) {
-        console.error("Auto-translate for prescription notes failed:", err);
-      }
-    })();
-  }, [language, notesBilingual.ar, notesBilingual.en, isReadOnly]);
 
   // State for translated provider and clinic names
   const [translatedProviderNames, setTranslatedProviderNames] = useState<Record<string, string>>({});
@@ -363,15 +302,10 @@ function RouteComponent() {
       return;
     }
 
-    // Combine bilingual notes into single stored field (prefer English when available)
-    const combinedNotes =
-      language === "ar"
-        ? notesBilingual.ar || notesBilingual.en
-        : notesBilingual.en || notesBilingual.ar;
-
+    // Notes are now stored directly in the form field
     const payload: Prescription.EncodedT = {
       ...values,
-      notes: combinedNotes,
+      // notes field is already in values from the form
     };
 
     try {
@@ -561,58 +495,61 @@ function RouteComponent() {
                     <FormLabel>{t("prescriptionForm.notesLabel")}</FormLabel>
                     <FormControl>
                       <div className="space-y-2">
-                        {/* Arabic (frontline) */}
+                        {/* Language selector and microphone */}
+                        {!isReadOnly && (
+                          <div className="flex items-center justify-end gap-2">
+                            <SpeechInputWithLanguage
+                              onEnglishTranscript={(transcript) => {
+                                const currentValue = field.value || "";
+                                const newValue = currentValue.trim()
+                                  ? `${currentValue} ${transcript}`
+                                  : transcript;
+                                field.onChange(newValue);
+                              }}
+                              onArabicTranscript={(transcript) => {
+                                const currentValue = field.value || "";
+                                const newValue = currentValue.trim()
+                                  ? `${currentValue} ${transcript}`
+                                  : transcript;
+                                field.onChange(newValue);
+                              }}
+                              disabled={isReadOnly}
+                            />
+                          </div>
+                        )}
+                        {/* Single textarea */}
                         <Textarea
-                          value={notesBilingual.ar}
-                          onChange={(e) =>
-                            setNotesBilingual((prev) => ({
-                              ...prev,
-                              ar: e.target.value,
-                            }))
-                          }
+                          value={field.value || ""}
+                          onChange={field.onChange}
                           placeholder={t("prescriptionForm.notesPlaceholder")}
                           className="resize-none"
                           disabled={isReadOnly}
                         />
-                        {/* English (admin) + translate helper */}
-                        <div className="flex items-start gap-2">
-                          <Textarea
-                            value={notesBilingual.en}
-                            onChange={(e) =>
-                              setNotesBilingual((prev) => ({
-                                ...prev,
-                                en: e.target.value,
-                              }))
-                            }
-                            placeholder="English"
-                            className="resize-none"
-                            disabled={isReadOnly}
-                          />
-                          {!isReadOnly && (
+                        {/* Optional: Translate button if text contains Arabic */}
+                        {!isReadOnly && field.value && hasArabicChars(field.value) && (
+                          <div className="flex justify-end">
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
                               onClick={async () => {
-                                if (!notesBilingual.ar) {
+                                if (!field.value) {
                                   toast.error(
                                     t("export.error") ||
-                                      "No Arabic text to translate",
+                                      "No text to translate",
                                   );
                                   return;
                                 }
                                 try {
                                   const res = await translateText({
                                     data: {
-                                      text: notesBilingual.ar,
+                                      text: field.value,
                                       from: "ar",
                                       to: "en",
                                     },
                                   });
-                                  setNotesBilingual((prev) => ({
-                                    ...prev,
-                                    en: res.translated || prev.en,
-                                  }));
+                                  field.onChange(res.translated || field.value);
+                                  toast.success("Translated to English");
                                 } catch (err: any) {
                                   console.error(err);
                                   toast.error(
@@ -625,8 +562,8 @@ function RouteComponent() {
                               {t("export.translateToEnglish") ||
                                 "Translate to English"}
                             </Button>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     </FormControl>
                     <FormMessage />
