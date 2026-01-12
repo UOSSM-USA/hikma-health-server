@@ -46,8 +46,9 @@ import type User from "@/models/user";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Download, FileSpreadsheet } from "lucide-react";
+import { Plus, Download, FileSpreadsheet, ChevronDown, ChevronUp } from "lucide-react";
 import { exportPatientHistoryToExcel } from "@/lib/export/patient-history";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 export const Route = createFileRoute("/app/patients/$/")({
   component: RouteComponent,
@@ -186,6 +187,7 @@ function RouteComponent() {
     typeof PatientVital.PatientVitalSchema.Encoded | null
   >(null);
   const [showVitalForm, setShowVitalForm] = useState(false);
+  const [expandedEventForms, setExpandedEventForms] = useState<Record<string, boolean>>({});
   const [vitalFormData, setVitalFormData] = useState({
     systolic_bp: "",
     diastolic_bp: "",
@@ -1503,6 +1505,15 @@ function RouteComponent() {
                   <CardTitle>{t("patientDetail.eventForms")}</CardTitle>
                   <CardDescription>
                     {t("patientDetail.eventFormsDescription")}
+                    <span className="block mt-1 text-xs">
+                      To view all submitted forms across all patients, go to{" "}
+                      <Link 
+                        to="/app/data/events" 
+                        className="text-primary hover:underline font-medium"
+                      >
+                        Data Analysis → Explore Events
+                      </Link>
+                    </span>
                   </CardDescription>
                 </div>
                 <Button
@@ -1531,6 +1542,9 @@ function RouteComponent() {
                       (form) => form.id === event.form_id
                     );
                     const formName = eventForm?.name || t("common.unknown");
+                    const visibleFieldsCount = 3;
+                    const hasMoreFields = event.form_data && event.form_data.length > visibleFieldsCount;
+                    const isExpanded = expandedEventForms[event.id] || false;
 
                     return (
                       <div key={event.id} className="border rounded-lg p-4">
@@ -1560,10 +1574,14 @@ function RouteComponent() {
 
                         {event.form_data && event.form_data.length > 0 && (
                           <div className="mt-3 space-y-2">
-                            <p className="text-sm font-medium mb-2">
-                              {t("patientDetail.formData")}
-                            </p>
-                            {event.form_data.slice(0, 3).map((field: any, idx: number) => (
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-sm font-medium">
+                                {t("patientDetail.formData")}
+                              </p>
+                            </div>
+                            
+                            {/* Always show first 3 fields */}
+                            {event.form_data.slice(0, visibleFieldsCount).map((field: any, idx: number) => (
                               <div key={idx} className="text-sm">
                                 <span className="text-muted-foreground">
                                   {field.fieldName || t("common.unknown")}:
@@ -1573,10 +1591,52 @@ function RouteComponent() {
                                 </span>
                               </div>
                             ))}
-                            {event.form_data.length > 3 && (
-                              <p className="text-xs text-muted-foreground mt-2">
-                                +{event.form_data.length - 3} {t("patientDetail.moreFields")}
-                              </p>
+                            
+                            {/* Collapsible section for remaining fields */}
+                            {hasMoreFields && (
+                              <Collapsible 
+                                open={isExpanded} 
+                                onOpenChange={(open) => {
+                                  setExpandedEventForms(prev => ({
+                                    ...prev,
+                                    [event.id]: open
+                                  }));
+                                }}
+                              >
+                                <CollapsibleContent>
+                                  <div className="space-y-2 mt-2 pt-2 border-t">
+                                    {event.form_data.slice(visibleFieldsCount).map((field: any, idx: number) => (
+                                      <div key={visibleFieldsCount + idx} className="text-sm">
+                                        <span className="text-muted-foreground">
+                                          {field.fieldName || t("common.unknown")}:
+                                        </span>{" "}
+                                        <span className="font-medium">
+                                          {field.value || "—"}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </CollapsibleContent>
+                                <CollapsibleTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full mt-2 text-xs"
+                                  >
+                                    {isExpanded ? (
+                                      <>
+                                        <ChevronUp className="h-3 w-3 mr-1" />
+                                        Show Less
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ChevronDown className="h-3 w-3 mr-1" />
+                                        Show {event.form_data.length - visibleFieldsCount} More Fields
+                                      </>
+                                    )}
+                                  </Button>
+                                </CollapsibleTrigger>
+                              </Collapsible>
                             )}
                           </div>
                         )}
