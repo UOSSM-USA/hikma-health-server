@@ -275,13 +275,52 @@ function RouteComponent() {
 
   // Actual registration submission
   const submitRegistration = async (data: any) => {
+    // Check if this is the Orphan Intake form
+    const isOrphanIntakeForm = activeForm?.name?.toLowerCase().includes("orphan intake");
+    
+    // Map orphan-specific fields to patient base fields if using Orphan Intake form
+    const mappedData = { ...data };
+    if (isOrphanIntakeForm) {
+      // Map orphan form fields to patient base fields
+      // patient_name -> given_name (split into given_name and surname if space exists)
+      if (data.patient_name) {
+        const nameParts = String(data.patient_name).trim().split(/\s+/);
+        mappedData.given_name = nameParts[0] || data.patient_name;
+        mappedData.surname = nameParts.slice(1).join(" ") || "";
+      }
+      
+      // dob -> date_of_birth
+      if (data.dob) {
+        mappedData.date_of_birth = data.dob;
+      }
+      
+      // national_id -> government_id
+      if (data.national_id) {
+        mappedData.government_id = data.national_id;
+      }
+      
+      // residence -> hometown
+      if (data.residence) {
+        mappedData.hometown = data.residence;
+      }
+      
+      // gender -> sex
+      if (data.gender) {
+        mappedData.sex = data.gender;
+      }
+      
+      // phone stays the same (already correct)
+      // visit_date can be stored as additional attribute (registration date)
+    }
+    
     // Ensure government_id and external_patient_id are set
     const finalData = {
-      ...data,
-      government_id: data.government_id || governmentId,
-      external_patient_id: data.external_patient_id || generatedPatientId,
+      ...mappedData,
+      government_id: mappedData.government_id || mappedData.national_id || governmentId,
+      external_patient_id: mappedData.external_patient_id || generatedPatientId,
     };
 
+    // Build patient object - will be updated with mapped base data after processing fields
     const patient: Patient.T = {
       id: uuidv1(),
       given_name: Option.fromNullable(finalData.given_name),
@@ -317,44 +356,118 @@ function RouteComponent() {
       .forEach((field) => {
         if (field.baseField) {
           // @ts-ignore
-          patientBaseData[field.column] = data[field.column];
+          patientBaseData[field.column] = finalData[field.column];
         } else {
-          const row: PatientAdditionalAttribute.T = {
-            id: uuidv1(),
-            patient_id: "",
-            attribute_id: field.id,
-            attribute: field.column,
-            number_value: Option.fromNullable(
-              field.fieldType === "number" ? Number(data[field.column]) : null,
-            ),
-            string_value: Option.fromNullable(
-              ["text", "select"].includes(field.fieldType)
-                ? String(data[field.column])
-                : null,
-            ),
-            date_value: Option.fromNullable(
-              field.fieldType === "date" ? new Date(data[field.column]) : null,
-            ),
-            boolean_value: Option.fromNullable(
-              field.fieldType === "boolean"
-                ? Boolean(data[field.column])
-                : null,
-            ),
-            metadata: {},
-            is_deleted: false,
-            created_at: new Date(),
-            updated_at: new Date(),
-            last_modified: new Date(),
-            server_created_at: new Date(),
-            deleted_at: Option.none(),
-          };
-          additionalAttributes.push(row);
+          // For orphan intake form, map orphan-specific fields to additional attributes
+          // but also ensure base fields are populated from mapped data
+          const fieldValue = finalData[field.column] ?? data[field.column];
+          
+          // If this is an orphan form field that was mapped, store original value as additional attribute
+          if (isOrphanIntakeForm) {
+            const orphanFieldMappings: Record<string, string> = {
+              patient_name: "patient_name",
+              dob: "dob",
+              national_id: "national_id",
+              residence: "residence",
+              gender: "gender",
+              visit_date: "visit_date",
+            };
+            
+            // Store orphan-specific fields as additional attributes
+            if (orphanFieldMappings[field.column] && data[field.column]) {
+              const row: PatientAdditionalAttribute.T = {
+                id: uuidv1(),
+                patient_id: "",
+                attribute_id: field.id,
+                attribute: field.column,
+                number_value: Option.fromNullable(
+                  field.fieldType === "number" ? Number(data[field.column]) : null,
+                ),
+                string_value: Option.fromNullable(
+                  ["text", "select"].includes(field.fieldType)
+                    ? String(data[field.column])
+                    : null,
+                ),
+                date_value: Option.fromNullable(
+                  field.fieldType === "date" ? new Date(data[field.column]) : null,
+                ),
+                boolean_value: Option.fromNullable(
+                  field.fieldType === "boolean"
+                    ? Boolean(data[field.column])
+                    : null,
+                ),
+                metadata: {},
+                is_deleted: false,
+                created_at: new Date(),
+                updated_at: new Date(),
+                last_modified: new Date(),
+                server_created_at: new Date(),
+                deleted_at: Option.none(),
+              };
+              additionalAttributes.push(row);
+            }
+          } else {
+            // Regular additional attribute handling
+            const row: PatientAdditionalAttribute.T = {
+              id: uuidv1(),
+              patient_id: "",
+              attribute_id: field.id,
+              attribute: field.column,
+              number_value: Option.fromNullable(
+                field.fieldType === "number" ? Number(fieldValue) : null,
+              ),
+              string_value: Option.fromNullable(
+                ["text", "select"].includes(field.fieldType)
+                  ? String(fieldValue)
+                  : null,
+              ),
+              date_value: Option.fromNullable(
+                field.fieldType === "date" && fieldValue ? new Date(fieldValue) : null,
+              ),
+              boolean_value: Option.fromNullable(
+                field.fieldType === "boolean"
+                  ? Boolean(fieldValue)
+                  : null,
+              ),
+              metadata: {},
+              is_deleted: false,
+              created_at: new Date(),
+              updated_at: new Date(),
+              last_modified: new Date(),
+              server_created_at: new Date(),
+              deleted_at: Option.none(),
+            };
+            additionalAttributes.push(row);
+          }
         }
       });
+    
+    // Ensure base patient fields are populated from mapped data for orphan intake form
+    if (isOrphanIntakeForm) {
+      if (finalData.given_name) patientBaseData.given_name = finalData.given_name;
+      if (finalData.surname !== undefined) patientBaseData.surname = finalData.surname;
+      if (finalData.date_of_birth) patientBaseData.date_of_birth = finalData.date_of_birth;
+      if (finalData.government_id) patientBaseData.government_id = finalData.government_id;
+      if (finalData.hometown) patientBaseData.hometown = finalData.hometown;
+      if (finalData.sex) patientBaseData.sex = finalData.sex;
+      if (finalData.phone) patientBaseData.phone = finalData.phone;
+    }
+    
+    // Create final patient object with mapped base data
+    const finalPatient: Patient.T = {
+      ...patient,
+      given_name: Option.fromNullable(patientBaseData.given_name || finalData.given_name),
+      surname: Option.fromNullable(patientBaseData.surname !== undefined ? patientBaseData.surname : finalData.surname),
+      date_of_birth: Option.fromNullable(patientBaseData.date_of_birth || finalData.date_of_birth),
+      government_id: Option.fromNullable(patientBaseData.government_id || finalData.government_id),
+      hometown: Option.fromNullable(patientBaseData.hometown || finalData.hometown),
+      sex: Option.fromNullable(patientBaseData.sex || finalData.sex),
+      phone: Option.fromNullable(patientBaseData.phone || finalData.phone),
+    };
 
     try {
       const result = await createPatient({
-        data: { baseFields: patient, additionalAttributes } as any,
+        data: { baseFields: finalPatient, additionalAttributes } as any,
       });
       toast.success(t("registration.success"));
       
