@@ -36,6 +36,7 @@ namespace Event {
     last_modified: Date;
     server_created_at: Date;
     deleted_at: Option.Option<Date>;
+    recorded_by_user_id: Option.Option<string>;
   };
 
   // Hacked together. Must be converted into a schema.
@@ -53,6 +54,7 @@ namespace Event {
     last_modified: Date;
     server_created_at: Date;
     deleted_at: Date | null;
+    recorded_by_user_id: string | null;
   };
 
   export namespace Table {
@@ -74,6 +76,7 @@ namespace Event {
       last_modified: "last_modified",
       server_created_at: "server_created_at",
       deleted_at: "deleted_at",
+      recorded_by_user_id: "recorded_by_user_id",
     };
 
     export interface T {
@@ -96,6 +99,7 @@ namespace Event {
         string | null | undefined,
         string | null
       >;
+      recorded_by_user_id: string | null;
     }
 
     export type Events = Selectable<T>;
@@ -150,7 +154,7 @@ namespace Event {
                 provider_id: user.id,
                 provider_name: user.name,
                 check_in_timestamp: event.created_at
-                  ? sql`${event.created_at}::timestamp with time zone`
+                  ? sql`${toSafeDateString(event.created_at)}::timestamp with time zone`
                   : null,
                 metadata: sql`${{
                   artificially_created: true,
@@ -193,6 +197,7 @@ namespace Event {
               last_modified: sql`now()::timestamp with time zone`,
               server_created_at: sql`now()::timestamp with time zone`,
               deleted_at: null,
+              recorded_by_user_id: event.recorded_by_user_id ?? null,
             })
             .onConflict((oc) => {
               return oc.column("id").doUpdateSet({
@@ -203,6 +208,8 @@ namespace Event {
                 form_data: (eb) => eb.ref("excluded.form_data"),
                 metadata: (eb) => eb.ref("excluded.metadata"),
                 is_deleted: (eb) => eb.ref("excluded.is_deleted"),
+                recorded_by_user_id: (eb) =>
+                  eb.ref("excluded.recorded_by_user_id"),
                 updated_at: sql`now()::timestamp with time zone`,
                 last_modified: sql`now()::timestamp with time zone`,
               });
@@ -257,6 +264,53 @@ namespace Event {
           .offset(offset)
           .execute();
         return res as unknown as Event.EncodedT[];
+      },
+    );
+
+    /**
+     * Get all non-deleted events for a given visit, ordered by most recent first
+     * @param visitId - The visit ID to filter by
+     * @returns Array of events belonging to the visit
+     */
+    export const getByVisitId = serverOnly(
+      async (visitId: string): Promise<Event.EncodedT[]> => {
+        const res = await db
+          .selectFrom(Table.name)
+          .selectAll()
+          .where("visit_id", "=", visitId)
+          .where("is_deleted", "=", false)
+          .orderBy("created_at", "desc")
+          .execute();
+        return res as unknown as Event.EncodedT[];
+      },
+    );
+
+    /**
+     * Update only the form_data and optionally metadata for an existing event
+     * @param id - The event ID
+     * @param formData - The new form data array
+     * @param metadata - Optional updated metadata
+     */
+    export const updateFormData = serverOnly(
+      async (
+        id: string,
+        formData: Array<Record<string, any>>,
+        metadata?: Record<string, any>,
+      ): Promise<void> => {
+        const updateSet: Record<string, any> = {
+          form_data: sql`${JSON.stringify(formData)}::jsonb`,
+          updated_at: sql`now()::timestamp with time zone`,
+          last_modified: sql`now()::timestamp with time zone`,
+        };
+        if (metadata !== undefined) {
+          updateSet.metadata = sql`${JSON.stringify(metadata)}::jsonb`;
+        }
+        await db
+          .updateTable(Table.name)
+          .set(updateSet)
+          .where("id", "=", id)
+          .where("is_deleted", "=", false)
+          .execute();
       },
     );
 

@@ -163,6 +163,64 @@ namespace Prescription {
       },
     );
 
+    /**
+     * Get paginated prescriptions for a patient, ordered by most recent first.
+     */
+    export const getByPatientId = serverOnly(
+      async (options: {
+        patientId: string;
+        limit?: number;
+        offset?: number;
+        includeCount?: boolean;
+      }): Promise<{
+        items: Prescription.EncodedT[];
+        pagination: {
+          offset: number;
+          limit: number;
+          total: number;
+          hasMore: boolean;
+        };
+      }> => {
+        const {
+          patientId,
+          limit = 10,
+          offset = 0,
+          includeCount = false,
+        } = options;
+
+        const items = await db
+          .selectFrom(Table.name)
+          .selectAll()
+          .where("patient_id", "=", patientId)
+          .where("is_deleted", "=", false)
+          .orderBy("created_at", "desc")
+          .limit(limit)
+          .offset(offset)
+          .execute();
+
+        let total = 0;
+        if (includeCount) {
+          const countResult = await db
+            .selectFrom(Table.name)
+            .select(db.fn.countAll().as("count"))
+            .where("patient_id", "=", patientId)
+            .where("is_deleted", "=", false)
+            .executeTakeFirst();
+          total = Number(countResult?.count ?? 0);
+        }
+
+        return {
+          items: items as unknown as Prescription.EncodedT[],
+          pagination: {
+            offset,
+            limit,
+            total,
+            hasMore: items.length >= limit,
+          },
+        };
+      },
+    );
+
     export const toggleStatus = serverOnly(
       async (id: string, status: string) => {
         await db

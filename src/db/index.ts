@@ -33,6 +33,7 @@ import type DispensingRecord from "@/models/dispensing-records";
 import type DrugBatches from "@/models/drug-batches";
 import type PrescriptionItems from "@/models/prescription-items";
 import type PatientObservation from "@/models/patient-observation";
+import type EventLog from "@/models/event-logs";
 import { Pool } from "pg";
 import type { StringId, StringContent } from "@/models/string-content";
 import "dotenv/config";
@@ -65,6 +66,7 @@ export type Database = {
   prescription_items: PrescriptionItems.Table.T;
   dispensing_records: DispensingRecord.Table.T;
   patient_observations: PatientObservation.Table.T;
+  event_logs: EventLog.Table.T;
 };
 
 // The table names in the database

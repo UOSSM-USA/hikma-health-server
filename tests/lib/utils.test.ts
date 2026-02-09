@@ -9,6 +9,7 @@ import {
   safeJSONParse,
   safeStringify,
   stringSimilarity,
+  toSafeDateString,
   tryParseDate,
 } from "../../src/lib/utils";
 
@@ -270,6 +271,73 @@ describe("tryParseDate", () => {
     const invalidDefaultDate = new Date("invalid-date");
 
     expect(() => tryParseDate(invalidDate, invalidDefaultDate)).toThrow();
+  });
+});
+
+describe("toSafeDateString", () => {
+  it("converts epoch millis 1770647055887 to a valid ISO string", () => {
+    const result = toSafeDateString(1770647055887);
+    expect(result).toBe("2026-02-09T14:24:15.887Z");
+  });
+
+  it("converts epoch millis string '1770647055887' to a valid ISO string", () => {
+    const result = toSafeDateString("1770647055887");
+    expect(result).toBe("2026-02-09T14:24:15.887Z");
+  });
+
+  it("converts epoch millis 1770643187759 to a valid ISO string", () => {
+    const result = toSafeDateString(1770643187759);
+    const d = new Date(result);
+    expect(isNaN(d.getTime())).toBe(false);
+    expect(d.getFullYear()).toBe(2026);
+  });
+
+  it("passes through valid ISO strings unchanged", () => {
+    const iso = "2026-02-09T14:24:15.887Z";
+    expect(toSafeDateString(iso)).toBe(iso);
+  });
+
+  it("converts epoch seconds to a valid date", () => {
+    // 1770647055 seconds < 1e12, so treated as seconds
+    const result = toSafeDateString(1770647055);
+    const d = new Date(result);
+    expect(isNaN(d.getTime())).toBe(false);
+  });
+
+  it("returns default for null/undefined/empty", () => {
+    const before = Date.now();
+    const resultNull = toSafeDateString(null);
+    const resultUndef = toSafeDateString(undefined);
+    const resultEmpty = toSafeDateString("");
+    const after = Date.now();
+
+    for (const result of [resultNull, resultUndef, resultEmpty]) {
+      const t = new Date(result).getTime();
+      expect(t).toBeGreaterThanOrEqual(before);
+      expect(t).toBeLessThanOrEqual(after + 1);
+    }
+  });
+
+  it("returns default for invalid date strings", () => {
+    const before = Date.now();
+    const result = toSafeDateString("not-a-date");
+    const t = new Date(result).getTime();
+    expect(t).toBeGreaterThanOrEqual(before);
+  });
+
+  it("converts 0 to epoch 1970 (not suitable for nullable date fields)", () => {
+    // toSafeDateString(0) interprets 0 as epoch seconds → Jan 1, 1970
+    // The sync layer should convert 0 to null for date columns BEFORE calling toSafeDateString
+    const result = toSafeDateString(0);
+    expect(result).toBe("1970-01-01T00:00:00.000Z");
+  });
+
+  it("returns default for dates with year out of range", () => {
+    const before = Date.now();
+    // Year 50000 is out of range (1850-2120)
+    const result = toSafeDateString("50000-01-01T00:00:00Z");
+    const t = new Date(result).getTime();
+    expect(t).toBeGreaterThanOrEqual(before);
   });
 });
 

@@ -19,6 +19,16 @@ import DrugCatalogue from "./drug-catalogue";
 import ClinicInventory from "./clinic-inventory";
 import DispensingRecord from "./dispensing-records";
 import PrescriptionItem from "./prescription-items";
+import { toSafeDateString } from "@/lib/utils";
+
+/** Returns true if the value looks like a raw epoch timestamp (10-13 digit numeric string or number). */
+const isEpochTimestamp = (value: unknown): boolean =>
+    (typeof value === "string" && /^\d{10,13}$/.test(value.trim())) ||
+    (typeof value === "number" && value > 1e9 && value < 1e14);
+
+/** Returns true if a column name looks like a date/timestamp column. */
+const isDateColumn = (name: string): boolean =>
+    name.endsWith("_at") || name.endsWith("_date") || name === "timestamp" || name === "last_modified";
 
 namespace Sync {
     /**
@@ -315,9 +325,32 @@ namespace Sync {
 
             // console.log(`${tableName} - Records to create: ${deltaData.created.length}, update: ${deltaData.updated.length}, delete: ${deltaData.deleted.length}`);
 
+            const knownColumns = new Set(Object.keys(pushTableNameModelMap[tableName].Table.columns));
+
             for (const record of deltaData.created.concat(deltaData.updated)) {
-                // console.log(`Upserting ${tableName} record:`, record.id);
-                await (pushTableNameModelMap[tableName] as any).Sync.upsertFromDelta(record as any);
+                // Strip unknown columns (e.g. WatermelonDB's _status, _changed) and
+                // convert raw epoch timestamps to ISO strings so PostgreSQL can parse them.
+                const cleaned = Object.fromEntries(
+                    Object.entries(record)
+                        .filter(([key]) => {
+                            if (knownColumns.has(key)) return true;
+                            console.warn(`[sync] Ignoring unknown column "${key}" for table "${tableName}"`);
+                            return false;
+                        })
+                        .map(([key, value]) => {
+                            if (isEpochTimestamp(value)) {
+                                console.warn(`[sync] Converting epoch timestamp in "${tableName}.${key}": ${value}`);
+                                return [key, toSafeDateString(value)];
+                            }
+                            // Mobile clients may send 0/"0" for empty date fields — coerce to null
+                            if ((value === 0 || value === "0") && isDateColumn(key)) {
+                                console.warn(`[sync] Converting zero date to null in "${tableName}.${key}"`);
+                                return [key, null];
+                            }
+                            return [key, value];
+                        }),
+                );
+                await pushTableNameModelMap[tableName].Sync.upsertFromDelta(cleaned as typeof pushTableNameModelMap[typeof tableName].EncodedT);
             }
 
             for (const id of deltaData.deleted) {

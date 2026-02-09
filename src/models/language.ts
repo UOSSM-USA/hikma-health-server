@@ -18,6 +18,14 @@ export namespace Language {
 
   export type LanguageKey = "en" | "ar" | "es" | string;
 
+  export const supportedLanguages = ["en", "ar", "es"] as const;
+  export type SupportedLanguage = (typeof supportedLanguages)[number];
+
+  /** Returns supported languages excluding the primary language */
+  export function nonPrimaryLanguages(primary: string): string[] {
+    return supportedLanguages.filter((lang) => lang !== primary);
+  }
+
   /**
    * Given a language key, return the expanded version of the key
    *
@@ -51,7 +59,7 @@ export namespace Language {
    */
   export function getTranslation(
     translations: TranslationObject,
-    language: string
+    language: string,
   ): string {
     const translationKeys = Object.keys(translations);
 

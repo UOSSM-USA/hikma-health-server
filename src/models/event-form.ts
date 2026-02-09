@@ -19,6 +19,7 @@ import {
 } from "@/lib/utils";
 import { nanoid } from "nanoid";
 import { v1 as uuidV1 } from "uuid";
+import Language from "@/models/language";
 
 namespace EventForm {
   // export type T = {
@@ -50,6 +51,8 @@ namespace EventForm {
       is_snapshot_form: "is_snapshot_form",
       form_fields: "form_fields",
       metadata: "metadata",
+      clinic_ids: "clinic_ids",
+      translations: "translations",
       is_deleted: "is_deleted",
       created_at: "created_at",
       updated_at: "updated_at",
@@ -67,6 +70,8 @@ namespace EventForm {
       is_snapshot_form: Generated<boolean>;
       form_fields: JSONColumnType<any[]>;
       metadata: JSONColumnType<Record<string, any>>;
+      clinic_ids: JSONColumnType<string[]>;
+      translations: Generated<JSONColumnType<FieldTranslation[]>>;
       is_deleted: Generated<boolean>;
       created_at: Generated<ColumnType<Date, string | undefined, never>>;
       updated_at: Generated<
@@ -129,7 +134,12 @@ namespace EventForm {
     | "file"
     | "options"
     | "date"
+    | "text"
+    | "separator"
     | "custom";
+
+  export const textDisplaySizes = ["xxl", "xl", "lg", "md", "sm"] as const;
+  export type TextDisplaySize = (typeof textDisplaySizes)[number];
 
   export interface HHFieldBase {
     id: string;
@@ -210,10 +220,123 @@ namespace EventForm {
   export type MedicineForm = (typeof medicineForms)[number];
 
   export type FieldOption = {
+    id?: string;
     label: string;
     value: string;
-    // options?: FieldOption[];
   };
+
+  // ============== TRANSLATIONS ==============
+
+  /** Sentinel field IDs for form-level translations */
+  export const FORM_NAME_FIELD_ID = "__form_name__";
+  export const FORM_DESCRIPTION_FIELD_ID = "__form_description__";
+
+  export type FieldTranslation = {
+    fieldId: string;
+    name: Language.TranslationObject;
+    description: Language.TranslationObject;
+    options: Record<string, Language.TranslationObject>;
+    createdAt: string;
+    updatedAt: string;
+  };
+
+  /** Get the translation ID for an option, falling back to value for old data without IDs */
+  export function getOptionId(option: FieldOption): string {
+    return option.id ?? option.value;
+  }
+
+  /** Add nanoid IDs to any options that are missing them. Idempotent. */
+  export function ensureOptionIds(fields: any[]): any[] {
+    return fields.map((field) => {
+      if (!field.options || !Array.isArray(field.options)) return field;
+      const options = field.options.map((opt: any) => {
+        if (typeof opt === "string") return opt;
+        return opt.id ? opt : { ...opt, id: nanoid() };
+      });
+      return { ...field, options };
+    });
+  }
+
+  /** Find the translation entry for a given fieldId */
+  export function getFieldTranslation(
+    translations: FieldTranslation[],
+    fieldId: string,
+  ): FieldTranslation | undefined {
+    return translations.find((t) => t.fieldId === fieldId);
+  }
+
+  /** Upsert a translation value for a field's name or description */
+  export function upsertFieldTranslation(
+    translations: FieldTranslation[],
+    fieldId: string,
+    lang: string,
+    key: "name" | "description",
+    value: string,
+  ): FieldTranslation[] {
+    const now = new Date().toISOString();
+    const existing = translations.find((t) => t.fieldId === fieldId);
+    if (existing) {
+      return translations.map((t) =>
+        t.fieldId === fieldId
+          ? { ...t, [key]: { ...t[key], [lang]: value }, updatedAt: now }
+          : t,
+      );
+    }
+    const entry: FieldTranslation = {
+      fieldId,
+      name: {} as Language.TranslationObject,
+      description: {} as Language.TranslationObject,
+      options: {},
+      createdAt: now,
+      updatedAt: now,
+    };
+    entry[key] = { [lang]: value } as Language.TranslationObject;
+    return [...translations, entry];
+  }
+
+  /** Upsert a translation value for a specific option within a field */
+  export function upsertOptionTranslation(
+    translations: FieldTranslation[],
+    fieldId: string,
+    optionId: string,
+    lang: string,
+    value: string,
+  ): FieldTranslation[] {
+    const now = new Date().toISOString();
+    const existing = translations.find((t) => t.fieldId === fieldId);
+    if (existing) {
+      return translations.map((t) => {
+        if (t.fieldId !== fieldId) return t;
+        const optTranslation =
+          t.options[optionId] ?? ({} as Language.TranslationObject);
+        return {
+          ...t,
+          options: {
+            ...t.options,
+            [optionId]: { ...optTranslation, [lang]: value },
+          },
+          updatedAt: now,
+        };
+      });
+    }
+    const entry: FieldTranslation = {
+      fieldId,
+      name: {} as Language.TranslationObject,
+      description: {} as Language.TranslationObject,
+      options: { [optionId]: { [lang]: value } as Language.TranslationObject },
+      createdAt: now,
+      updatedAt: now,
+    };
+    return [...translations, entry];
+  }
+
+  /** Remove translation entries for a given fieldId */
+  export function removeFieldTranslation(
+    translations: FieldTranslation[],
+    fieldId: string,
+  ): FieldTranslation[] {
+    return translations.filter((t) => t.fieldId !== fieldId);
+  }
 
   export type BinaryField = HHFieldBase & {
     fieldType: "binary";
@@ -381,15 +504,21 @@ namespace EventForm {
     } & HHFieldBase
   > {}
 
+  export class TextDisplayField2 extends Data.TaggedClass("text")<
+    {
+      content: string;
+      size: TextDisplaySize;
+    } & HHFieldBase
+  > {}
+
+  export class SeparatorField2 extends Data.TaggedClass(
+    "separator",
+  )<HHFieldBase> {}
+
   export const FieldOptionSchema = Schema.Struct({
+    id: Schema.optional(Schema.String),
     label: Schema.String,
     value: Schema.String,
-    // options: Schema.Array(
-    //   Schema.Struct({
-    //     label: Schema.String,
-    //     value: Schema.String,
-    //   })
-    // ),
   });
 
   export const createFieldSchema = <T extends string, A, I, R>(
@@ -411,6 +540,8 @@ namespace EventForm {
       Match.when("date", () => "date"),
       Match.when("file", () => "file"),
       Match.when("options", () => "options"),
+      Match.when("text", () => "text"),
+      Match.when("separator", () => "separator"),
       Match.exhaustive,
     ) as Field["_tag"];
   };
@@ -565,6 +696,25 @@ namespace EventForm {
     }),
   );
 
+  export const TextDisplayFieldSchema = createFieldSchema(
+    "text",
+    Schema.Struct({
+      content: Schema.String,
+      size: Schema.Union(
+        Schema.Literal("xxl"),
+        Schema.Literal("xl"),
+        Schema.Literal("lg"),
+        Schema.Literal("md"),
+        Schema.Literal("sm"),
+      ),
+    }),
+  );
+
+  export const SeparatorFieldSchema = createFieldSchema(
+    "separator",
+    Schema.Struct({}),
+  );
+
   export const FieldSchema = Schema.Union(
     BinaryFieldSchema,
     TextFieldSchema,
@@ -573,6 +723,8 @@ namespace EventForm {
     DateFieldSchema,
     OptionsFieldSchema,
     FileFieldSchema,
+    TextDisplayFieldSchema,
+    SeparatorFieldSchema,
   );
 
   export type Field = Schema.Schema.Type<typeof FieldSchema>;
@@ -584,7 +736,9 @@ namespace EventForm {
     | DiagnosisField2
     | DateField2
     | OptionsField2
-    | FileField2;
+    | FileField2
+    | TextDisplayField2
+    | SeparatorField2;
 
   export function toSchema(field: FieldData): Either.Either<Field, Error> {
     return Schema.encodeUnknownEither(FieldSchema)({
@@ -605,6 +759,8 @@ namespace EventForm {
     is_snapshot_form: Schema.Boolean,
     form_fields: Schema.Array(FieldSchema),
     metadata: Schema.Record({ key: Schema.String, value: Schema.Any }),
+    clinic_ids: Schema.Array(Schema.String),
+    translations: Schema.Array(Schema.Any),
     is_deleted: Schema.Boolean,
     created_at: Schema.DateFromSelf,
     updated_at: Schema.DateFromSelf,
@@ -813,6 +969,8 @@ namespace EventForm {
             is_snapshot_form: form.is_snapshot_form,
             form_fields: sql`${JSON.stringify(safeJSONParse(form.form_fields, []))}::jsonb`,
             metadata: sql`${JSON.stringify(safeJSONParse(form.metadata, {}))}::jsonb`,
+            clinic_ids: sql`${JSON.stringify(form.clinic_ids ?? [])}::jsonb`,
+            translations: sql`${JSON.stringify(form.translations ?? [])}::jsonb`,
             is_deleted: form.is_deleted,
             created_at: sql`now()`,
             updated_at: sql`now()`,
@@ -850,6 +1008,8 @@ namespace EventForm {
             is_snapshot_form: form.is_snapshot_form,
             form_fields: sql`${JSON.stringify(safeJSONParse(form.form_fields, []))}::jsonb`,
             metadata: sql`${JSON.stringify(safeJSONParse(form.metadata, {}))}::jsonb`,
+            clinic_ids: sql`${JSON.stringify(form.clinic_ids ?? [])}::jsonb`,
+            translations: sql`${JSON.stringify(form.translations ?? [])}::jsonb`,
             updated_at: sql`now()`,
             last_modified: sql`now()`,
           })

@@ -1,21 +1,22 @@
-// import { TRPCError } from '@trpc/server'
-import type { TRPCRouterRecord } from '@trpc/server'
-// import { z } from 'zod'
+import type { TRPCRouterRecord } from "@trpc/server";
+import { createTRPCRouter, publicProcedure } from "./init";
+import { patientsRouter } from "./routers/patients";
+import { visitsRouter } from "./routers/visits";
+import { eventsRouter } from "./routers/events";
 
-import { createTRPCRouter, publicProcedure } from './init'
-
+/** Demo router — kept for the existing demo page at /demo/tanstack-query */
 const peopleRouter = {
   list: publicProcedure.query(async () => [
-    {
-      name: 'John Doe',
-    },
-    {
-      name: 'Jane Doe',
-    },
+    { name: "John Doe" },
+    { name: "Jane Doe" },
   ]),
-} satisfies TRPCRouterRecord
+} satisfies TRPCRouterRecord;
 
 export const trpcRouter = createTRPCRouter({
   people: peopleRouter,
-})
-export type TRPCRouter = typeof trpcRouter
+  patients: patientsRouter,
+  visits: visitsRouter,
+  events: eventsRouter,
+});
+
+export type TRPCRouter = typeof trpcRouter;

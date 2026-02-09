@@ -18,6 +18,8 @@ const INITIAL_FORM_BUILDER_CONTEXT: State = {
   is_snapshot_form: false,
   form_fields: [],
   metadata: {},
+  clinic_ids: [],
+  translations: [],
   is_deleted: false,
   created_at: new Date(),
   updated_at: new Date(),
@@ -32,11 +34,25 @@ const eventFormStore = createStore({
     "set-form-name": (context, event: { payload: string }) => {
       return produce(context, (draft) => {
         draft.name = event.payload;
+        draft.translations = EventForm.upsertFieldTranslation(
+          draft.translations,
+          EventForm.FORM_NAME_FIELD_ID,
+          draft.language,
+          "name",
+          event.payload,
+        );
       });
     },
     "set-form-description": (context, event: { payload: string }) => {
       return produce(context, (draft) => {
         draft.description = event.payload;
+        draft.translations = EventForm.upsertFieldTranslation(
+          draft.translations,
+          EventForm.FORM_DESCRIPTION_FIELD_ID,
+          draft.language,
+          "name",
+          event.payload,
+        );
       });
     },
     "set-form-state": (context, event: { payload: State }) => {
@@ -49,6 +65,8 @@ const eventFormStore = createStore({
         draft.is_snapshot_form = event.payload.is_snapshot_form;
         draft.form_fields = event.payload.form_fields;
         draft.metadata = event.payload.metadata;
+        draft.clinic_ids = event.payload.clinic_ids ?? [];
+        draft.translations = event.payload.translations ?? [];
         draft.is_deleted = event.payload.is_deleted;
         draft.created_at = event.payload.created_at;
         draft.updated_at = event.payload.updated_at;
@@ -72,6 +90,11 @@ const eventFormStore = createStore({
         draft.is_snapshot_form = !draft.is_snapshot_form;
       });
     },
+    "set-clinic-ids": (context, event: { payload: string[] }) => {
+      return produce(context, (draft) => {
+        draft.clinic_ids = event.payload;
+      });
+    },
     "set-form-language": (context, event: { payload: string }) => {
       return produce(context, (draft) => {
         draft.language = event.payload;
@@ -93,13 +116,17 @@ const eventFormStore = createStore({
       return produce(context, (draft) => {
         draft.form_fields.splice(
           draft.form_fields.findIndex((f) => f.id === event.payload),
-          1
+          1,
+        );
+        draft.translations = EventForm.removeFieldTranslation(
+          draft.translations,
+          event.payload,
         );
       });
     },
     "set-dropdown-options": (
       context,
-      event: { payload: { fieldId: string; value: EventForm.FieldOption[] } }
+      event: { payload: { fieldId: string; value: EventForm.FieldOption[] } },
     ) => {
       return produce(context, (draft) => {
         const { fieldId, value } = event.payload;
@@ -108,16 +135,36 @@ const eventFormStore = createStore({
     },
     "set-field-key-value": (
       context,
-      event: { payload: { fieldId: string; key: string; value: any } }
+      event: { payload: { fieldId: string; key: string; value: any } },
     ) => {
       const { fieldId, key, value } = event.payload;
       return produce(context, (draft) => {
         draft.form_fields.find((f) => f.id === fieldId)[key] = value;
+        if (key === "name" || key === "description") {
+          draft.translations = EventForm.upsertFieldTranslation(
+            draft.translations,
+            fieldId,
+            draft.language,
+            key,
+            value,
+          );
+        }
+        // TextDisplay fields store their translatable text in "content",
+        // so seed the English translation under the "name" key.
+        if (key === "content") {
+          draft.translations = EventForm.upsertFieldTranslation(
+            draft.translations,
+            fieldId,
+            draft.language,
+            "name",
+            value,
+          );
+        }
       });
     },
     "add-units": (
       context,
-      event: { payload: { fieldId: string; value: EventForm.DoseUnit[] } }
+      event: { payload: { fieldId: string; value: EventForm.DoseUnit[] } },
     ) => {
       return produce(context, (draft) => {
         const { fieldId, value } = event.payload;
@@ -141,17 +188,61 @@ const eventFormStore = createStore({
     },
     "reorder-two-fields": (
       context,
-      event: { payload: { fieldIds: string[] } }
+      event: { payload: { fieldIds: string[] } },
     ) => {
       const { fieldIds } = event.payload;
       return produce(context, (draft) => {
         const oldIndex = draft.form_fields.findIndex(
-          (f) => f.id === fieldIds[0]
+          (f) => f.id === fieldIds[0],
         );
         const newIndex = draft.form_fields.findIndex(
-          (f) => f.id === fieldIds[1]
+          (f) => f.id === fieldIds[1],
         );
         draft.form_fields = arrayMove(draft.form_fields, oldIndex, newIndex);
+      });
+    },
+    "set-translation": (
+      context,
+      event: {
+        payload: {
+          fieldId: string;
+          lang: string;
+          key: "name" | "description";
+          value: string;
+        };
+      },
+    ) => {
+      const { fieldId, lang, key, value } = event.payload;
+      return produce(context, (draft) => {
+        draft.translations = EventForm.upsertFieldTranslation(
+          draft.translations,
+          fieldId,
+          lang,
+          key,
+          value,
+        );
+      });
+    },
+    "set-option-translation": (
+      context,
+      event: {
+        payload: {
+          fieldId: string;
+          optionId: string;
+          lang: string;
+          value: string;
+        };
+      },
+    ) => {
+      const { fieldId, optionId, lang, value } = event.payload;
+      return produce(context, (draft) => {
+        draft.translations = EventForm.upsertOptionTranslation(
+          draft.translations,
+          fieldId,
+          optionId,
+          lang,
+          value,
+        );
       });
     },
     reset: (context) => {
@@ -164,6 +255,8 @@ const eventFormStore = createStore({
         draft.is_snapshot_form = false;
         draft.form_fields = [];
         draft.metadata = {};
+        draft.clinic_ids = [];
+        draft.translations = [];
         draft.is_deleted = false;
         draft.created_at = new Date();
         draft.updated_at = new Date();

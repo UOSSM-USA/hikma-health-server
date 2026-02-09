@@ -180,6 +180,64 @@ namespace PatientProblem {
   );
 
   /**
+   * Get paginated problems for a patient, ordered by most recently updated first.
+   */
+  export const getByPatientIdPaginated = serverOnly(
+    async (options: {
+      patientId: string;
+      limit?: number;
+      offset?: number;
+      includeCount?: boolean;
+    }): Promise<{
+      items: EncodedT[];
+      pagination: {
+        offset: number;
+        limit: number;
+        total: number;
+        hasMore: boolean;
+      };
+    }> => {
+      const {
+        patientId,
+        limit = 5,
+        offset = 0,
+        includeCount = false,
+      } = options;
+
+      const items = await db
+        .selectFrom(Table.name)
+        .selectAll()
+        .where("patient_id", "=", patientId)
+        .where("is_deleted", "=", false)
+        .orderBy("updated_at", "desc")
+        .limit(limit)
+        .offset(offset)
+        .execute();
+
+      let total = 0;
+      if (includeCount) {
+        const countResult = await db
+          .selectFrom(Table.name)
+          .select(db.fn.countAll().as("count"))
+          .where("patient_id", "=", patientId)
+          .where("is_deleted", "=", false)
+          .executeTakeFirst();
+        total = Number(countResult?.count ?? 0);
+      }
+
+      return {
+        items: items as unknown as EncodedT[],
+        pagination: {
+          offset,
+          limit,
+          total,
+          hasMore: items.length >= limit,
+        },
+      };
+    },
+  );
+
+  /**
    * Get active problems for a patient
    * @param patientId - The patient ID
    * @returns {Promise<EncodedT[]>} - List of active problem records
@@ -328,14 +386,40 @@ namespace PatientProblem {
   );
 
   export namespace Sync {
+    /** Pick only known DB columns from incoming delta, stripping WatermelonDB metadata like _status, _changed. */
+    const pickColumns = (
+      delta: Record<string, any>,
+    ): Table.NewPatientProblems => ({
+      id: delta.id,
+      patient_id: delta.patient_id,
+      visit_id: delta.visit_id ?? null,
+      problem_code_system: delta.problem_code_system,
+      problem_code: delta.problem_code,
+      problem_label: delta.problem_label,
+      clinical_status: delta.clinical_status,
+      verification_status: delta.verification_status,
+      severity_score: delta.severity_score ?? null,
+      onset_date: delta.onset_date ?? null,
+      end_date: delta.end_date ?? null,
+      recorded_by_user_id: delta.recorded_by_user_id ?? null,
+      metadata: delta.metadata ?? {},
+      is_deleted: delta.is_deleted ?? false,
+      created_at: sql`now()::timestamp with time zone`,
+      updated_at: sql`now()::timestamp with time zone`,
+      last_modified: sql`now()::timestamp with time zone`,
+      server_created_at: sql`now()::timestamp with time zone`,
+      deleted_at: delta.deleted_at ?? null,
+    });
+
     export const upsertFromDelta = serverOnly(
       async (deltaData: Table.NewPatientProblems): Promise<void> => {
+        const row = pickColumns(deltaData as Record<string, any>);
         await db
           .insertInto(Table.name)
-          .values(deltaData)
+          .values(row)
           .onConflict((oc) =>
             oc.column("id").doUpdateSet((eb) => ({
-              ...deltaData,
+              ...row,
               server_created_at: eb.ref("patient_problems.server_created_at"),
             })),
           )

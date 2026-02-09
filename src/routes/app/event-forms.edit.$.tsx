@@ -15,6 +15,8 @@ import {
   LucideFile,
   LucidePill,
   LucideStethoscope,
+  LucideType,
+  LucideMinus,
 } from "lucide-react";
 import {
   findDuplicatesStrings,
@@ -23,10 +25,13 @@ import {
 import { DatePickerInput } from "@/components/date-picker-input";
 import { Separator } from "@/components/ui/separator";
 import { InputsConfiguration } from "@/components/form-builder/InputsConfiguration";
+import { TranslationBadges } from "@/components/form-builder/TranslationBadges";
 import { SelectInput, type SelectOption } from "@/components/select-input";
 import { RadioInput, type RadioOption } from "@/components/radio-input";
 import { MedicineInput } from "@/components/form-builder/MedicineInput";
 import { DiagnosisSelect } from "@/components/form-builder/DiagnosisPicker";
+import { MultiSelect } from "@/components/multi-select";
+import { getAllClinics } from "@/lib/server-functions/clinics";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -70,6 +75,7 @@ const getFormById = createServerFn({ method: "GET" })
     return {
       ...res,
       form_fields: formFields,
+      translations: res.translations ?? [],
     };
   });
 
@@ -109,23 +115,18 @@ export const Route = createFileRoute("/app/event-forms/edit/$")({
     }
     const currentUser = (await getCurrentUser()) as User.EncodedT | null;
     const formId = params._splat;
+    const clinics = await getAllClinics();
     if (!formId || formId === "new") {
-      return { form: null, currentUser };
+      return { form: null, clinics };
     }
-    return {
-      form: await getEventFormForEditor({ data: { id: formId } }),
-      currentUser,
-    };
+    return { form: await getFormById({ data: { id: formId } }), clinics };
   },
 });
 
 // form title, form language, form description, is editable checkbox, is snapshot checkbox, (inputs custom component)m add form input buttoms
 
 function RouteComponent() {
-  const { form: initialForm, currentUser } = Route.useLoaderData() as {
-    form: EventForm.EncodedT | null;
-    currentUser: User.EncodedT | null;
-  };
+  const { form: initialForm, clinics } = Route.useLoaderData();
   console.log({ initialForm });
   const navigate = Route.useNavigate();
   const formId = Route.useParams()._splat;
@@ -220,6 +221,11 @@ function RouteComponent() {
       return field;
     });
 
+    console.log(formState.form_fields);
+
+    // Ensure all field options have IDs for translation keying
+    formState.form_fields = EventForm.ensureOptionIds(formState.form_fields);
+
     const updateFormId = (() => {
       if (typeof formId === "string" && isValidUUID(formId)) {
         return formId;
@@ -309,6 +315,26 @@ function RouteComponent() {
                 })
               }
             />
+            <TranslationBadges
+              primaryLanguage={formState.language}
+              translations={
+                EventForm.getFieldTranslation(
+                  formState.translations,
+                  EventForm.FORM_NAME_FIELD_ID,
+                )?.name ?? ({} as Language.TranslationObject)
+              }
+              onTranslationChange={(lang, value) =>
+                eventFormStore.send({
+                  type: "set-translation",
+                  payload: {
+                    fieldId: EventForm.FORM_NAME_FIELD_ID,
+                    lang,
+                    key: "name",
+                    value,
+                  },
+                })
+              }
+            />
             <SelectInput
               label="Form Language"
               className="w-full"
@@ -341,6 +367,27 @@ function RouteComponent() {
                 })
               }
             />
+            <TranslationBadges
+              primaryLanguage={formState.language}
+              translations={
+                EventForm.getFieldTranslation(
+                  formState.translations,
+                  EventForm.FORM_DESCRIPTION_FIELD_ID,
+                )?.name ?? ({} as Language.TranslationObject)
+              }
+              onTranslationChange={(lang, value) =>
+                eventFormStore.send({
+                  type: "set-translation",
+                  payload: {
+                    fieldId: EventForm.FORM_DESCRIPTION_FIELD_ID,
+                    lang,
+                    key: "name",
+                    value,
+                  },
+                })
+              }
+              inputType="textarea"
+            />
             <Checkbox
               label="Is Editable"
               name="is_editable"
@@ -359,6 +406,28 @@ function RouteComponent() {
                 eventFormStore.send({ type: "toggle-form-snapshot" })
               }
             />
+            {clinics.length > 0 && (
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Clinics</label>
+                <MultiSelect
+                  options={clinics.map((c) => ({
+                    label: c.name,
+                    value: c.id,
+                  }))}
+                  defaultValue={formState.clinic_ids ?? []}
+                  onValueChange={(values) =>
+                    eventFormStore.send({
+                      type: "set-clinic-ids",
+                      payload: values,
+                    })
+                  }
+                  placeholder="All Clinics (no restriction)"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to make the form available to all clinics.
+                </p>
+              </div>
+            )}
             <Separator className="my-6" />
             <InputsConfigurationComponent
               fields={formState.form_fields as any}
@@ -367,6 +436,20 @@ function RouteComponent() {
               onFieldOptionChange={handleFieldOptionChange}
               onFieldUnitChange={handleFieldUnitChange}
               onReorder={handleFieldsReorder}
+              translations={formState.translations}
+              primaryLanguage={formState.language}
+              onTranslationChange={(fieldId, lang, key, value) =>
+                eventFormStore.send({
+                  type: "set-translation",
+                  payload: { fieldId, lang, key, value },
+                })
+              }
+              onOptionTranslationChange={(fieldId, optionId, lang, value) =>
+                eventFormStore.send({
+                  type: "set-option-translation",
+                  payload: { fieldId, optionId, lang, value },
+                })
+              }
             />
             <Separator className="my-6" />
 
@@ -473,6 +556,32 @@ function RouteComponent() {
                       required={field.required}
                       multi={(field as any).multi}
                     />
+                  </div>
+                );
+              case "text":
+                return (
+                  <div key={field.id}>
+                    <p
+                      className={
+                        field.size === "xxl"
+                          ? "text-3xl font-bold"
+                          : field.size === "xl"
+                            ? "text-2xl font-semibold"
+                            : field.size === "lg"
+                              ? "text-xl font-medium"
+                              : field.size === "sm"
+                                ? "text-sm"
+                                : "text-base"
+                      }
+                    >
+                      {field.content || "Text Block (empty)"}
+                    </p>
+                  </div>
+                );
+              case "separator":
+                return (
+                  <div key={field.id}>
+                    <Separator className="my-4" />
                   </div>
                 );
               default:
@@ -660,6 +769,36 @@ const ComponentRegistry = [
       label: "Diagnosis",
       icon: <LucideStethoscope />,
       //   render: FreeTextInput,
+    },
+  ),
+  // Text Display Block
+  createComponent(
+    () =>
+      new EventForm.TextDisplayField2({
+        id: nanoid(),
+        name: "Text Block",
+        description: "",
+        required: false,
+        content: "",
+        size: "md",
+      }),
+    {
+      label: "Text Block",
+      icon: <LucideType />,
+    },
+  ),
+  // Separator Line
+  createComponent(
+    () =>
+      new EventForm.SeparatorField2({
+        id: nanoid(),
+        name: "Separator",
+        description: "",
+        required: false,
+      }),
+    {
+      label: "Separator",
+      icon: <LucideMinus />,
     },
   ),
 ];

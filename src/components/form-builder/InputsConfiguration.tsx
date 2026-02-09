@@ -26,6 +26,8 @@ import uniq from "lodash/uniq";
 import If from "@/components/if";
 import EventForm from "@/models/event-form";
 import { Textarea } from "../ui/textarea";
+import { SelectInput } from "@/components/select-input";
+import { FieldTranslationPanel } from "@/components/form-builder/FieldTranslationPanel";
 
 let YesNoOptions: { value: string; label: string }[] = [
   { value: "yes", label: "Yes" },
@@ -64,6 +66,20 @@ type InputConfigProps = {
     units: EventForm.DoseUnit[] | false,
   ) => void;
   onRemoveField: (fieldId: string) => void;
+  translations?: EventForm.FieldTranslation[];
+  primaryLanguage?: string;
+  onTranslationChange?: (
+    fieldId: string,
+    lang: string,
+    key: "name" | "description",
+    value: string,
+  ) => void;
+  onOptionTranslationChange?: (
+    fieldId: string,
+    optionId: string,
+    lang: string,
+    value: string,
+  ) => void;
 };
 
 export function InputsConfiguration({
@@ -72,6 +88,10 @@ export function InputsConfiguration({
   onFieldOptionChange,
   onFieldUnitChange,
   onRemoveField,
+  translations = [],
+  primaryLanguage = "en",
+  onTranslationChange,
+  onOptionTranslationChange,
 }: InputConfigProps) {
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -120,6 +140,91 @@ export function InputsConfiguration({
               }
               return null;
             })();
+            // Separator: minimal config - just a label and remove button
+            if (field.fieldType === "separator") {
+              return (
+                <SortableItem id={field.id} key={field.id}>
+                  <div className="space-y-2 bg-muted/50 p-4 rounded-lg border">
+                    <h3 className="text-lg font-bold">Separator Line</h3>
+                    <div className="pt-2">
+                      <Button
+                        onClick={() => onRemoveField(field.id)}
+                        variant="outline"
+                        color="red"
+                        type="button"
+                      >
+                        <LucideTrash size="1rem" />
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                </SortableItem>
+              );
+            }
+
+            // Text Display Block: content + size, no name/description/required
+            if (field.fieldType === "text") {
+              return (
+                <SortableItem id={field.id} key={field.id}>
+                  <div className="space-y-4 bg-muted/50 p-4 rounded-lg border">
+                    <div className="w-full space-y-2">
+                      <h3 className="text-lg font-bold">Text Block</h3>
+                      <Textarea
+                        rows={3}
+                        value={field.content ?? ""}
+                        onChange={(e) =>
+                          onFieldChange(
+                            field.id,
+                            "content",
+                            e.currentTarget.value,
+                          )
+                        }
+                        label="Text Content"
+                        placeholder="Enter the text to display"
+                      />
+                      <SelectInput
+                        label="Text Size"
+                        value={field.size ?? "md"}
+                        onChange={(value) =>
+                          value && onFieldChange(field.id, "size", value)
+                        }
+                        data={[
+                          { value: "xxl", label: "XXL" },
+                          { value: "xl", label: "XL" },
+                          { value: "lg", label: "Large" },
+                          { value: "md", label: "Medium" },
+                          { value: "sm", label: "Small" },
+                        ]}
+                      />
+                      {onTranslationChange && onOptionTranslationChange && (
+                        <FieldTranslationPanel
+                          field={field}
+                          primaryLanguage={primaryLanguage}
+                          translation={EventForm.getFieldTranslation(
+                            translations,
+                            field.id,
+                          )}
+                          onTranslationChange={onTranslationChange}
+                          onOptionTranslationChange={onOptionTranslationChange}
+                        />
+                      )}
+                      <div className="pt-4">
+                        <Button
+                          onClick={() => onRemoveField(field.id)}
+                          variant="outline"
+                          color="red"
+                          type="button"
+                        >
+                          <LucideTrash size="1rem" />
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </SortableItem>
+              );
+            }
+
             return (
               <SortableItem id={field.id} key={field.id}>
                 <div className="space-y-4 bg-muted/50 p-4 rounded-lg border">
@@ -236,6 +341,19 @@ export function InputsConfiguration({
                       checked={field.required}
                       label="Required Field"
                     />
+
+                    {onTranslationChange && onOptionTranslationChange && (
+                      <FieldTranslationPanel
+                        field={field}
+                        primaryLanguage={primaryLanguage}
+                        translation={EventForm.getFieldTranslation(
+                          translations,
+                          field.id,
+                        )}
+                        onTranslationChange={onTranslationChange}
+                        onOptionTranslationChange={onOptionTranslationChange}
+                      />
+                    )}
 
                     <div className="pt-4">
                       <Button

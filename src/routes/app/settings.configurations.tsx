@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { SelectInput } from "@/components/select-input";
 import {
   Dialog,
   DialogContent,
@@ -99,6 +100,37 @@ function RouteComponent() {
       AppConfig.Namespaces.AUTH,
       "disable-mobile-permissions-checking",
     ) || false;
+
+  const operationMode =
+    AppConfig.Utils.getValue<string>(
+      config,
+      AppConfig.Namespaces.SYSTEM,
+      "operation_mode",
+    ) || "user_choice";
+
+  const handleOperationModeChange = (value: string | null) => {
+    if (!currentUser || !value) return;
+
+    saveConfiguration({
+      data: {
+        namespace: AppConfig.Namespaces.SYSTEM,
+        key: "operation_mode",
+        displayName: "Mobile App Operation Mode",
+        value,
+        dataType: "string",
+        updatedBy: currentUser.id,
+      },
+    })
+      .then(() => {
+        toast.success("Operation mode updated successfully");
+      })
+      .catch((error) => {
+        toast.error(`Failed to update operation mode: ${error.message}`);
+      })
+      .finally(() => {
+        router.invalidate({ sync: true });
+      });
+  };
 
   const handleSaveOrganizationName = () => {
     console.log("handleSaveOrganizationName");
@@ -229,6 +261,24 @@ function RouteComponent() {
             color="destructive"
             checked={isMobilePermissionsOverridden}
             onCheckedChange={handleToggleOverrideMobilePermissions}
+          />
+        </div>
+
+        <div className="flex flex-col gap-4 pt-4 border-t">
+          <h2 className="text-lg font-semibold">Mobile Configurations</h2>
+
+          <SelectInput
+            label="Operation Mode"
+            description="Controls whether the mobile app operates in online, offline, or lets the user choose"
+            value={operationMode}
+            onChange={handleOperationModeChange}
+            allowDeselect={false}
+            className="lg:w-md"
+            data={[
+              { value: "online", label: "Online" },
+              { value: "offline", label: "Offline" },
+              { value: "user_choice", label: "User Choice" },
+            ]}
           />
         </div>
       </div>

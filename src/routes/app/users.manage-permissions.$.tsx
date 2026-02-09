@@ -53,6 +53,12 @@ const addClinicPermissions = createServerFn({ method: "POST" })
       can_edit_records: false,
       can_delete_records: false,
       is_clinic_admin: false,
+      can_edit_other_provider_event: false,
+      can_download_patient_reports: false,
+      can_prescribe_medications: false,
+      can_dispense_medications: false,
+      can_delete_patient_visits: false,
+      can_delete_patient_records: false,
     };
 
     return await UserClinicPermissions.API.upsert(newPermission, currentUserId);
@@ -63,14 +69,7 @@ const togglePermission = createServerFn({ method: "POST" })
     (data: {
       userId: string;
       clinicId: string;
-      permission: keyof Pick<
-        UserClinicPermissions.T,
-        | "can_register_patients"
-        | "can_view_history"
-        | "can_edit_records"
-        | "can_delete_records"
-        | "is_clinic_admin"
-      >;
+      permission: UserClinicPermissions.UserPermissionsT;
       value: boolean;
       currentUserId: string;
     }) => data,
@@ -166,14 +165,7 @@ function RouteComponent() {
 
   const handlePermissionChange = async (
     clinicId: string,
-    permission: keyof Pick<
-      UserClinicPermissions.T,
-      | "can_register_patients"
-      | "can_view_history"
-      | "can_edit_records"
-      | "can_delete_records"
-      | "is_clinic_admin"
-    >,
+    permission: UserClinicPermissions.UserPermissionsT,
     checked: boolean,
   ) => {
     const permissionKey = `${clinicId}-${permission}`;
@@ -236,6 +228,12 @@ function RouteComponent() {
         can_edit_records: false,
         can_delete_records: false,
         is_clinic_admin: false,
+        can_edit_other_provider_event: false,
+        can_download_patient_reports: false,
+        can_prescribe_medications: false,
+        can_dispense_medications: false,
+        can_delete_patient_visits: false,
+        can_delete_patient_records: false,
         created_by: currentUserId,
         last_modified_by: currentUserId,
         created_at: new Date(),
@@ -306,12 +304,22 @@ function RouteComponent() {
                 <TableHead className="text-center">Edit Records</TableHead>
                 <TableHead className="text-center">Delete Records</TableHead>
                 <TableHead className="text-center">Clinic Admin</TableHead>
+                <TableHead className="text-center">
+                  Edit Provider Event
+                </TableHead>
+                <TableHead className="text-center">Download Reports</TableHead>
+                <TableHead className="text-center">Prescribe Meds</TableHead>
+                <TableHead className="text-center">Dispense Meds</TableHead>
+                <TableHead className="text-center">Delete Visits</TableHead>
+                <TableHead className="text-center">
+                  Delete Patient Records
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {permissions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={12} className="text-center py-8">
                     No clinic permissions assigned
                   </TableCell>
                 </TableRow>
@@ -401,6 +409,102 @@ function RouteComponent() {
                             handlePermissionChange(
                               permission.clinic_id,
                               "is_clinic_admin",
+                              !!checked,
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={permission.can_edit_other_provider_event}
+                          disabled={
+                            updatingPermission ===
+                            `${permission.clinic_id}-can_edit_other_provider_event`
+                          }
+                          onCheckedChange={(checked) =>
+                            handlePermissionChange(
+                              permission.clinic_id,
+                              "can_edit_other_provider_event",
+                              !!checked,
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={permission.can_download_patient_reports}
+                          disabled={
+                            updatingPermission ===
+                            `${permission.clinic_id}-can_download_patient_reports`
+                          }
+                          onCheckedChange={(checked) =>
+                            handlePermissionChange(
+                              permission.clinic_id,
+                              "can_download_patient_reports",
+                              !!checked,
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={permission.can_prescribe_medications}
+                          disabled={
+                            updatingPermission ===
+                            `${permission.clinic_id}-can_prescribe_medications`
+                          }
+                          onCheckedChange={(checked) =>
+                            handlePermissionChange(
+                              permission.clinic_id,
+                              "can_prescribe_medications",
+                              !!checked,
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={permission.can_dispense_medications}
+                          disabled={
+                            updatingPermission ===
+                            `${permission.clinic_id}-can_dispense_medications`
+                          }
+                          onCheckedChange={(checked) =>
+                            handlePermissionChange(
+                              permission.clinic_id,
+                              "can_dispense_medications",
+                              !!checked,
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={permission.can_delete_patient_visits}
+                          disabled={
+                            updatingPermission ===
+                            `${permission.clinic_id}-can_delete_patient_visits`
+                          }
+                          onCheckedChange={(checked) =>
+                            handlePermissionChange(
+                              permission.clinic_id,
+                              "can_delete_patient_visits",
+                              !!checked,
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Checkbox
+                          checked={permission.can_delete_patient_records}
+                          disabled={
+                            updatingPermission ===
+                            `${permission.clinic_id}-can_delete_patient_records`
+                          }
+                          onCheckedChange={(checked) =>
+                            handlePermissionChange(
+                              permission.clinic_id,
+                              "can_delete_patient_records",
                               !!checked,
                             )
                           }

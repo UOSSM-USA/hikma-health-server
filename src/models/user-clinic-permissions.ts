@@ -24,6 +24,12 @@ namespace UserClinicPermissions {
     can_edit_records: Schema.Boolean,
     can_delete_records: Schema.Boolean,
     is_clinic_admin: Schema.Boolean,
+    can_edit_other_provider_event: Schema.Boolean,
+    can_download_patient_reports: Schema.Boolean,
+    can_prescribe_medications: Schema.Boolean,
+    can_dispense_medications: Schema.Boolean,
+    can_delete_patient_visits: Schema.Boolean,
+    can_delete_patient_records: Schema.Boolean,
     created_by: Schema.NullOr(Schema.String),
     last_modified_by: Schema.NullOr(Schema.String),
     created_at: Schema.DateFromSelf,
@@ -37,6 +43,14 @@ namespace UserClinicPermissions {
     CAN_EDIT_RECORDS: Schema.Literal("can_edit_records"),
     CAN_DELETE_RECORDS: Schema.Literal("can_delete_records"),
     IS_CLINIC_ADMIN: Schema.Literal("is_clinic_admin"),
+    CAN_EDIT_PROVIDER_EVENT: Schema.Literal("can_edit_other_provider_event"),
+    CAN_DOWNLOAD_PATIENT_REPORTS: Schema.Literal(
+      "can_download_patient_reports",
+    ),
+    CAN_PRESCRIBE_MEDICATIONS: Schema.Literal("can_prescribe_medications"),
+    CAN_DISPENSE_MEDICATIONS: Schema.Literal("can_dispense_medications"),
+    CAN_DELETE_PATIENT_VISITS: Schema.Literal("can_delete_patient_visits"),
+    CAN_DELETE_PATIENT_RECORDS: Schema.Literal("can_delete_patient_records"),
   });
 
   export const userPermissions = {
@@ -45,6 +59,12 @@ namespace UserClinicPermissions {
     CAN_EDIT_RECORDS: "can_edit_records" as const,
     CAN_DELETE_RECORDS: "can_delete_records" as const,
     IS_CLINIC_ADMIN: "is_clinic_admin" as const,
+    CAN_EDIT_PROVIDER_EVENT: "can_edit_other_provider_event" as const,
+    CAN_DOWNLOAD_PATIENT_REPORTS: "can_download_patient_reports" as const,
+    CAN_PRESCRIBE_MEDICATIONS: "can_prescribe_medications" as const,
+    CAN_DISPENSE_MEDICATIONS: "can_dispense_medications" as const,
+    CAN_DELETE_PATIENT_VISITS: "can_delete_patient_visits" as const,
+    CAN_DELETE_PATIENT_RECORDS: "can_delete_patient_records" as const,
   } satisfies Record<
     string,
     Schema.Schema.Type<typeof UserPermissions>[keyof Schema.Schema.Type<
@@ -63,6 +83,12 @@ namespace UserClinicPermissions {
       [userPermissions.CAN_EDIT_RECORDS]: true,
       [userPermissions.CAN_DELETE_RECORDS]: true,
       [userPermissions.IS_CLINIC_ADMIN]: true,
+      [userPermissions.CAN_EDIT_PROVIDER_EVENT]: true,
+      [userPermissions.CAN_DOWNLOAD_PATIENT_REPORTS]: true,
+      [userPermissions.CAN_PRESCRIBE_MEDICATIONS]: true,
+      [userPermissions.CAN_DISPENSE_MEDICATIONS]: true,
+      [userPermissions.CAN_DELETE_PATIENT_VISITS]: true,
+      [userPermissions.CAN_DELETE_PATIENT_RECORDS]: true,
     },
     admin: {
       [userPermissions.CAN_REGISTER_PATIENTS]: true,
@@ -70,6 +96,12 @@ namespace UserClinicPermissions {
       [userPermissions.CAN_EDIT_RECORDS]: true,
       [userPermissions.CAN_DELETE_RECORDS]: true,
       [userPermissions.IS_CLINIC_ADMIN]: true,
+      [userPermissions.CAN_EDIT_PROVIDER_EVENT]: true,
+      [userPermissions.CAN_DOWNLOAD_PATIENT_REPORTS]: true,
+      [userPermissions.CAN_PRESCRIBE_MEDICATIONS]: true,
+      [userPermissions.CAN_DISPENSE_MEDICATIONS]: true,
+      [userPermissions.CAN_DELETE_PATIENT_VISITS]: true,
+      [userPermissions.CAN_DELETE_PATIENT_RECORDS]: true,
     },
     provider: {
       [userPermissions.CAN_REGISTER_PATIENTS]: true,
@@ -77,6 +109,12 @@ namespace UserClinicPermissions {
       [userPermissions.CAN_EDIT_RECORDS]: true,
       [userPermissions.CAN_DELETE_RECORDS]: false,
       [userPermissions.IS_CLINIC_ADMIN]: false,
+      [userPermissions.CAN_EDIT_PROVIDER_EVENT]: false,
+      [userPermissions.CAN_DOWNLOAD_PATIENT_REPORTS]: true,
+      [userPermissions.CAN_PRESCRIBE_MEDICATIONS]: true,
+      [userPermissions.CAN_DISPENSE_MEDICATIONS]: false,
+      [userPermissions.CAN_DELETE_PATIENT_VISITS]: false,
+      [userPermissions.CAN_DELETE_PATIENT_RECORDS]: false,
     },
     registrar: {
       [userPermissions.CAN_REGISTER_PATIENTS]: true,
@@ -84,6 +122,12 @@ namespace UserClinicPermissions {
       [userPermissions.CAN_EDIT_RECORDS]: false,
       [userPermissions.CAN_DELETE_RECORDS]: false,
       [userPermissions.IS_CLINIC_ADMIN]: false,
+      [userPermissions.CAN_EDIT_PROVIDER_EVENT]: false,
+      [userPermissions.CAN_DOWNLOAD_PATIENT_REPORTS]: false,
+      [userPermissions.CAN_PRESCRIBE_MEDICATIONS]: false,
+      [userPermissions.CAN_DISPENSE_MEDICATIONS]: false,
+      [userPermissions.CAN_DELETE_PATIENT_VISITS]: false,
+      [userPermissions.CAN_DELETE_PATIENT_RECORDS]: false,
     },
   };
 
@@ -103,6 +147,12 @@ namespace UserClinicPermissions {
     | "can_edit_records"
     | "can_delete_records"
     | "is_clinic_admin"
+    | "can_edit_other_provider_event"
+    | "can_download_patient_reports"
+    | "can_prescribe_medications"
+    | "can_dispense_medications"
+    | "can_delete_patient_visits"
+    | "can_delete_patient_records"
   >;
 
   export const fromDbEntry = (
@@ -139,6 +189,12 @@ namespace UserClinicPermissions {
       can_edit_records: "can_edit_records",
       can_delete_records: "can_delete_records",
       is_clinic_admin: "is_clinic_admin",
+      can_edit_other_provider_event: "can_edit_other_provider_event",
+      can_download_patient_reports: "can_download_patient_reports",
+      can_prescribe_medications: "can_prescribe_medications",
+      can_dispense_medications: "can_dispense_medications",
+      can_delete_patient_visits: "can_delete_patient_visits",
+      can_delete_patient_records: "can_delete_patient_records",
       created_by: "created_by",
       last_modified_by: "last_modified_by",
       created_at: "created_at",
@@ -153,6 +209,12 @@ namespace UserClinicPermissions {
       can_edit_records: Generated<boolean>;
       can_delete_records: Generated<boolean>;
       is_clinic_admin: Generated<boolean>;
+      can_edit_other_provider_event: Generated<boolean>;
+      can_download_patient_reports: Generated<boolean>;
+      can_prescribe_medications: Generated<boolean>;
+      can_dispense_medications: Generated<boolean>;
+      can_delete_patient_visits: Generated<boolean>;
+      can_delete_patient_records: Generated<boolean>;
       created_by: string | null;
       last_modified_by: string | null;
       // created_at: Generated<ColumnType<Date, Date | string | undefined, never>>;
@@ -334,6 +396,14 @@ namespace UserClinicPermissions {
             can_edit_records: permissions.can_edit_records,
             can_delete_records: permissions.can_delete_records,
             is_clinic_admin: permissions.is_clinic_admin,
+            can_edit_other_provider_event:
+              permissions.can_edit_other_provider_event,
+            can_download_patient_reports:
+              permissions.can_download_patient_reports,
+            can_prescribe_medications: permissions.can_prescribe_medications,
+            can_dispense_medications: permissions.can_dispense_medications,
+            can_delete_patient_visits: permissions.can_delete_patient_visits,
+            can_delete_patient_records: permissions.can_delete_patient_records,
             created_by: currentUserId,
             last_modified_by: currentUserId,
             created_at: sql`now()::timestamp with time zone`,
@@ -347,6 +417,18 @@ namespace UserClinicPermissions {
               can_edit_records: (eb) => eb.ref("excluded.can_edit_records"),
               can_delete_records: (eb) => eb.ref("excluded.can_delete_records"),
               is_clinic_admin: (eb) => eb.ref("excluded.is_clinic_admin"),
+              can_edit_other_provider_event: (eb) =>
+                eb.ref("excluded.can_edit_other_provider_event"),
+              can_download_patient_reports: (eb) =>
+                eb.ref("excluded.can_download_patient_reports"),
+              can_prescribe_medications: (eb) =>
+                eb.ref("excluded.can_prescribe_medications"),
+              can_dispense_medications: (eb) =>
+                eb.ref("excluded.can_dispense_medications"),
+              can_delete_patient_visits: (eb) =>
+                eb.ref("excluded.can_delete_patient_visits"),
+              can_delete_patient_records: (eb) =>
+                eb.ref("excluded.can_delete_patient_records"),
               last_modified_by: currentUserId,
               updated_at: sql`now()::timestamp with time zone`,
             }),
@@ -383,6 +465,12 @@ namespace UserClinicPermissions {
                 can_edit_records: true,
                 can_delete_records: true,
                 is_clinic_admin: true,
+                can_edit_other_provider_event: true,
+                can_download_patient_reports: true,
+                can_prescribe_medications: true,
+                can_dispense_medications: true,
+                can_delete_patient_visits: true,
+                can_delete_patient_records: true,
                 last_modified_by: currentUserId,
                 updated_at: sql`now()::timestamp with time zone`,
               })
@@ -426,6 +514,12 @@ namespace UserClinicPermissions {
           | "can_edit_records"
           | "can_delete_records"
           | "is_clinic_admin"
+          | "can_edit_other_provider_event"
+          | "can_download_patient_reports"
+          | "can_prescribe_medications"
+          | "can_dispense_medications"
+          | "can_delete_patient_visits"
+          | "can_delete_patient_records"
         >,
       ): Promise<boolean> => {
         const result = await db
@@ -458,6 +552,12 @@ namespace UserClinicPermissions {
           | "can_edit_records"
           | "can_delete_records"
           | "is_clinic_admin"
+          | "can_edit_other_provider_event"
+          | "can_download_patient_reports"
+          | "can_prescribe_medications"
+          | "can_dispense_medications"
+          | "can_delete_patient_visits"
+          | "can_delete_patient_records"
         >,
         value: boolean,
       ): Promise<void> => {

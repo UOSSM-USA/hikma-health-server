@@ -208,6 +208,66 @@ namespace Visit {
     });
 
     /**
+     * Get all non-deleted visits for a patient with pagination
+     * @param options - patientId, limit, offset, includeCount
+     * @returns Paginated visit list
+     */
+    export const getByPatientId = serverOnly(
+      async (options: {
+        patientId: string;
+        limit?: number;
+        offset?: number;
+        includeCount?: boolean;
+      }): Promise<{
+        items: Visit.EncodedT[];
+        pagination: {
+          offset: number;
+          limit: number;
+          total: number;
+          hasMore: boolean;
+        };
+      }> => {
+        const {
+          patientId,
+          limit = 50,
+          offset = 0,
+          includeCount = false,
+        } = options;
+
+        const items = await db
+          .selectFrom(Table.name)
+          .selectAll()
+          .where("patient_id", "=", patientId)
+          .where("is_deleted", "=", false)
+          .orderBy("created_at", "desc")
+          .limit(limit)
+          .offset(offset)
+          .execute();
+
+        let total = 0;
+        if (includeCount) {
+          const countResult = await db
+            .selectFrom(Table.name)
+            .select(db.fn.countAll().as("count"))
+            .where("patient_id", "=", patientId)
+            .where("is_deleted", "=", false)
+            .executeTakeFirst();
+          total = Number(countResult?.count ?? 0);
+        }
+
+        return {
+          items: items as unknown as Visit.EncodedT[],
+          pagination: {
+            offset,
+            limit,
+            total,
+            hasMore: items.length >= limit,
+          },
+        };
+      },
+    );
+
+    /**
      * Soft Delete a visit
      * @param id - The id of the visit to delete
      *
