@@ -27,7 +27,7 @@ export const getDatabaseConfig = (): Record<string, any> => {
 
     if (dbProto !== "postgresql:") {
       throw new Error(
-        "Using a non postgresql database. HH only supports PostgreSQL."
+        "Using a non postgresql database. HH only supports PostgreSQL.",
       );
     }
 
@@ -45,7 +45,7 @@ export const getDatabaseConfig = (): Record<string, any> => {
       databaseUrlAzure.split(" ").map((pair) => {
         const [key, value] = pair.split("=");
         return [key, value];
-      })
+      }),
     );
 
     pgUser = connStrParams.user;
@@ -54,16 +54,10 @@ export const getDatabaseConfig = (): Record<string, any> => {
     pgDb = connStrParams.dbname;
   } else {
     // Use individual environment variables
-    pgHost = process.env.DB_HOST!;
-    pgDb = process.env.DB_NAME!;
-    pgUser = process.env.DB_USER!;
-    pgPassword = process.env.DB_PASSWORD!;
-
-    if (!pgHost || !pgDb || !pgUser || !pgPassword) {
-      throw new Error(
-        "Missing database configuration. Please set DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD environment variables."
-      );
-    }
+    pgHost = process.env.DB_HOST || "localhost";
+    pgDb = process.env.DB_NAME || "hikma_dev";
+    pgUser = process.env.DB_USER || "postgres";
+    pgPassword = process.env.DB_PASSWORD || "postgres";
   }
 
   return {
