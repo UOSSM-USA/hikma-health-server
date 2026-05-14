@@ -34,6 +34,9 @@ importers:
       rust-just:
         specifier: ^1.47.1
         version: 1.49.0
+      smol-toml:
+        specifier: ^1.6.1
+        version: 1.6.1
       typescript:
         specifier: ^6.0.2
         version: 6.0.3
@@ -970,6 +973,12 @@ importers:
       react-dom:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
+
+  packages/jsonlogic:
+    dependencies:
+      rescript:
+        specifier: 12.2.0
+        version: 12.2.0
 
   packages/typescript-config: {}
 
@@ -11423,6 +11432,10 @@ packages:
   slugify@1.6.9:
     resolution: {integrity: sha512-vZ7rfeehZui7wQs438JXBckYLkIIdfHOXsaVEUMyS5fHo1483l1bMdo0EDSWYclY0yZKFOipDy4KHuKs6ssvdg==}
     engines: {node: '>=8.0.0'}
+
+  smol-toml@1.6.1:
+    resolution: {integrity: sha512-dWUG8F5sIIARXih1DTaQAX4SsiTXhInKf1buxdY9DIg4ZYPZK5nGM1VRIYmEbDbsHt7USo99xSLFu5Q1IqTmsg==}
+    engines: {node: '>= 18'}
 
   solid-js@1.9.12:
     resolution: {integrity: sha512-QzKaSJq2/iDrWR1As6MHZQ8fQkdOBf8GReYb7L5iKwMGceg7HxDcaOHk0at66tNgn9U2U7dXo8ZZpLIAmGMzgw==}
@@ -24789,6 +24802,8 @@ snapshots:
       is-fullwidth-code-point: 2.0.0
 
   slugify@1.6.9: {}
+
+  smol-toml@1.6.1: {}
 
   solid-js@1.9.12:
     dependencies:

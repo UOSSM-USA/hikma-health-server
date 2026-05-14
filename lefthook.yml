@@ -1,7 +1,24 @@
-# EXAMPLE USAGE:
+# Lefthook configuration. Hooks are opt-in per clone — run once:
 #
-#   Refer for explanation to following link:
-#   https://lefthook.dev/configuration/
+#   pnpm exec lefthook install
+#
+# CI is the authoritative enforcement; these local hooks are a courtesy that
+# catches problems before they reach a PR.
+# See https://lefthook.dev/configuration/ for the schema.
+
+pre-commit:
+  jobs:
+    - name: vendor-check
+      # Only fires when something under vendor/ or the vendor tool itself is
+      # staged. Other commits skip the job. vendor-check verifies that every
+      # mode = "sync" package in vendor/vendor.toml still matches its
+      # recorded tree_sha — drift means an accidental local modification.
+      glob:
+        - "vendor/**"
+        - "scripts/vendor/**"
+      run: pnpm exec just vendor-check
+
+# ---- Examples (kept for reference; uncomment to extend) ----
 #
 # pre-push:
 #   jobs:
@@ -9,34 +26,10 @@
 #       tags:
 #         - frontend
 #         - security
-#       run: yarn audit
-#
-#     - name: gems audit
-#       tags:
-#         - backend
-#         - security
-#       run: bundle audit
+#       run: pnpm audit
 #
 # pre-commit:
 #   parallel: true
 #   jobs:
-#     - run: yarn eslint {staged_files}
+#     - run: pnpm exec oxlint {staged_files}
 #       glob: "*.{js,ts,jsx,tsx}"
-#
-#     - name: rubocop
-#       glob: "*.rb"
-#       exclude:
-#         - config/application.rb
-#         - config/routes.rb
-#       run: bundle exec rubocop --force-exclusion -- {all_files}
-#
-#     - name: govet
-#       files: git ls-files -m
-#       glob: "*.go"
-#       run: go vet -- {files}
-#
-#     - script: "hello.js"
-#       runner: node
-#
-#     - script: "hello.go"
-#       runner: go run

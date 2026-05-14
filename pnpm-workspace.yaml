@@ -2,4 +2,6 @@ packages:
   - "apps/*"
   - "packages/*"
   - "packages/utils/*"
+  - "vendor/*"
+  - "vendor/@*/*"
   - database

@@ -59,6 +59,32 @@ jobs:
         env:
           TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
 
+  # Verifies vendor/ tracks vendor/vendor.toml — every mode = "sync" package
+  # still matches its recorded tree_sha. See vendor/README.md for the policy.
+  # Cheap to run on every PR; no paths filter so ff-v3's gating stays simple.
+  vendor-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify vendor catalog
+        run: pnpm exec just vendor-check
+
       # TODO: Add lint tests
       # TODO: Add audits with pnpm audit (maybe using snyk?)
       # TODO: Add a check for code coverage to ensure coverage meets a minimum threshold
@@ -116,7 +142,7 @@ jobs:
   ff-v3:
     # Only on push (not PR). Fork PRs would have a read-only token anyway, but
     # this is the explicit, defense-in-depth gate.
-    needs: [test, test-tauri]
+    needs: [test, test-tauri, vendor-check]
     # `test-tauri` skips when no src-tauri/** changes — treat skip as green.
     # `always()` is required so this job runs even when `test-tauri` is skipped
     # (otherwise GitHub propagates the skip to dependents).
@@ -125,6 +151,7 @@ jobs:
       github.event_name == 'push' &&
       github.ref == 'refs/heads/next' &&
       needs.test.result == 'success' &&
+      needs.vendor-check.result == 'success' &&
       (needs.test-tauri.result == 'success' || needs.test-tauri.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:

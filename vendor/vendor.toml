@@ -1,0 +1,36 @@
+# vendor.toml — single source of truth for vendored third-party packages.
+# See ./README.md for the full policy, lifecycle, and rationale.
+#
+# Each [[package]] entry below describes one vendored dependency under vendor/.
+# All fields are required unless explicitly noted.
+#
+# Required for every entry:
+#   name           directory path under vendor/ (matches the folder layout).
+#                  plain slug "foo-bar" → vendor/foo-bar/
+#                  npm-scoped  "@scope/foo" → vendor/@scope/foo/
+#   url            upstream git URL the package was vendored from
+#   ref            tag, branch, or commit currently synced from upstream
+#   mode           "sync"   — kept current with upstream, no local edits allowed
+#                  "frozen" — skipped by vendor-update; local edits permitted
+#   last_synced    ISO-8601 date the ref was fetched (YYYY-MM-DD)
+#   tree_sha       git tree SHA of vendor/<name>/ at last sync. Set by
+#                  vendor-add/vendor-update; verified by vendor-check. Do NOT
+#                  edit by hand — drift between this and the actual tree is
+#                  exactly what vendor-check is designed to catch.
+#
+# Required ONLY when mode = "frozen":
+#   frozen_reason  short string explaining why local changes exist
+#   frozen_at      ISO-8601 date the freeze began (YYYY-MM-DD)
+#
+# There is intentionally no default mode. `just vendor-check` fails closed if
+# `mode` is missing — adding a vendor without choosing means CI breaks.
+#
+# Example (entries are appended automatically by `just vendor-add`):
+#
+# [[package]]
+# name = "example"
+# url = "https://github.com/upstream/example"
+# ref = "v1.2.3"
+# mode = "sync"
+# last_synced = "2026-05-17"
+# tree_sha = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
