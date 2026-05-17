@@ -1,0 +1,13 @@
+.DS_Store
+/node_modules/
+/lib/
+/.tsimp/
+# tsc emits .res.d.mts byproducts alongside .res.mjs files during types:build
+# (allowJs follows the .gen.ts → .res.mjs import chain). The types:build script
+# deletes them after emit; this guard catches partial / interrupted builds.
+src/*.res.d.mts
+.bsb.lock
+.merlin
+
+*.local.md
+*.local.notes.md

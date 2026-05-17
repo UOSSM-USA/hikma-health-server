@@ -1,0 +1,58 @@
+{
+  "name": "@nd/jsonlogic",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/JsonLogic.res.mjs",
+  "types": "./src/JsonLogic.gen.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/JsonLogic.gen.d.ts",
+      "import": "./src/JsonLogic.res.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/**/*.res",
+    "src/**/*.resi",
+    "src/**/*.res.mjs",
+    "src/**/*.gen.d.ts",
+    "rescript.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "res:build": "rescript",
+    "res:clean": "rescript clean",
+    "res:dev": "rescript watch",
+    "types:build": "tsc -p tsconfig.types.json && rm -f src/*.res.d.mts && node scripts/fix-dts-imports.mjs",
+    "build": "pnpm res:build && pnpm types:build",
+    "prepack": "pnpm build",
+    "test": "ava",
+    "example:ts": "node --import=tsimp example/eligibility.ts",
+    "example:rs": "pnpm res:build && node example/Eligibility.res.mjs"
+  },
+  "keywords": [
+    "rescript"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@rescript/runtime": "12.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "ava": "^8.0.0",
+    "fast-check": "^4.8.0",
+    "rescript": "12.2.0",
+    "tsimp": "^2.0.12",
+    "typescript": "^6.0.3"
+  },
+  "ava": {
+    "extensions": [
+      "ts"
+    ],
+    "nodeArguments": [
+      "--import=tsimp"
+    ]
+  }
+}

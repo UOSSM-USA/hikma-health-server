@@ -1,0 +1,25 @@
+// Declaration-only build for the published types.
+//
+// Consumers that resolve `@nd/jsonlogic` get the `.d.ts` files generated
+// here, not the `.gen.ts` sources — `.gen.ts` re-exports the `.res.mjs`
+// runtime values with `as any` casts that require `noImplicitAny: false`
+// to type-check, which is not a reasonable ask of downstream code. The
+// `.d.ts` form strips the runtime side and ships only declarations.
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "esnext",
+    "allowJs": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "rootDir": "./src",
+    "outDir": "./src"
+  },
+  "include": ["src/**/*.gen.ts"],
+  // Explicit empty exclude — tsc auto-excludes outDir, which would skip our
+  // own inputs since we co-locate `.d.ts` next to `.gen.ts` in `src/`.
+  "exclude": []
+}
