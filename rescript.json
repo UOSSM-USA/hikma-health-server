@@ -1,0 +1,25 @@
+{
+  "name": "@nd/jsonlogic",
+  "sources": [
+    {
+      "dir": "src",
+      "subdirs": true
+    },
+    {
+      "dir": "example",
+      "type": "dev"
+    }
+  ],
+  "package-specs": {
+    "module": "esmodule",
+    "in-source": true
+  },
+  "gentypeconfig": {
+    "module": "esmodule",
+    "moduleResolution": "nodenext",
+    "generatedFileExtension": ".gen.ts"
+  },
+  "suffix": ".res.mjs",
+  "dependencies": [],
+  "compiler-flags": []
+}
