@@ -182,6 +182,25 @@ start-aiproxy:
     [ -f apps/aiproxy/.env ] && ENV_ARGS="$ENV_ARGS -f apps/aiproxy/.env"
     pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hh-ai-proxy run start
 
+# Server in dev mode — vite's dev server (HMR, source maps) instead of the
+# built .output/. Differences from start-server:
+#   - Skips recovery-permissions (prod hardening; nothing to gain in dev).
+#   - One-shot res:build inline so ReScript sources are importable. For
+#     ReScript HMR, run `pnpm --filter hikma-health-server run res:dev` in
+#     a second terminal alongside this.
+# Migrations still run (idempotent; schema must be current to start).
+# build-utils-js / build-database deps mirror test-server — vite needs the
+# workspace builds present to resolve imports.
+
+dev-server: build-utils-js build-database
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ENV_ARGS="-f .env"
+    [ -f apps/server/.env ] && ENV_ARGS="$ENV_ARGS -f apps/server/.env"
+    pnpm --filter hikma-health-server run res:build
+    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter @hikmahealth/database run migrate-latest
+    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hikma-health-server run dev
+
 # Mobile dev runs — Expo's run:android / run:ios builds the native app, installs
 # on connected device/emulator, and starts Metro. Depends on build-utils-js so
 # .gen.ts files exist before Metro resolves @hikmahealth/js-utils.

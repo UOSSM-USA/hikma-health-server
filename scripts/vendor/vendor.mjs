@@ -125,10 +125,13 @@ function serializeEntry(pkg) {
 
 // Preserve the file header (everything before the first [[package]] block).
 // The header is the schema doc and is user-readable; only entries are tool-owned.
+// The split point must be a real TOML table-array header — i.e., [[package]]
+// at the start of a line (possibly indented). Substrings inside comments like
+// "# Each [[package]] entry ..." don't count.
 function saveCatalog(packages) {
   const existing = readFileSync(TOML_PATH, 'utf8')
-  const firstPkg = existing.indexOf('[[package]]')
-  const header = firstPkg === -1 ? existing : existing.slice(0, firstPkg)
+  const match = existing.match(/^\s*\[\[package\]\]/m)
+  const header = match ? existing.slice(0, match.index) : existing
   const body = packages.map(serializeEntry).join('\n\n')
   const out = body.length > 0 ? `${header.trimEnd()}\n\n${body}\n` : header.trimEnd() + '\n'
   writeFileSync(TOML_PATH, out)
@@ -216,32 +219,44 @@ function cmdCheck() {
   const packages = loadCatalog()
   let problems = 0
 
+  // Materialize the index as a tree object so we can extract the tree SHA at
+  // any path. This compares apples-to-apples against the recorded tree_sha
+  // (both are subtree objects), and reflects what would actually be committed —
+  // which is exactly what the pre-commit hook needs to verify.
+  // Side effect: write-tree adds the tree to the object database. Harmless.
+  let indexRoot
+  try {
+    indexRoot = git(['write-tree'])
+  } catch (e) {
+    fail(`git write-tree failed: ${e.message}`)
+  }
+
   for (const pkg of packages) {
     if (pkg.mode !== 'sync') continue
     const prefix = `vendor/${pkg.name}`
 
-    if (!existsSync(resolve(REPO_ROOT, prefix))) {
-      process.stderr.write(`vendor: ${pkg.name}: ${prefix}/ missing from working tree\n`)
+    let entry
+    try {
+      entry = git(['ls-tree', indexRoot, '--', prefix])
+    } catch (e) {
+      fail(`git ls-tree failed for ${prefix}: ${e.message}`)
+    }
+
+    if (entry.length === 0) {
+      process.stderr.write(`vendor: ${pkg.name}: ${prefix}/ missing from index (deleted but not staged?)\n`)
       problems++
       continue
     }
 
-    // Compare the recorded tree object against the working tree (which
-    // reflects both staged and unstaged changes). This catches drift the
-    // pre-commit hook needs to see before the commit lands.
-    let drift = false
-    try {
-      execFileSync('git', ['diff', '--quiet', pkg.tree_sha, '--', prefix], {
-        cwd: REPO_ROOT,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-    } catch (e) {
-      if (e.status === 1) drift = true
-      else fail(`git diff failed for ${pkg.name}: ${e.message}`)
-    }
+    // ls-tree output: "<mode> <type> <sha>\t<path>"
+    const match = entry.match(/^[0-7]+ tree ([0-9a-f]+)\t/)
+    if (!match) fail(`unexpected ls-tree output for ${prefix}: ${entry}`)
+    const current = match[1]
 
-    if (drift) {
-      process.stderr.write(`vendor: ${pkg.name}: drift from recorded tree_sha ${pkg.tree_sha}\n`)
+    if (current !== pkg.tree_sha) {
+      process.stderr.write(`vendor: ${pkg.name}: drift from recorded tree_sha\n`)
+      process.stderr.write(`  recorded: ${pkg.tree_sha}\n`)
+      process.stderr.write(`  current:  ${current}\n`)
       process.stderr.write(`  if intentional: just vendor-freeze ${pkg.name} '<reason>'\n`)
       problems++
     }

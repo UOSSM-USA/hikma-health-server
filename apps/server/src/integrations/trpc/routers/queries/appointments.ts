@@ -79,7 +79,6 @@ export const appointmentsQueryRouter = createTRPCRouter({
       }),
     )
     .query(async () => {
-      // Phase 3: full implementation
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "appointments.list: not yet implemented",
@@ -108,7 +107,6 @@ export const appointmentsQueryRouter = createTRPCRouter({
       }),
     )
     .query(async () => {
-      // Phase 3: full implementation
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "appointments.search: not yet implemented",

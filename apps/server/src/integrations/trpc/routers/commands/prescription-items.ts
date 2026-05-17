@@ -37,7 +37,6 @@ export const prescriptionItemsCommandRouter = createTRPCRouter({
       }),
     )
     .mutation(async () => {
-      // Phase 3: full implementation with upsert
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "prescription_items.create: not yet implemented",
@@ -68,7 +67,6 @@ export const prescriptionItemsCommandRouter = createTRPCRouter({
       }),
     )
     .mutation(async () => {
-      // Phase 3: full implementation
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "prescription_items.update: not yet implemented",
@@ -79,7 +77,7 @@ export const prescriptionItemsCommandRouter = createTRPCRouter({
    * Dispense a prescription item from one or more inventory batches.
    * Decrements inventory and increments quantity_dispensed.
    *
-   * Implementation details (Phase 4 — high complexity):
+   * Implementation details:
    * - Runs in a single transaction for atomicity
    * - For each batch_id in batch_quantities:
    *   1. SELECT FOR UPDATE on clinic_inventory row to prevent races
@@ -99,7 +97,6 @@ export const prescriptionItemsCommandRouter = createTRPCRouter({
       }),
     )
     .mutation(async () => {
-      // Phase 4: full implementation with multi-table transaction
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "prescription_items.dispense: not yet implemented",

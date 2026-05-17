@@ -30,21 +30,16 @@ import {
   safeJSONParse,
 } from "@/lib/utils";
 import { Result } from "@/lib/result";
+import { detectComputedValueCycles } from "@/lib/form-rule-cycles";
 import { DatePickerInput } from "@/components/date-picker-input";
 import { Separator } from "@/components/ui/separator";
 import { InputsConfiguration } from "@/components/form-builder/InputsConfiguration";
 import { TranslationBadges } from "@/components/form-builder/TranslationBadges";
-import { SelectInput, type SelectOption } from "@/components/select-input";
-import { RadioInput, type RadioOption } from "@/components/radio-input";
-import { MedicineInput } from "@/components/form-builder/MedicineInput";
+import { FormPreviewPane } from "@/components/form-builder/FormPreviewPane";
+import { SelectInput } from "@/components/select-input";
 import { MultiSelect } from "@/components/multi-select";
 import { getAllClinics } from "@/lib/server-functions/clinics";
-import { lazy, Suspense, useEffect, useState } from "react";
-const DiagnosisSelect = lazy(() =>
-  import("@/components/form-builder/DiagnosisPicker").then((m) => ({
-    default: m.DiagnosisSelect,
-  })),
-);
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Logger } from "@hikmahealth/js-utils";
 
@@ -172,6 +167,29 @@ function RouteComponent() {
 
     if (containsReservedFieldNames) {
       toast.error("Reserved field names are not allowed");
+      return;
+    }
+
+    // Author-time guardrail: refuse to save a form whose computedValue
+    // rules form a dependency cycle. The mobile runtime suppresses
+    // writebacks on cycle, but the form would still appear broken to
+    // the end user — catch it here where the author can fix it.
+    const computedCycles = detectComputedValueCycles(
+      formState.form_fields.map((f) => ({
+        id: f.id,
+        computedValue: (f as { computedValue?: unknown }).computedValue,
+      })),
+    );
+    if (computedCycles.length > 0) {
+      const fieldNamesById = new Map(
+        formState.form_fields.map((f) => [f.id, f.name ?? f.id]),
+      );
+      const cycleDescriptions = computedCycles
+        .map((c) => c.fieldIds.map((id) => fieldNamesById.get(id) ?? id).join(" → "))
+        .join("; ");
+      toast.error(
+        `Cyclic computedValue dependency detected: ${cycleDescriptions}. Remove the cycle before saving.`,
+      );
       return;
     }
 
@@ -443,6 +461,12 @@ function RouteComponent() {
                   payload: { fieldId, optionId, lang, value },
                 })
               }
+              onFieldRulesChange={(fieldId, slots) =>
+                eventFormStore.send({
+                  type: "set-field-rule-slots",
+                  payload: { fieldId, slots },
+                })
+              }
             />
             <Separator className="my-6" />
 
@@ -452,136 +476,13 @@ function RouteComponent() {
             </Button>
           </form>
         </div>
-        {/* Right side - Form preview */}
-        <div className="space-y-4 overflow-y-auto p-4 h-full">
-          <div>
-            <h3 className="text-2xl font-semibold">{formState.name}</h3>
-            <p>{formState.description}</p>
-          </div>
-
-          {formState.form_fields.map((field) => {
-            switch (field._tag) {
-              case "free-text":
-                return (
-                  <div key={field.id}>
-                    <Input
-                      label={field.name}
-                      description={field.description}
-                      type={field.inputType}
-                      required={field.required}
-                    />
-                  </div>
-                );
-              case "binary":
-                return (
-                  <div key={field.id}>
-                    <Checkbox
-                      label={field.name}
-                      description={field.description}
-                      required={field.required}
-                    />
-                  </div>
-                );
-              case "file":
-                // FIXME: better file input
-                return (
-                  <div key={field.id}>
-                    <Input
-                      label={field.name}
-                      description={field.description}
-                      type={field.inputType}
-                      required={field.required}
-                    />
-                  </div>
-                );
-              case "options":
-                if (field.inputType === "radio") {
-                  return (
-                    <div key={field.id}>
-                      <RadioInput
-                        label={field.name}
-                        description={field.description}
-                        withAsterisk={field.required}
-                        data={field.options as (string | RadioOption)[]}
-                      />
-                    </div>
-                  );
-                }
-                return (
-                  <div key={field.id}>
-                    <SelectInput
-                      withAsterisk={field.required}
-                      data={field.options as (string | SelectOption)[]}
-                      label={field.name}
-                      description={field.description}
-                      className="w-full"
-                    />
-                  </div>
-                );
-              case "date":
-                return (
-                  <div key={field.id}>
-                    <DatePickerInput
-                      label={field.name}
-                      description={field.description}
-                      withAsterisk={field.required}
-                    />
-                  </div>
-                );
-              case "medicine":
-                return (
-                  <div key={field.id} className="w-full">
-                    <MedicineInput
-                      name={field.name}
-                      description={field.description}
-                    />
-                  </div>
-                );
-              case "diagnosis":
-                return (
-                  <div key={field.id}>
-                    <Suspense fallback={<div>Loading...</div>}>
-                      <DiagnosisSelect
-                        name={field.name}
-                        description={field.description}
-                        withAsterisk={field.required}
-                        required={field.required}
-                        multi={field.multi}
-                      />
-                    </Suspense>
-                  </div>
-                );
-              case "text":
-                return (
-                  <div key={field.id}>
-                    <p
-                      className={
-                        field.size === "xxl"
-                          ? "text-3xl font-bold"
-                          : field.size === "xl"
-                            ? "text-2xl font-semibold"
-                            : field.size === "lg"
-                              ? "text-xl font-medium"
-                              : field.size === "sm"
-                                ? "text-sm"
-                                : "text-base"
-                      }
-                    >
-                      {field.content || "Text Block (empty)"}
-                    </p>
-                  </div>
-                );
-              case "separator":
-                return (
-                  <div key={field.id}>
-                    <Separator className="my-4" />
-                  </div>
-                );
-              default:
-                return null;
-            }
-          })}
-        </div>
+        {/* Right side - Live form preview */}
+        <FormPreviewPane
+          name={formState.name}
+          description={formState.description}
+          language={formState.language}
+          fields={formState.form_fields}
+        />
       </div>
 
       <style>{`

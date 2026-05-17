@@ -34,3 +34,11 @@
 # mode = "sync"
 # last_synced = "2026-05-17"
 # tree_sha = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+[[package]]
+name = "@nd/jsonlogic"
+url = "https://gitlab.com/nodiscipline/jsonlogic"
+ref = "0d9df23af3b219de156435d43856d2fcf66619fc"
+mode = "sync"
+last_synced = "2026-05-17"
+tree_sha = "7ce2cce4a5943a99938c5727f27619c7b6f62c77"

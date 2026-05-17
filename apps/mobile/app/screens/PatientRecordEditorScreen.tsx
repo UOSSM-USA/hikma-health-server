@@ -1,4 +1,4 @@
-import { FC, useEffect, useMemo, useState } from "react"
+import { FC, useEffect, useMemo, useRef, useState } from "react"
 import { Alert, Pressable, ViewStyle } from "react-native"
 import { captureException } from "@sentry/react-native"
 import { useSelector } from "@xstate/react"
@@ -30,6 +30,19 @@ import { translate } from "@/i18n/translate"
 import Patient from "@/models/Patient"
 import PatientRegistrationForm from "@/models/PatientRegistrationForm"
 import { PatientStackScreenProps } from "@/navigators/PatientNavigator"
+import {
+  compileRules,
+  computedCount,
+  computedEntries,
+  computedValuesEqual,
+  filterVisibleFields,
+  formatComputedValue,
+  getComputed,
+  hasComputed,
+  stabilizeComputedValues,
+  summarizeSubmitBlockers,
+  type ValidationError,
+} from "@/lib/form-rules"
 import { useDataAccess } from "@/providers/DataAccessProvider"
 import {
   patientRecordToCreateInput,
@@ -81,6 +94,150 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
     patientRecord,
     isLoading: isPatientRecordLoading,
   } = usePatientRecordEditor(editPatientId, language)
+
+  // Cast at the DB/app type boundary: `patientRecord.fields` is typed
+  // through the DB model (`RegistrationFormModel["fields"]`) which
+  // lacks the rule-slot properties and uses `column: string` instead
+  // of `BaseColumn`. The mobile model adds these via `& WithInputRules`
+  // but the PatientRecord type still references the DB shape — the
+  // column-narrowing mismatch was pre-existing. The runtime JSON carries
+  // the rule slots through unchanged, so the cast is safe.
+  const ruleFields = patientRecord.fields as PatientRegistrationForm.RegistrationFormField[]
+
+  // Compile rules once per form schema change. Rules reference fields by
+  // id (load-bearing decision #1), so we feed compileRules the raw
+  // RegistrationFormField[] which carries the rule slots — not the
+  // derived FormField[] from the hook, which drops them.
+  const compiledRules = useMemo(() => compileRules(ruleFields), [ruleFields])
+
+  // Build the per-render rule scope. values is already keyed by field
+  // id, so this is straightforward (unlike EventFormScreen, which
+  // reconciles three different key schemes).
+  const ruleStabilization = useMemo(() => {
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields: ruleFields,
+      values: patientRecord.values,
+      ctx: { now: new Date().toISOString(), language },
+    })
+    return stabilizeComputedValues({ evaluator: compiledRules, initialScope: scope })
+  }, [compiledRules, ruleFields, patientRecord.values, language])
+  const ruleEvaluation = ruleStabilization.evaluation
+
+  // Pre-bucket validator errors by field id for O(1) lookup at render time.
+  const errorsByFieldId = useMemo(() => {
+    const map = new Map<string, ValidationError[]>()
+    for (const err of ruleEvaluation.validationErrors) {
+      const bucket = map.get(err.fieldId) ?? []
+      bucket.push(err)
+      map.set(err.fieldId, bucket)
+    }
+    return map
+  }, [ruleEvaluation])
+
+  // Surface rule diagnostics to dev logs (Logger.warn is a NODE_ENV no-op
+  // in production).
+  useEffect(() => {
+    if (ruleEvaluation.diagnostics.length === 0) return
+    for (const d of ruleEvaluation.diagnostics) {
+      Logger.warn({ msg: "[PatientEditor] rule diagnostic:", ...d })
+    }
+  }, [ruleEvaluation])
+  useEffect(() => {
+    if (ruleStabilization.convergence !== "cycle") return
+    // Author-time guardrail in the form-builder catches this before save.
+    // If we still see one here, the form shipped a cyclic computedValue
+    // chain — suppress writebacks (stabilize already emptied the map)
+    // and surface the diagnostic for dev visibility.
+    Logger.warn({
+      msg: "[PatientEditor] computedValue cycle detected — writebacks suppressed",
+      iterations: ruleStabilization.iterations,
+    })
+  }, [ruleStabilization])
+
+  // Clear-on-hide effect — diverges from EventFormScreen.
+  //
+  // Why the divergence: patient registration values are durable identity
+  // records, and the submit transformer (`patientRecordToCreateInput`)
+  // substitutes `""` for any missing value via
+  // `getPatientFieldByName(record, col, "")`. Clearing a rule-hidden
+  // field that was loaded from the DB would silently overwrite the DB
+  // value with `""` on save. So the first evaluation only baselines the
+  // ref — no clears. Subsequent visible→hidden transitions DO clear
+  // (the user's edits caused the rule to fire, so the value is no
+  // longer intended).
+  const previouslyHiddenRef = useRef<Set<string> | null>(null)
+
+  // Reset the baseline when the edited patient changes. React Navigation
+  // may reuse this screen instance across `navigate(..., { editPatientId })`
+  // calls with different params, in which case the ref would carry the
+  // previous patient's hidden set into the new patient's first eval —
+  // any field hidden in B but not in A would land in `newlyHidden`,
+  // triggering a destructive `""` write via the transformer fallback.
+  useEffect(() => {
+    previouslyHiddenRef.current = null
+  }, [editPatientId])
+
+  // Track which fields the user has directly interacted with so inline
+  // validator errors can be gated on user intent — same reasoning as RHF's
+  // touchedFields/dirtyFields on EventFormScreen. Effects that write via
+  // `updateField` (clear-on-hide, computedValue writeback, primary-clinic
+  // auto-set) must NOT mark fields interacted; only the JSX onChange
+  // handlers go through `userUpdateField`. Reset on editPatientId for the
+  // same screen-reuse reason as `previouslyHiddenRef`.
+  const [interactedFieldIds, setInteractedFieldIds] = useState<Set<string>>(
+    () => new Set(),
+  )
+  useEffect(() => {
+    setInteractedFieldIds(new Set())
+  }, [editPatientId])
+  const userUpdateField = (id: string, value: unknown) => {
+    setInteractedFieldIds((prev) => {
+      if (prev.has(id)) return prev
+      const next = new Set(prev)
+      next.add(id)
+      return next
+    })
+    updateField(id, value as never)
+  }
+
+  useEffect(() => {
+    if (isPatientRecordLoading) return
+    if (ruleFields.length === 0) return
+
+    const { nowHidden, newlyHidden } = PatientRegistrationForm.computeNewlyHidden({
+      fields: ruleFields,
+      evaluation: ruleEvaluation,
+      previouslyHidden: previouslyHiddenRef.current ?? new Set(),
+    })
+
+    if (previouslyHiddenRef.current === null) {
+      previouslyHiddenRef.current = nowHidden
+      return
+    }
+
+    for (const field of newlyHidden) {
+      updateField(field.id, undefined)
+    }
+    previouslyHiddenRef.current = nowHidden
+  }, [ruleEvaluation, ruleFields, updateField, isPatientRecordLoading])
+
+  // computedValue writeback: push every successfully-computed value into
+  // the record's in-memory values. Structural-equality short-circuit guards
+  // the setValue → re-eval → setValue cycle (see EventFormScreen for the
+  // walkthrough). Patient values are durable, but `updateField` mutates
+  // in-memory state only — nothing writes to the DB until the user presses
+  // Save, so unlike clear-on-hide there is no first-render baseline skip
+  // needed: computedValue *is* the field's value contract, and if a stored
+  // value drifts from the new computation the next save should sync it.
+  useEffect(() => {
+    if (isPatientRecordLoading) return
+    if (computedCount(ruleEvaluation) === 0) return
+    for (const [fieldId, computed] of computedEntries(ruleEvaluation)) {
+      const current = patientRecord.values[fieldId]
+      if (computedValuesEqual(current, computed)) continue
+      updateField(fieldId, computed as never)
+    }
+  }, [ruleEvaluation, patientRecord.values, updateField, isPatientRecordLoading])
 
   // on mount, set the primary_clinic_id to the user's current clinic id (only for new patients or if not set);
   useEffect(() => {
@@ -164,18 +321,31 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
   const onSubmit = async () => {
     if (existingGovtId || isSubmitting) return
 
-    // Validate required fields before submission
-    const missingFields = PatientRegistrationForm.getMissingRequiredFields({
-      fields: patientRecord.fields,
-      values: patientRecord.values,
+    // Validate required fields + validator rules before submission.
+    // Both gates share one Alert — two sequential alerts would clobber
+    // each other on most platforms. Validator dedup lives in
+    // `summarizeSubmitBlockers`.
+    const gate = summarizeSubmitBlockers({
+      missingFieldNames: PatientRegistrationForm.getMissingRequiredFields({
+        fields: ruleFields,
+        values: patientRecord.values,
+        evaluation: ruleEvaluation,
+      }),
+      validatorErrors: ruleEvaluation.validationErrors,
     })
-    if (missingFields.length > 0) {
-      Alert.alert(
-        translate("common:error"),
-        translate("newPatient:requiredFieldsMissing", {
-          fields: missingFields.join(", "),
-        }),
-      )
+    if (gate.blocked) {
+      const parts: string[] = []
+      if (gate.missingRequired.length > 0) {
+        parts.push(
+          translate("newPatient:requiredFieldsMissing", {
+            fields: gate.missingRequired.join(", "),
+          }),
+        )
+      }
+      if (gate.validatorErrors.length > 0) {
+        parts.push(gate.validatorErrors.map((e) => e.message).join("\n"))
+      }
+      Alert.alert(translate("common:error"), parts.join("\n\n"))
       return
     }
 
@@ -288,17 +458,44 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
   return (
     <Screen style={$root} keyboardOffset={64} preset="scroll" safeAreaEdges={["bottom"]}>
       <View gap={10} pb={40}>
-        {formFields
-          .filter((field) => field.visible)
-          .map((field) => {
+        {filterVisibleFields(
+          formFields.filter((field) => field.visible),
+          ruleEvaluation,
+        ).map((field) => {
             const { type, label, value } = field
+            const fieldErrors = errorsByFieldId.get(field.id)
+
+            // Computed fields render as a read-only labelled display of the
+            // computed value. The writeback effect keeps patientRecord.values
+            // in sync; submit reads from there.
+            if (hasComputed(ruleEvaluation, field.id)) {
+              const computed = getComputed(ruleEvaluation, field.id)
+              return (
+                <View key={field.id}>
+                  <Text preset="formLabel" text={label} withAsterisk={field.required} />
+                  <Text text={formatComputedValue(computed)} />
+                  {fieldErrors && fieldErrors.length > 0 && (
+                    <View pt={4}>
+                      {fieldErrors.map((err) => (
+                        <Text key={err.validatorId} style={$validatorErrorText}>
+                          {err.message}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )
+            }
+
             return (
               <View key={field.id}>
                 {(type === "text" || type === "number") && field.column !== "primary_clinic_id" && (
                   <TextField
                     keyboardType={type === "number" ? "number-pad" : "default"}
                     value={String(value)}
-                    onChangeText={(t) => updateField(field.id, type === "number" ? Number(t) : t)}
+                    onChangeText={(t) =>
+                      userUpdateField(field.id, type === "number" ? Number(t) : t)
+                    }
                     label={label}
                     required={field.required}
                     testID={`patient_form_input__${field.type}__${field.column}`}
@@ -339,7 +536,7 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
                       value={value}
                       setValue={(cb) => {
                         const data = cb(value)
-                        updateField(field.id, data)
+                        userUpdateField(field.id, data)
                       }}
                     />
                   </View>
@@ -354,7 +551,7 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
                       date={parseYYYYMMDD(value, new Date())}
                       onChangeDate={(d) => {
                         if (d && parseYYYYMMDD(d.toDateString(), undefined)) {
-                          updateField(field.id, format(d, "yyyy-MM-dd"))
+                          userUpdateField(field.id, format(d, "yyyy-MM-dd"))
                         }
                       }}
                       ageEntryProps={{ day: 1, month: 0 }}
@@ -379,7 +576,7 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
                         onDateChange={(d) =>
                           d &&
                           parseYYYYMMDD(d.toDateString(), undefined) &&
-                          updateField(field.id, format(d, "yyyy-MM-dd"))
+                          userUpdateField(field.id, format(d, "yyyy-MM-dd"))
                         }
                       />
                     </View>
@@ -399,7 +596,7 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
                           value={value === getTranslation(fieldOption, language)}
                           onValueChange={(value) => {
                             if (value) {
-                              updateField(field.id, getTranslation(fieldOption, language))
+                              userUpdateField(field.id, getTranslation(fieldOption, language))
                             }
                           }}
                         />
@@ -423,7 +620,7 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
                             label={upperFirst(optionLabel)}
                             value={selected.includes(optionLabel)}
                             onValueChange={() => {
-                              updateField(
+                              userUpdateField(
                                 field.id,
                                 joinCheckboxValues(toggleStringInArray(optionLabel, selected)),
                               )
@@ -434,6 +631,20 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
                     </View>
                   </View>
                 )}
+                {/* Gated on user interaction so an untouched field whose
+                    rule fails against undefined doesn't flash red on first
+                    render. Submit consolidation still surfaces everything. */}
+                {interactedFieldIds.has(field.id) &&
+                  fieldErrors &&
+                  fieldErrors.length > 0 && (
+                    <View pt={4}>
+                      {fieldErrors.map((err) => (
+                        <Text key={err.validatorId} style={$validatorErrorText}>
+                          {err.message}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
               </View>
             )
           })}
@@ -513,6 +724,11 @@ const $dropDownPickerStyle: ViewStyle = {
   borderColor: colors.palette.neutral400,
   zIndex: 990000,
   flex: 1,
+}
+
+const $validatorErrorText = {
+  color: colors.palette.angry500,
+  fontSize: 13,
 }
 
 const $modalContentContainerStyle: ViewStyle = {

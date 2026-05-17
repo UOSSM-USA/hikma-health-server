@@ -5,6 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useImmer, useImmerReducer } from "use-immer";
 
 import PatientRegistrationForm from "@/models/patient-registration-form";
+import type { FieldRuleSlots } from "@/models/form-rules";
+import { detectComputedValueCycles } from "@/lib/form-rule-cycles";
+import { FieldLogicPanel } from "@/components/form-builder/FieldLogicPanel";
 import { v1 as uuidv1 } from "uuid";
 import { baseFields } from "@/data/registration-form-base-fields";
 import {
@@ -135,6 +138,10 @@ type Action =
         language: Language.LanguageKey;
         value: string;
       };
+    }
+  | {
+      type: "set-field-rule-slots";
+      payload: { id: string; slots: FieldRuleSlots };
     };
 
 function reducer(state: State, action: Action) {
@@ -392,6 +399,20 @@ function reducer(state: State, action: Action) {
       field.showsInSummary = !field.showsInSummary;
       break;
     }
+    case "set-field-rule-slots": {
+      const { id, slots } = action.payload;
+      const field = state.fields.find((f) => f.id === id);
+      if (!field) return;
+      // Atomic write of all four rule slots. Caller passes the *new*
+      // slots; undefined entries clear the slot. The panel's own
+      // validation already guarantees each slot is structurally valid
+      // JSONLogic before we get here.
+      field.visibleIf = slots.visibleIf;
+      field.requiredIf = slots.requiredIf;
+      field.validators = slots.validators;
+      field.computedValue = slots.computedValue;
+      break;
+    }
   }
 }
 
@@ -464,6 +485,33 @@ function RouteComponent() {
           "Some fields of the form are incomplete or empty. Are you sure you want to continue?",
         );
       }
+    }
+
+    // Author-time guardrail: refuse to save a form whose computedValue
+    // rules form a dependency cycle. Mobile runtime suppresses
+    // writebacks on cycle (defensive backstop), but the form would
+    // appear broken to the end user — catch it here where the author
+    // can fix it.
+    const computedCycles = detectComputedValueCycles(
+      state.fields.map((f) => ({
+        id: f.id,
+        computedValue: (f as { computedValue?: unknown }).computedValue,
+      })),
+    );
+    if (computedCycles.length > 0) {
+      const labelById = new Map(
+        state.fields.map((f) => [
+          f.id,
+          Language.getTranslation(f.label, "en") || f.column || f.id,
+        ]),
+      );
+      const cycleDescriptions = computedCycles
+        .map((c) => c.fieldIds.map((id) => labelById.get(id) ?? id).join(" → "))
+        .join("; ");
+      alert(
+        `Cyclic computedValue dependency detected: ${cycleDescriptions}.\nRemove the cycle before saving.`,
+      );
+      return;
     }
 
     if ((!result.success && ignoreErrors === true) || result.success === true) {
@@ -1034,6 +1082,27 @@ function RouteComponent() {
                             This field is visible in the patient file summary
                           </label>
                         </div>
+                      </div>
+
+                      <div className="col-span-12">
+                        <FieldLogicPanel
+                          form={PatientRegistrationForm.toLogicFields(
+                            state.fields,
+                          )}
+                          fieldId={id}
+                          initial={{
+                            visibleIf: field.visibleIf,
+                            requiredIf: field.requiredIf,
+                            validators: field.validators,
+                            computedValue: field.computedValue,
+                          }}
+                          onSave={(slots) =>
+                            dispatch({
+                              type: "set-field-rule-slots",
+                              payload: { id, slots },
+                            })
+                          }
+                        />
                       </div>
 
                       <div className="col-span-12">

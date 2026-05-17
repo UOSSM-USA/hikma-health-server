@@ -19,6 +19,16 @@ import {
   splitCheckboxValues,
 } from "@/lib/utils";
 import { baseFields } from "@/data/registration-form-base-fields";
+import type { WithInputRules } from "@/models/form-rules";
+import { assertFieldRulesValid } from "@/models/form-rules";
+import type {
+  LogicField,
+  LogicPrimitiveKind,
+} from "@/lib/form-rule-templates";
+import type {
+  ruleEvaluation,
+  ruleScope,
+} from "@hikmahealth/forms/Rules";
 
 namespace PatientRegistrationForm {
   export type T = {
@@ -46,7 +56,16 @@ namespace PatientRegistrationForm {
 
   export type InputType = (typeof inputTypes)[number];
 
-  export type Field = {
+  // Registration fields collect simple primitive values across all six
+  // input types (number / text / select / checkbox / date / boolean), so
+  // every field carries the full input-rules slot — `visibleIf`,
+  // `requiredIf`, `validators`, `computedValue`. Slots are optional;
+  // legacy stored fields without rules decode unchanged.
+  //
+  // The `visible` flag (existing) is the static, author-set switch;
+  // `visibleIf` (new) is the dynamic, data-driven override. The mobile
+  // renderer treats a field as hidden if EITHER says hidden.
+  export type Field = WithInputRules & {
     id: string;
     position: number;
     // column name in the database
@@ -162,6 +181,14 @@ namespace PatientRegistrationForm {
    */
   export const upsertPatientRegistrationForm = createServerOnlyFn(
     async (form: PatientRegistrationForm.EncodedT) => {
+      // Defense-in-depth: structurally validate every rule slot before
+      // the JSONB write. The form-builder UI is the primary gate, but
+      // this catches direct-API and future-refactor bypasses. Throws
+      // FormFieldRulesValidationError on invalid rules.
+      assertFieldRulesValid(
+        (form.fields ?? []) as Array<{ id?: unknown } & Record<string, unknown>>,
+      );
+
       // NOTE: it is possible for the form to not have an id (if it is a new form)
       const id = Option.match(Option.fromNullable(form.id), {
         onNone: () => uuidv1(),
@@ -305,6 +332,182 @@ namespace PatientRegistrationForm {
       return JSON.stringify(value);
     }
   };
+
+  // ------------------------------------------------------------------
+  // FieldLogicPanel adapter.
+  //
+  // Maps each `InputType` to a `LogicPrimitiveKind` so the panel's value
+  // input picks the right widget. `displayName` falls back to the
+  // English label, then the column, so the field picker always shows
+  // *something* even before a translation lands.
+  // ------------------------------------------------------------------
+  const inputTypeToPrimitive: Record<InputType, LogicPrimitiveKind> = {
+    number: "number",
+    text: "string",
+    select: "string",
+    checkbox: "string",
+    date: "date",
+    boolean: "boolean",
+  };
+
+  /**
+   * Convert a registration form's field list into the abstracted
+   * `LogicField[]` consumed by `FieldLogicPanel`. Deleted fields are
+   * elided — they can't sensibly be referenced by a rule.
+   */
+  export const toLogicFields = (
+    fields: ReadonlyArray<Field>,
+  ): LogicField[] =>
+    fields
+      .filter((f) => !f.deleted)
+      .map((f) => ({
+        id: f.id,
+        // `||` rather than `??` so a stored-but-empty translation entry
+        // still falls back to the column name.
+        displayName: f.label.en?.trim() || f.column || f.id,
+        kind: "primitive" as const,
+        primitiveKind: inputTypeToPrimitive[f.fieldType],
+      }));
+
+  // Rule-scope assembly (web register form).
+  //
+  // Mirrors mobile's `PatientRegistrationForm.buildRuleScope` so authored
+  // rules behave identically across surfaces. Three web-specific coercions
+  // happen at the scope boundary (load-bearing):
+  //
+  //   - Number fields: RHF returns strings; coerce to Number so rules
+  //     like `{">=": [{var: "form.age"}, 18]}` work without authors
+  //     thinking about coercion.
+  //   - Checkbox fields: RHF stores joined "a,b" string via
+  //     joinCheckboxValues; rules see an array via splitCheckboxValues
+  //     so `.length` / `.includes("foo")` are intuitive.
+  //   - Date fields: JsonLogic's coercer treats `Date` instances as
+  //     non-coercible Object — comparisons error and the evaluator's
+  //     fail-safe semantics silently skip the rule. Normalize to local
+  //     "YYYY-MM-DD" so string-vs-string lex compare works.
+
+  export type RuleScopeContext = {
+    fields: ReadonlyArray<Field>;
+    /** Patient field values keyed by field **id** (not column). */
+    values: Record<string, unknown>;
+    ctx: ruleScope["ctx"];
+  };
+
+  export function buildRuleScope(input: RuleScopeContext): ruleScope {
+    const { fields, values, ctx } = input;
+    const form: Record<string, unknown> = {};
+    for (const field of fields) {
+      form[field.id] = coerceForRules(field, values[field.id]);
+    }
+    return { form, ctx };
+  }
+
+  function coerceForRules(field: Field, value: unknown): unknown {
+    if (value === undefined || value === null) return value;
+    switch (field.fieldType) {
+      case "number": {
+        if (typeof value === "number") return value;
+        if (typeof value !== "string" || value.trim() === "") return undefined;
+        const n = Number(value);
+        // Non-numeric strings stay as the string — JsonLogic's `cmpNum`
+        // coerces, and falling through lets `==` against a string still
+        // match if that's what the author wrote.
+        return Number.isNaN(n) ? value : n;
+      }
+      case "checkbox":
+        if (typeof value === "string") return splitCheckboxValues(value);
+        if (Array.isArray(value)) return value;
+        return value;
+      case "date":
+        if (value instanceof Date) return formatDateYMD(value);
+        return value;
+      default:
+        return value;
+    }
+  }
+
+  // Local-date YYYY-MM-DD. NOT toISOString().slice(0, 10) — UTC truncation
+  // shifts the day in non-UTC timezones (PST-midnight Jan 1 → UTC Dec 31).
+  // Mirrors the same helper in mobile's PatientRegistrationForm.ts.
+  function formatDateYMD(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  // Required-field check
+
+  export type RequiredFieldContext = {
+    fields: ReadonlyArray<Field>;
+    /** Values keyed by field id (post-coercion or raw — only nullish/empty
+     *  checks happen here, so number-string vs number doesn't matter). */
+    values: Record<string, unknown>;
+    /**
+     * Optional rule evaluation. When present, hidden fields are skipped
+     * and required-ness comes from `evaluation.isRequired`. When absent,
+     * falls back to the static `field.required` flag.
+     */
+    evaluation?: ruleEvaluation;
+  };
+
+  /** Returns the labels (en fallback) of required, visible fields that are
+   *  missing a value. Pure — no DB or React deps. */
+  export function getMissingRequiredFields(
+    ctx: RequiredFieldContext,
+  ): string[] {
+    const { fields, values, evaluation } = ctx;
+    const isRequired = (f: Field) =>
+      evaluation ? evaluation.isRequired(f.id) : f.required === true;
+    const isVisible = (f: Field) =>
+      evaluation ? evaluation.isVisible(f.id) : true;
+
+    return fields
+      .filter((f) => f.visible && !f.deleted)
+      .filter((f) => isVisible(f) && isRequired(f))
+      .filter((f) => {
+        const v = values[f.id];
+        if (v === undefined || v === null) return true;
+        if (typeof v === "string" && v.trim() === "") return true;
+        return false;
+      })
+      .map((f) => f.label.en || f.column);
+  }
+
+  // Clear-on-hide diff.
+  //
+  // Patient registration is *creating a new patient*, so the durability
+  // concern that forced mobile's first-render baseline skip does NOT apply
+  // — there's no DB value to protect from a `""` overwrite. Caller can
+  // clear on every visible→hidden transition.
+
+  export type ComputeNewlyHiddenInput = {
+    fields: ReadonlyArray<Field>;
+    evaluation: ruleEvaluation;
+    /** Set of field ids hidden on the previous evaluation. */
+    previouslyHidden: ReadonlySet<string>;
+  };
+
+  export type ComputeNewlyHiddenResult = {
+    /** All ids hidden by the current evaluation. Caller assigns to ref. */
+    nowHidden: Set<string>;
+    /** Fields that transitioned visible→hidden this tick. */
+    newlyHidden: Field[];
+  };
+
+  export function computeNewlyHidden(
+    input: ComputeNewlyHiddenInput,
+  ): ComputeNewlyHiddenResult {
+    const { fields, evaluation, previouslyHidden } = input;
+    const nowHidden = new Set<string>();
+    const newlyHidden: Field[] = [];
+    for (const field of fields) {
+      if (evaluation.isVisible(field.id)) continue;
+      nowHidden.add(field.id);
+      if (!previouslyHidden.has(field.id)) newlyHidden.push(field);
+    }
+    return { nowHidden, newlyHidden };
+  }
 }
 
 export default PatientRegistrationForm;

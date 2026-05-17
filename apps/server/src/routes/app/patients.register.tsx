@@ -11,8 +11,8 @@ import {
 } from "@/components/ui/select";
 import { DatePickerInput } from "@/components/date-picker-input";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import PatientRegistrationForm from "@/models/patient-registration-form";
 import Language from "@/models/language";
 import { createServerFn } from "@tanstack/react-start";
@@ -26,6 +26,18 @@ import { Result } from "@/lib/result";
 import { getCookie } from "@tanstack/react-start/server";
 import { createServerCaller } from "@/integrations/trpc/router";
 import { Logger } from "@hikmahealth/js-utils";
+import {
+  compileRules,
+  computedCount,
+  computedEntries,
+  computedValuesEqual,
+  formatComputedValue,
+  getComputed,
+  hasComputed,
+  stabilizeComputedValues,
+  type fieldWithRules,
+  type validationError,
+} from "@hikmahealth/forms/Rules";
 
 type RegisterPatientInput = {
   patient: {
@@ -95,11 +107,146 @@ function RouteComponent() {
 
   const [lang, setLang] = useState<string>("en");
 
-  const { formState, handleSubmit, register, watch, setValue } = useForm({
+  const {
+    formState,
+    handleSubmit,
+    register,
+    watch,
+    setValue,
+    getValues,
+    control,
+  } = useForm({
     mode: "onSubmit",
   });
 
+  // Rules engine wiring: pre-filter by static admin flags; rule-driven
+  // visibility layers on top.
+  const fields = useMemo(
+    () =>
+      (patientRegistrationForm?.fields ?? []).filter(
+        (f) => f.visible && f.deleted !== true,
+      ),
+    [patientRegistrationForm?.fields],
+  );
+
+  // RHF keys values by `field.column` (legacy); the engine references
+  // fields by `field.id`. Translate at the scope boundary so the engine
+  // contract stays uniform with mobile.
+  const watchedValues = useWatch({ control }) as Record<string, unknown> | undefined;
+  const valuesById = useMemo(() => {
+    const out: Record<string, unknown> = {};
+    for (const f of fields) {
+      out[f.id] = watchedValues?.[f.column];
+    }
+    return out;
+  }, [fields, watchedValues]);
+
+  // Compile once per field-list reference. The store creates fresh
+  // arrays on every form edit, so the closure re-parses when any rule
+  // slot changes.
+  const evaluator = useMemo(() => {
+    const ruleFields: fieldWithRules[] = fields.map((f) => ({
+      id: f.id,
+      required: f.required,
+      visibleIf: f.visibleIf,
+      requiredIf: f.requiredIf,
+      validators: f.validators,
+      computedValue: f.computedValue,
+    }));
+    return compileRules(ruleFields);
+  }, [fields]);
+
+  const ruleStabilization = useMemo(() => {
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields,
+      values: valuesById,
+      ctx: { now: new Date().toISOString(), language: lang },
+    });
+    return stabilizeComputedValues(evaluator, scope);
+  }, [evaluator, fields, valuesById, lang]);
+  const ruleEvaluation = ruleStabilization.evaluation;
+
+  useEffect(() => {
+    if (ruleStabilization.convergence === "cycle") {
+      Logger.warn({
+        msg: "computedValue cycle detected in patient registration form — writebacks suppressed",
+      });
+    }
+  }, [ruleStabilization]);
+
+  const errorsByFieldId = useMemo(() => {
+    const m = new Map<string, validationError[]>();
+    for (const e of ruleEvaluation.validationErrors) {
+      const bucket = m.get(e.fieldId);
+      if (bucket) bucket.push(e);
+      else m.set(e.fieldId, [e]);
+    }
+    return m;
+  }, [ruleEvaluation]);
+
+  // Clear-on-hide. Registration is a NEW patient — no DB record to
+  // protect — so we use the simpler event-form policy: clear on every
+  // visible→hidden transition (no first-render baseline skip like
+  // PatientRecordEditorScreen needs).
+  const previouslyHiddenRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const { nowHidden, newlyHidden } =
+      PatientRegistrationForm.computeNewlyHidden({
+        fields,
+        evaluation: ruleEvaluation,
+        previouslyHidden: previouslyHiddenRef.current,
+      });
+    for (const f of newlyHidden) {
+      setValue(f.column, undefined as never, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+    }
+    previouslyHiddenRef.current = nowHidden;
+  }, [ruleEvaluation, fields, setValue]);
+
+  // Computed-value writeback. Structural equality short-circuit so a
+  // rule producing a fresh array/object every eval doesn't loop.
+  useEffect(() => {
+    if (computedCount(ruleEvaluation) === 0) return;
+    for (const [fieldId, computed] of computedEntries(ruleEvaluation)) {
+      const field = fields.find((f) => f.id === fieldId);
+      if (!field) continue;
+      const current = getValues(field.column);
+      if (!computedValuesEqual(current, computed)) {
+        setValue(field.column, computed as never, { shouldValidate: false });
+      }
+    }
+  }, [ruleEvaluation, fields, setValue, getValues]);
+
   const onSubmit = async (data: any) => {
+    // Rule-driven submit gate. RHF's built-in `required` catches
+    // statically-required-and-empty; this catches conditionally
+    // required-and-empty (`requiredIf` rules) and validator-failed
+    // fields, in one consolidated alert (two alerts in sequence
+    // clobber each other on most browsers).
+    const missingRequired =
+      PatientRegistrationForm.getMissingRequiredFields({
+        fields,
+        values: valuesById,
+        evaluation: ruleEvaluation,
+      });
+    const validatorErrors = ruleEvaluation.validationErrors;
+    if (missingRequired.length > 0 || validatorErrors.length > 0) {
+      const parts: string[] = [];
+      if (missingRequired.length > 0) {
+        parts.push(`Missing required: ${missingRequired.join(", ")}`);
+      }
+      if (validatorErrors.length > 0) {
+        const messages = Array.from(
+          new Set(validatorErrors.map((e) => e.message)),
+        );
+        parts.push(messages.join("\n"));
+      }
+      alert(parts.join("\n\n"));
+      return;
+    }
+
     const patientId = uuidv1();
 
     const patient: RegisterPatientInput["patient"] = {
@@ -129,6 +276,11 @@ function RouteComponent() {
 
     patientRegistrationForm?.fields
       .filter((field) => field.deleted !== true && field.visible)
+      // Defense-in-depth: skip rule-hidden fields. Clear-on-hide
+      // should already have wiped their values, but the same-tick
+      // race where the user submits in the frame a field hides
+      // wouldn't fire the effect yet.
+      .filter((field) => ruleEvaluation.isVisible(field.id))
       .forEach((field) => {
         if (!field.baseField) {
           additional_attributes.push({
@@ -207,9 +359,43 @@ function RouteComponent() {
 
           {patientRegistrationForm?.fields
             .filter((field) => field.visible && field.deleted !== true)
+            // Rule-driven visibility layered on top of the static flag.
+            .filter((field) => ruleEvaluation.isVisible(field.id))
             .map((field, idx) => {
               const fieldLabel = Language.getTranslation(field.label, lang);
               const fieldError = formState.errors[field.column];
+              // `required` consults `requiredIf` when present, else falls
+              // back to `field.required` (the static flag).
+              const required = ruleEvaluation.isRequired(field.id);
+              const validatorErrors =
+                errorsByFieldId.get(field.id) ?? [];
+
+              // Read-only computed-value display takes precedence over
+              // the editable field branches (matches mobile decision
+              // #15 — render as labelled <Text> rather than plumb
+              // `disabled` through every input variant).
+              if (hasComputed(ruleEvaluation, field.id)) {
+                const computed = getComputed(ruleEvaluation, field.id);
+                return (
+                  <div key={field.id} className="space-y-2">
+                    <Label className="text-muted-foreground">
+                      {fieldLabel}
+                      {required && (
+                        <span className="text-destructive"> *</span>
+                      )}
+                    </Label>
+                    <p className="text-sm rounded-md border border-input bg-muted/40 px-3 py-2">
+                      {formatComputedValue(computed)}
+                    </p>
+                    {/* Validator errors against a computed field
+                        appear unconditionally — the field is
+                        read-only, so users can't 'touch' it; gating
+                        on touched/dirty would hide the only signal
+                        explaining a blocked submit. */}
+                    <FieldErrors errors={validatorErrors} />
+                  </div>
+                );
+              }
 
               if (
                 field.fieldType === "text" &&
@@ -222,7 +408,7 @@ function RouteComponent() {
                       className="text-muted-foreground"
                     >
                       {fieldLabel}
-                      {field.required && (
+                      {required && (
                         <span className="text-destructive"> *</span>
                       )}
                     </Label>
@@ -232,7 +418,7 @@ function RouteComponent() {
                       data-column={field.column}
                       key={field.id}
                       {...register(field.column, {
-                        required: field.required && `${fieldLabel} is required`,
+                        required: required && `${fieldLabel} is required`,
                       })}
                     />
                     {fieldError && (
@@ -240,6 +426,7 @@ function RouteComponent() {
                         {fieldError.message as string}
                       </p>
                     )}
+                    <FieldErrors errors={validatorErrors} />
                   </div>
                 );
               }
@@ -250,7 +437,7 @@ function RouteComponent() {
                       className="w-full"
                       data-testid={"register-patient-" + idx}
                       data-inputtype={"select"}
-                      label={field.required ? `${fieldLabel} *` : fieldLabel}
+                      label={required ? `${fieldLabel} *` : fieldLabel}
                       data={clinicsList.map((clinic) => ({
                         label: clinic.name,
                         value: clinic.id,
@@ -263,7 +450,7 @@ function RouteComponent() {
                     <input
                       type="hidden"
                       {...register(field.column, {
-                        required: field.required && `${fieldLabel} is required`,
+                        required: required && `${fieldLabel} is required`,
                       })}
                     />
                     {fieldError && (
@@ -271,6 +458,7 @@ function RouteComponent() {
                         {fieldError.message as string}
                       </p>
                     )}
+                    <FieldErrors errors={validatorErrors} />
                   </div>
                 );
               }
@@ -282,7 +470,7 @@ function RouteComponent() {
                       className="text-muted-foreground"
                     >
                       {fieldLabel}
-                      {field.required && (
+                      {required && (
                         <span className="text-destructive"> *</span>
                       )}
                     </Label>
@@ -291,7 +479,7 @@ function RouteComponent() {
                       data-testid={"register-patient-" + idx}
                       key={field.id}
                       {...register(field.column, {
-                        required: field.required && `${fieldLabel} is required`,
+                        required: required && `${fieldLabel} is required`,
                       })}
                     />
                     {fieldError && (
@@ -299,6 +487,7 @@ function RouteComponent() {
                         {fieldError.message as string}
                       </p>
                     )}
+                    <FieldErrors errors={validatorErrors} />
                   </div>
                 );
               }
@@ -310,7 +499,7 @@ function RouteComponent() {
                       className="text-muted-foreground"
                     >
                       {fieldLabel}
-                      {field.required && (
+                      {required && (
                         <span className="text-destructive"> *</span>
                       )}
                     </Label>
@@ -344,7 +533,7 @@ function RouteComponent() {
                     <input
                       type="hidden"
                       {...register(field.column, {
-                        required: field.required && `${fieldLabel} is required`,
+                        required: required && `${fieldLabel} is required`,
                       })}
                     />
                     {fieldError && (
@@ -352,6 +541,7 @@ function RouteComponent() {
                         {fieldError.message as string}
                       </p>
                     )}
+                    <FieldErrors errors={validatorErrors} />
                   </div>
                 );
               }
@@ -365,7 +555,7 @@ function RouteComponent() {
                       className="text-muted-foreground"
                     >
                       {fieldLabel}
-                      {field.required && (
+                      {required && (
                         <span className="text-destructive"> *</span>
                       )}
                     </Label>
@@ -411,7 +601,7 @@ function RouteComponent() {
                     <input
                       type="hidden"
                       {...register(field.column, {
-                        required: field.required && `${fieldLabel} is required`,
+                        required: required && `${fieldLabel} is required`,
                       })}
                     />
                     {fieldError && (
@@ -419,6 +609,7 @@ function RouteComponent() {
                         {fieldError.message as string}
                       </p>
                     )}
+                    <FieldErrors errors={validatorErrors} />
                   </div>
                 );
               }
@@ -430,12 +621,12 @@ function RouteComponent() {
                       className="text-muted-foreground"
                     >
                       {fieldLabel}
-                      {field.required && (
+                      {required && (
                         <span className="text-destructive"> *</span>
                       )}
                     </Label>
                     <DatePickerInput
-                      required={field.required}
+                      required={required}
                       placeholder="Pick date"
                       data-testid={"register-patient-" + idx}
                       data-inputtype="date"
@@ -447,7 +638,7 @@ function RouteComponent() {
                     <input
                       type="hidden"
                       {...register(field.column, {
-                        required: field.required && `${fieldLabel} is required`,
+                        required: required && `${fieldLabel} is required`,
                       })}
                     />
                     {fieldError && (
@@ -455,6 +646,7 @@ function RouteComponent() {
                         {fieldError.message as string}
                       </p>
                     )}
+                    <FieldErrors errors={validatorErrors} />
                   </div>
                 );
               }
@@ -470,6 +662,23 @@ function RouteComponent() {
           </Button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function FieldErrors({
+  errors,
+}: {
+  errors: ReadonlyArray<validationError>;
+}) {
+  if (errors.length === 0) return null;
+  return (
+    <div className="space-y-0.5">
+      {errors.map((e) => (
+        <p key={e.validatorId} className="text-sm text-destructive">
+          {e.message}
+        </p>
+      ))}
     </div>
   );
 }

@@ -39,7 +39,6 @@ export const dispensingCommandRouter = createTRPCRouter({
       }),
     )
     .mutation(async () => {
-      // Phase 3: full implementation with upsert
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "dispensing.create: not yet implemented",

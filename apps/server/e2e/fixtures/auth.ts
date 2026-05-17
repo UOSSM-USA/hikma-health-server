@@ -62,25 +62,34 @@ export const test = base.extend<AuthFixtures>({
     // Wait for navigation to the dashboard with explicit timeout
     await page.waitForURL("/app", { timeout: 3000 });
 
-    // Wait for page to be fully loaded
-    await page.waitForLoadState("networkidle");
-
-    // Verify we're logged in by checking for the dashboard content
-    await expect(page).toHaveURL("/app");
+    // Wait for the app shell to render. Don't use networkidle — the
+    // Tanstack Start + React 19 dev server keeps long-lived XHRs alive
+    // (devtools, tRPC, HMR) and rarely hits idle inside the test budget.
+    // The breadcrumb nav is part of every /app/* layout, rendered
+    // synchronously from the router (no data fetch), and pinned at the
+    // top of the main pane (always in viewport — unlike the sidebar
+    // sign-out item, which lives below the fold in a scrolled list).
+    await expect(
+      page.getByRole("navigation", { name: "breadcrumb" }),
+    ).toBeVisible({ timeout: 15000 });
 
     // Use the authenticated page in the test
     await use(page);
 
-    // After the test, sign out
+    // After the test, attempt UI sign-out with a short timeout. This is
+    // best-effort — the sidebar's "Sign out" affordance isn't reliably
+    // addressable by `#sign-out-button` on every /app/* layout (the
+    // snapshot on the form-builder route shows it as a plain generic
+    // with no id), so the click can hang for the full action timeout.
+    // The fixture clears cookies at the next test's start anyway, so a
+    // failed UI sign-out doesn't leak session state between tests. The
+    // short timeout keeps a hung teardown from eating into the next
+    // test's budget.
     try {
-      // Click the sign out button in the nav
-      await page.locator("#sign-out-button").click();
-
-      // Wait for redirect back to login page
-      await page.waitForURL("/");
+      await page.locator("#sign-out-button").click({ timeout: 2000 });
+      await page.waitForURL("/", { timeout: 2000 });
     } catch (error) {
       Logger.error({ msg: "Failed to sign out:", error });
-      // Even if sign out fails, we continue to not block other tests
     }
   },
 });

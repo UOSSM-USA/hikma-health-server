@@ -25,9 +25,11 @@ import upperFirst from "lodash/upperFirst";
 import uniq from "lodash/uniq";
 import If from "@/components/if";
 import EventForm from "@/models/event-form";
+import type { FieldRuleSlots } from "@/models/form-rules";
 import { Textarea } from "../ui/textarea";
 import { SelectInput } from "@/components/select-input";
 import { FieldTranslationPanel } from "@/components/form-builder/FieldTranslationPanel";
+import { FieldLogicPanel } from "@/components/form-builder/FieldLogicPanel";
 
 let YesNoOptions: { value: string; label: string }[] = [
   { value: "yes", label: "Yes" },
@@ -80,6 +82,13 @@ type InputConfigProps = {
     lang: string,
     value: string,
   ) => void;
+  /**
+   * Atomic write of the four FieldLogicPanel rule slots
+   * (`visibleIf` / `requiredIf` / `validators` / `computedValue`) on
+   * one field. The callback receives the *full* new slots object —
+   * absent keys clear that slot.
+   */
+  onFieldRulesChange?: (fieldId: string, slots: FieldRuleSlots) => void;
 };
 
 export function InputsConfiguration({
@@ -92,7 +101,13 @@ export function InputsConfiguration({
   primaryLanguage = "en",
   onTranslationChange,
   onOptionTranslationChange,
+  onFieldRulesChange,
 }: InputConfigProps) {
+  // Build the abstracted LogicField list once per render — the panel
+  // needs every field's id/name to populate its field picker, and we
+  // want to pass the full form context (caller said "immutable copy of
+  // the entire form").
+  const logicFields = EventForm.toLogicFields(fields);
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -144,7 +159,14 @@ export function InputsConfiguration({
             if (field.fieldType === "separator") {
               return (
                 <SortableItem id={field.id} key={field.id}>
-                  <div className="space-y-2 bg-muted/50 p-4 rounded-lg border">
+                  <div
+                    className="space-y-2 bg-muted/50 p-4 rounded-lg border"
+                    data-testid="field-card"
+                    data-field-id={field.id}
+                    data-field-name={field.name ?? ""}
+                    data-field-type={field.fieldType ?? field.inputType}
+                    data-input-type={field.inputType}
+                  >
                     <h3 className="text-lg font-bold">Separator Line</h3>
                     <div className="pt-2">
                       <Button
@@ -152,6 +174,7 @@ export function InputsConfiguration({
                         variant="outline"
                         color="red"
                         type="button"
+                        data-testid="field-remove"
                       >
                         <LucideTrash size="1rem" />
                         Remove
@@ -166,7 +189,14 @@ export function InputsConfiguration({
             if (field.fieldType === "text") {
               return (
                 <SortableItem id={field.id} key={field.id}>
-                  <div className="space-y-4 bg-muted/50 p-4 rounded-lg border">
+                  <div
+                    className="space-y-4 bg-muted/50 p-4 rounded-lg border"
+                    data-testid="field-card"
+                    data-field-id={field.id}
+                    data-field-name={field.name ?? ""}
+                    data-field-type={field.fieldType ?? field.inputType}
+                    data-input-type={field.inputType}
+                  >
                     <div className="w-full space-y-2">
                       <h3 className="text-lg font-bold">Text Block</h3>
                       <Textarea
@@ -208,12 +238,23 @@ export function InputsConfiguration({
                           onOptionTranslationChange={onOptionTranslationChange}
                         />
                       )}
+                      {onFieldRulesChange && (
+                        <FieldLogicPanel
+                          form={logicFields}
+                          fieldId={field.id}
+                          initial={EventForm.getRuleSlots(field)}
+                          onSave={(slots) =>
+                            onFieldRulesChange(field.id, slots)
+                          }
+                        />
+                      )}
                       <div className="pt-4">
                         <Button
                           onClick={() => onRemoveField(field.id)}
                           variant="outline"
                           color="red"
                           type="button"
+                          data-testid="field-remove"
                         >
                           <LucideTrash size="1rem" />
                           Remove
@@ -227,7 +268,14 @@ export function InputsConfiguration({
 
             return (
               <SortableItem id={field.id} key={field.id}>
-                <div className="space-y-4 bg-muted/50 p-4 rounded-lg border">
+                <div
+                  className="space-y-4 bg-muted/50 p-4 rounded-lg border"
+                  data-testid="field-card"
+                  data-field-id={field.id}
+                  data-field-name={field.name ?? ""}
+                  data-field-type={field.fieldType ?? field.inputType}
+                  data-input-type={field.inputType}
+                >
                   <div className="w-full space-y-2">
                     <h3 className="text-lg font-bold">
                       {upperFirst(field?.fieldType ?? field.inputType)} Input
@@ -354,6 +402,16 @@ export function InputsConfiguration({
                         onOptionTranslationChange={onOptionTranslationChange}
                       />
                     )}
+                    {onFieldRulesChange && (
+                      <FieldLogicPanel
+                        form={logicFields}
+                        fieldId={field.id}
+                        initial={EventForm.getRuleSlots(field)}
+                        onSave={(slots) =>
+                          onFieldRulesChange(field.id, slots)
+                        }
+                      />
+                    )}
 
                     <div className="pt-4">
                       <Button
@@ -361,6 +419,7 @@ export function InputsConfiguration({
                         variant="outline"
                         color="red"
                         type="button"
+                        data-testid="field-remove"
                       >
                         <LucideTrash size="1rem" />
                         Remove

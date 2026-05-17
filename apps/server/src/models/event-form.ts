@@ -14,6 +14,19 @@ import db from "@/db";
 import { v1 as uuidV1 } from "uuid";
 import Language from "@/models/language";
 import { nanoid } from "nanoid";
+import type {
+  FieldRuleSlots,
+  JsonLogicRule,
+  Validator,
+  WithVisibility,
+  WithInputRules,
+} from "@/models/form-rules";
+import { assertFieldRulesValid } from "@/models/form-rules";
+import type {
+  LogicField,
+  LogicFieldKind,
+  LogicPrimitiveKind,
+} from "@/lib/form-rule-templates";
 
 namespace EventForm {
   // export type T = {
@@ -332,13 +345,14 @@ namespace EventForm {
     return translations.filter((t) => t.fieldId !== fieldId);
   }
 
-  export type BinaryField = HHFieldBase & {
+  export type BinaryField = HHFieldBase & WithInputRules & {
     fieldType: "binary";
     inputType: "checkbox" | "radio" | "select";
     options: FieldOption[];
   };
 
   export type OptionsField = HHFieldBase &
+    WithInputRules &
     (
       | {
           fieldType: "options";
@@ -354,13 +368,18 @@ namespace EventForm {
         }
     );
 
-  export type DiagnosisField = HHFieldBase & {
+  // Diagnoses / medicines / files collect bulk data via custom UIs and
+  // their value-shape isn't a single primitive — only `visibleIf` makes
+  // sense for now. `requiredIf`/`validators`/`computedValue` are
+  // intentionally omitted until the renderer can model them.
+  export type DiagnosisField = HHFieldBase & WithVisibility & {
     fieldType: "diagnosis";
     inputType: "select";
     options: FieldOption[];
   };
 
   export type TextField = HHFieldBase &
+    WithInputRules &
     (
       | {
           fieldType: "free-text";
@@ -378,7 +397,7 @@ namespace EventForm {
 
   export type MedicineFieldOptions = string[] | FieldOption[];
 
-  export type MedicineField = HHFieldBase & {
+  export type MedicineField = HHFieldBase & WithVisibility & {
     fieldType: "medicine";
     inputType: "input-group";
     options: MedicineFieldOptions;
@@ -407,7 +426,7 @@ namespace EventForm {
     durationUnits: DurationUnit;
   };
 
-  export type DateField = HHFieldBase & {
+  export type DateField = HHFieldBase & WithInputRules & {
     fieldType: "date";
     inputType: "date";
     min?: Date;
@@ -430,11 +449,40 @@ namespace EventForm {
     required: Schema.Boolean,
   });
 
+  // Effect-schema fragments mirroring the rule slots in
+  // @/models/form-rules. JSONLogic rules are opaque JSON
+  // (`Schema.Unknown`); their deeper structure is checked by
+  // `@nd/jsonlogic`'s `validate` at authoring time. All slots are
+  // optional to keep the wire shape additive — legacy forms without
+  // rules continue to decode unchanged.
+  const ValidatorSchema = Schema.Struct({
+    id: Schema.String,
+    rule: Schema.Unknown,
+    message: Schema.String,
+    code: Schema.optional(Schema.String),
+  });
+
+  // For diagnosis / medicine / file / display-only fields: visibility
+  // is the only supported slot for now.
+  const VisibilityRulesSchema = Schema.Struct({
+    visibleIf: Schema.optional(Schema.Unknown),
+  });
+
+  // For input-collecting fields (binary / free-text / date / options):
+  // all four slots are supported.
+  const InputFieldRulesSchema = Schema.Struct({
+    visibleIf: Schema.optional(Schema.Unknown),
+    requiredIf: Schema.optional(Schema.Unknown),
+    validators: Schema.optional(Schema.Array(ValidatorSchema)),
+    computedValue: Schema.optional(Schema.Unknown),
+  });
+
   export class BinaryField2 extends Data.TaggedClass("binary")<
     {
       inputType: "checkbox" | "radio" | "select";
       options: FieldOption[];
-    } & HHFieldBase
+    } & HHFieldBase &
+      WithInputRules
   > {}
 
   export class TextField2 extends Data.TaggedClass("free-text")<
@@ -442,7 +490,8 @@ namespace EventForm {
       inputType: "text" | "number" | "email" | "password" | "tel";
       length: "short" | "long";
       units: DoseUnit[] | DurationUnit[];
-    } & HHFieldBase
+    } & HHFieldBase &
+      WithInputRules
   > {}
 
   export class MedicineField2 extends Data.TaggedClass("medicine")<
@@ -460,20 +509,23 @@ namespace EventForm {
         duration: string;
         durationUnits: DurationUnit[];
       };
-    } & HHFieldBase
+    } & HHFieldBase &
+      WithVisibility
   > {}
 
   export class DiagnosisField2 extends Data.TaggedClass("diagnosis")<
     {
       inputType: "select";
       options: FieldOption[];
-    } & HHFieldBase
+    } & HHFieldBase &
+      WithVisibility
   > {}
 
   export class DateField2 extends Data.TaggedClass("date")<
     {
       inputType: "date";
-    } & HHFieldBase
+    } & HHFieldBase &
+      WithInputRules
   > {}
 
   export class OptionsField2 extends Data.TaggedClass("options")<
@@ -481,7 +533,8 @@ namespace EventForm {
       inputType: "radio" | "checkbox" | "select";
       multi: boolean;
       options: FieldOption[];
-    } & HHFieldBase
+    } & HHFieldBase &
+      WithInputRules
   > {}
 
   export class FileField2 extends Data.TaggedClass("file")<
@@ -495,19 +548,21 @@ namespace EventForm {
       multiple: boolean;
       minItems: number;
       maxItems: number;
-    } & HHFieldBase
+    } & HHFieldBase &
+      WithVisibility
   > {}
 
   export class TextDisplayField2 extends Data.TaggedClass("text")<
     {
       content: string;
       size: TextDisplaySize;
-    } & HHFieldBase
+    } & HHFieldBase &
+      WithVisibility
   > {}
 
-  export class SeparatorField2 extends Data.TaggedClass(
-    "separator",
-  )<HHFieldBase> {}
+  export class SeparatorField2 extends Data.TaggedClass("separator")<
+    HHFieldBase & WithVisibility
+  > {}
 
   export const FieldOptionSchema = Schema.Struct({
     id: Schema.optional(Schema.String),
@@ -550,7 +605,7 @@ namespace EventForm {
       ),
       options: Schema.Array(FieldOptionSchema),
     }),
-  );
+  ).pipe(Schema.extend(InputFieldRulesSchema));
 
   export const TextFieldSchema = createFieldSchema(
     "free-text",
@@ -574,7 +629,7 @@ namespace EventForm {
         ),
       ),
     }),
-  );
+  ).pipe(Schema.extend(InputFieldRulesSchema));
   export const MedicineFieldSchema = createFieldSchema(
     "medicine",
     Schema.Struct({
@@ -645,20 +700,20 @@ namespace EventForm {
         ),
       }),
     }),
-  );
+  ).pipe(Schema.extend(VisibilityRulesSchema));
   export const DiagnosisFieldSchema = createFieldSchema(
     "diagnosis",
     Schema.Struct({
       inputType: Schema.Literal("select"),
       options: Schema.Array(FieldOptionSchema),
     }),
-  );
+  ).pipe(Schema.extend(VisibilityRulesSchema));
   export const DateFieldSchema = createFieldSchema(
     "date",
     Schema.Struct({
       inputType: Schema.Literal("date"),
     }),
-  );
+  ).pipe(Schema.extend(InputFieldRulesSchema));
   export const OptionsFieldSchema = createFieldSchema(
     "options",
     Schema.Struct({
@@ -670,7 +725,7 @@ namespace EventForm {
       options: Schema.Array(FieldOptionSchema),
       multi: Schema.Boolean,
     }),
-  );
+  ).pipe(Schema.extend(InputFieldRulesSchema));
   export const FileFieldSchema = createFieldSchema(
     "file",
     Schema.Struct({
@@ -688,7 +743,7 @@ namespace EventForm {
       minItems: Schema.Number,
       maxItems: Schema.Number,
     }),
-  );
+  ).pipe(Schema.extend(VisibilityRulesSchema));
 
   export const TextDisplayFieldSchema = createFieldSchema(
     "text",
@@ -702,12 +757,12 @@ namespace EventForm {
         Schema.Literal("sm"),
       ),
     }),
-  );
+  ).pipe(Schema.extend(VisibilityRulesSchema));
 
   export const SeparatorFieldSchema = createFieldSchema(
     "separator",
     Schema.Struct({}),
-  );
+  ).pipe(Schema.extend(VisibilityRulesSchema));
 
   export const FieldSchema = Schema.Union(
     BinaryFieldSchema,
@@ -766,6 +821,98 @@ namespace EventForm {
   export type EncodedT = typeof EventFormSchema.Encoded;
 
   export type HHFieldWithPosition = HHField & { position: number };
+
+  // ------------------------------------------------------------------
+  // FieldLogicPanel adapter.
+  //
+  // Maps each variant's `fieldType` (+ `inputType` for free-text) to a
+  // `LogicFieldKind` / `LogicPrimitiveKind`. Accepts a loose structural
+  // shape so callers can hand in either decoded `Field`s or the
+  // `FieldData` (TaggedClass) instances the form-builder store carries
+  // — both expose the same id/name/fieldType/inputType keys at runtime.
+  // ------------------------------------------------------------------
+  type LogicAdaptableField = {
+    id: string;
+    name: string;
+    fieldType: string;
+    inputType?: string;
+  };
+
+  const fieldTypeToLogicKind = (fieldType: string): LogicFieldKind => {
+    switch (fieldType) {
+      case "medicine":
+      case "diagnosis":
+      case "file":
+        return "list";
+      case "text":
+      case "separator":
+        return "displayOnly";
+      default:
+        return "primitive";
+    }
+  };
+
+  const inferPrimitiveKind = (
+    field: LogicAdaptableField,
+  ): LogicPrimitiveKind | undefined => {
+    if (fieldTypeToLogicKind(field.fieldType) !== "primitive") return undefined;
+    switch (field.fieldType) {
+      case "date":
+        return "date";
+      case "free-text":
+        return field.inputType === "number" ? "number" : "string";
+      case "binary":
+      case "options":
+      default:
+        return "string";
+    }
+  };
+
+  /**
+   * Convert an event form's field list into the abstracted
+   * `LogicField[]` consumed by `FieldLogicPanel`. The `displayName`
+   * uses the field's `name` (the authoring-time English label).
+   */
+  export const toLogicFields = (
+    fields: ReadonlyArray<LogicAdaptableField>,
+  ): LogicField[] =>
+    fields.map((f) => ({
+      id: f.id,
+      displayName: f.name || f.id,
+      kind: fieldTypeToLogicKind(f.fieldType),
+      primitiveKind: inferPrimitiveKind(f),
+    }));
+
+  /**
+   * Extract the four rule slots from a field in a variant-safe way.
+   *
+   * `Field` is a discriminated union where `requiredIf` /
+   * `validators` / `computedValue` only exist on input-collecting
+   * variants (binary / free-text / date / options) — visibility-only
+   * variants (medicine / diagnosis / file / text / separator) carry
+   * just `visibleIf`. TS can't see all four slots on every branch of
+   * the union without a `_tag` narrow at each access site, so the
+   * `in`-check pattern here keeps the call sites type-safe without
+   * spreading `_tag` switches everywhere.
+   */
+  export const getRuleSlots = (field: object): FieldRuleSlots => ({
+    visibleIf:
+      "visibleIf" in field
+        ? (field.visibleIf as JsonLogicRule | undefined)
+        : undefined,
+    requiredIf:
+      "requiredIf" in field
+        ? (field.requiredIf as JsonLogicRule | undefined)
+        : undefined,
+    validators:
+      "validators" in field
+        ? (field.validators as ReadonlyArray<Validator> | undefined)
+        : undefined,
+    computedValue:
+      "computedValue" in field
+        ? (field.computedValue as JsonLogicRule | undefined)
+        : undefined,
+  });
 
   export namespace Fields {
     /**
@@ -952,6 +1099,15 @@ namespace EventForm {
      */
     export const insert = createServerOnlyFn(
       async (form: EventForm.EncodedT): Promise<EventForm.T> => {
+        // Defense-in-depth: structurally validate every rule slot
+        // before the JSONB write. The form-builder UI is the primary
+        // gate, but this catches direct-API and future-refactor
+        // bypasses. Throws FormFieldRulesValidationError on invalid
+        // rules; TanStack server functions surface the message to
+        // the caller.
+        const parsedFields = safeJSONParse(form.form_fields, [] as Array<unknown>);
+        assertFieldRulesValid(parsedFields as Array<{ id?: unknown } & Record<string, unknown>>);
+
         const result = await db
           .insertInto(EventForm.Table.name)
           .values({
@@ -992,6 +1148,10 @@ namespace EventForm {
         id: string;
         form: EventForm.EncodedT;
       }): Promise<EventForm.T> => {
+        // Same defense-in-depth as `insert` — see the comment there.
+        const parsedFields = safeJSONParse(form.form_fields, [] as Array<unknown>);
+        assertFieldRulesValid(parsedFields as Array<{ id?: unknown } & Record<string, unknown>>);
+
         const result = await db
           .updateTable(EventForm.Table.name)
           .set({

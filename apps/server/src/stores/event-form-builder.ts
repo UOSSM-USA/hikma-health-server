@@ -1,4 +1,5 @@
 import EventForm from "@/models/event-form";
+import type { FieldRuleSlots } from "@/models/form-rules";
 import { arrayMove } from "@dnd-kit/sortable";
 import { Logger } from "@hikmahealth/js-utils";
 import { createStore } from "@xstate/store";
@@ -7,6 +8,24 @@ import type { Mutable } from "effect/Types";
 import { produce } from "immer";
 import { nanoid } from "nanoid";
 import { v1 as uuidV1 } from "uuid";
+
+/**
+ * Field variants that carry the full input-rule slot set
+ * (`visibleIf` + `requiredIf` + `validators` + `computedValue`). The
+ * other variants (medicine, diagnosis, file, text, separator) carry
+ * only `visibleIf`; writing input-only slots on them would add stray
+ * undefined properties that the Effect Schema rejects on re-validation.
+ *
+ * Kept as a literal tuple so a type predicate can narrow the union.
+ */
+const INPUT_RULE_FIELD_TYPES = ["binary", "free-text", "date", "options"] as const;
+type InputRuleFieldType = (typeof INPUT_RULE_FIELD_TYPES)[number];
+
+function supportsInputRules(
+  field: EventForm.Field,
+): field is Extract<EventForm.Field, { fieldType: InputRuleFieldType }> {
+  return (INPUT_RULE_FIELD_TYPES as readonly string[]).includes(field.fieldType);
+}
 
 type State = EventForm.EncodedT;
 
@@ -160,6 +179,43 @@ const eventFormStore = createStore({
             "name",
             value,
           );
+        }
+      });
+    },
+    /**
+     * Atomically write the four FieldLogicPanel rule slots
+     * (`visibleIf` / `requiredIf` / `validators` / `computedValue`) on a
+     * single field. Caller passes the *new* slots object — undefined
+     * slots are cleared. Atomic so the form-builder UI never observes a
+     * field in an in-between "two of four written" state.
+     */
+    "set-field-rule-slots": (
+      context,
+      event: { payload: { fieldId: string; slots: FieldRuleSlots } },
+    ) => {
+      const { fieldId, slots } = event.payload;
+      return produce(context, (draft) => {
+        const field = draft.form_fields.find((f) => f.id === fieldId);
+        if (!field) return;
+        // Variant-aware write: every Field variant carries `visibleIf`,
+        // but only input-rule variants carry the other three slots.
+        // Writing those onto a visibility-only variant would surface
+        // stray undefined properties that the Effect Schema would
+        // reject on re-validation.
+        field.visibleIf = slots.visibleIf;
+        if (supportsInputRules(field as EventForm.Field)) {
+          // Cast through Mutable<…> because immer's Draft<Field>
+          // collapses to a structure where the variant's optional
+          // slots are recognised, but the union narrowing from
+          // `supportsInputRules` doesn't carry through immer's Draft
+          // wrapper. The runtime guard already ensures only input-rule
+          // variants reach this branch.
+          const input = field as Mutable<
+            Extract<EventForm.Field, { fieldType: InputRuleFieldType }>
+          >;
+          input.requiredIf = slots.requiredIf;
+          input.validators = slots.validators;
+          input.computedValue = slots.computedValue;
         }
       });
     },

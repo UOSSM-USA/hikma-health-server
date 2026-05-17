@@ -197,7 +197,7 @@ const authenticateRequest = createServerOnlyFn(
         }
       }
 
-      // Now we are syncing with a device by a user account
+      // Device-by-user-credentials sync path (vs. device-API-key above).
       const decodedCredentials = Buffer.from(
         encodedCredentials,
         "base64",

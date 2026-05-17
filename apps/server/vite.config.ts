@@ -6,9 +6,17 @@ import { nitro } from "nitro/vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import tailwindcss from "@tailwindcss/vite";
 import { sentryTanstackStart } from "@sentry/tanstackstart-react/vite";
+import { resolve } from "path";
 
 // import { wrapVinxiConfigWithSentry } from "@sentry/tanstackstart-react";
 import viteReact from "@vitejs/plugin-react";
+
+// `@hikmahealth/forms` ReScript output imports the vendored JSONLogic
+// engine via deep paths (`@nd/jsonlogic/src/JsonLogic.res.mjs`). The
+// vendored package's exports map only exposes the root, so Vite's strict
+// exports resolution rejects the deep import without this alias. The
+// vendor package is off-limits to edit (a fix exists upstream).
+const vendoredJsonLogic = resolve(__dirname, "../../vendor/@nd/jsonlogic");
 
 export default defineConfig({
   // plugins: [
@@ -50,6 +58,14 @@ export default defineConfig({
   ],
   esbuild: {
     jsx: "automatic",
+  },
+  resolve: {
+    alias: [
+      {
+        find: /^@nd\/jsonlogic\/(.*)$/,
+        replacement: `${vendoredJsonLogic}/$1`,
+      },
+    ],
   },
   server: {
     allowedHosts: true,

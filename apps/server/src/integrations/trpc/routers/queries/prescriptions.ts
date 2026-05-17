@@ -62,7 +62,6 @@ export const prescriptionsQueryRouter = createTRPCRouter({
       }),
     )
     .query(async () => {
-      // Phase 3: full implementation
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "prescriptions.search: not yet implemented",

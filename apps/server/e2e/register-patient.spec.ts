@@ -5,23 +5,16 @@ test.describe("Patient Registration", () => {
   test("should register a new patient and display in patients list", async ({
     authenticatedPage: page,
   }) => {
-    // Step 1: Sign in is handled by the auth fixture
-
-    // Step 2: Use the side nav to go to "Register New Patient"
-    // First click on "Patients" in the sidebar to expand it
-    // await page.click('text="Patients"'); // when this runs, it collapses an already expanded menu item
-
-    // Wait for the submenu to be visible and click on "Register New Patient"
+    // Sign in is handled by the auth fixture.
+    // Use the side nav to go to "Register New Patient".
     await page.waitForSelector('text="Register New Patient"', {
       state: "visible",
     });
     await page.click('text="Register New Patient"');
 
-    // Verify we're on the register page
     await page.waitForURL("/app/patients/register");
     await expect(page).toHaveURL("/app/patients/register");
 
-    // Step 3: Fill in the patient form dynamically
     // Generate test data
     const testPatientData = {
       firstName: `TestPatient${Date.now()}`,
@@ -96,7 +89,6 @@ test.describe("Patient Registration", () => {
       await page.waitForTimeout(100);
     }
 
-    // Step 4: Submit the form
     const submitButton = page.locator('[data-testid="submit-button"]');
     await expect(submitButton).toBeVisible();
     await expect(submitButton).toBeEnabled();
@@ -112,17 +104,14 @@ test.describe("Patient Registration", () => {
     // Wait for the alert and form submission
     await page.waitForTimeout(2000);
 
-    // Step 5: Navigate back to patients list (this might be automatic or manual)
-    // If not automatically redirected, navigate manually
+    // Navigate back to patients list (might be automatic).
     try {
       await page.waitForURL("/app/patients", { timeout: 5000 });
     } catch {
-      // If not redirected automatically, navigate manually
       await page.click('text="Patients List"');
       await page.waitForURL("/app/patients");
     }
 
-    // Step 6: Verify the new patient appears in the list
     await expect(page).toHaveURL("/app/patients");
 
     // Wait for the patients table to load

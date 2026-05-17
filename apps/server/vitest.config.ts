@@ -2,6 +2,15 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 
+// `@hikmahealth/forms` is a workspace ReScript package. Its generated
+// `.res.mjs` files import the JSONLogic engine via deep paths
+// (`@nd/jsonlogic/src/JsonLogic.res.mjs`). The vendored package's exports
+// map only exposes the package root, so Vite's strict-exports resolution
+// rejects the deep import. The vendor package is off-limits to edit
+// (a fix exists upstream), so map the deep path to the vendored file
+// directly for the test runner.
+const vendoredJsonLogic = resolve(__dirname, "../../vendor/@nd/jsonlogic");
+
 export default defineConfig({
   plugins: [react()],
   test: {
@@ -45,8 +54,12 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      "@": resolve(__dirname, "./src"),
-    },
+    alias: [
+      { find: "@", replacement: resolve(__dirname, "./src") },
+      {
+        find: /^@nd\/jsonlogic\/(.*)$/,
+        replacement: `${vendoredJsonLogic}/$1`,
+      },
+    ],
   },
 });

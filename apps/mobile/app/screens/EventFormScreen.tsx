@@ -14,7 +14,7 @@ import { isValid } from "date-fns"
 import { Option } from "effect"
 import { sortBy } from "es-toolkit/compat"
 import { LucideAlertCircle } from "lucide-react-native"
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useForm, useFormState, useWatch } from "react-hook-form"
 import DropDownPicker from "react-native-dropdown-picker"
 import Toast from "react-native-root-toast"
 import { useImmer } from "use-immer"
@@ -49,6 +49,19 @@ import { useDataAccess } from "@/providers/DataAccessProvider"
 import { languageStore } from "@/store/language"
 import { providerStore } from "@/store/provider"
 import { colors } from "@/theme/colors"
+import {
+  compileRules,
+  computedCount,
+  computedEntries,
+  computedValuesEqual,
+  filterVisibleFields,
+  formatComputedValue,
+  getComputed,
+  hasComputed,
+  stabilizeComputedValues,
+  summarizeSubmitBlockers,
+  type ValidationError,
+} from "@/lib/form-rules"
 import {
   resolveFormTranslations,
   getOptionId,
@@ -162,6 +175,143 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
 
   const { form, state: formState, isLoading } = useEventForm(formId, visitId, patientId, eventId)
   const { isOpen, openDialogue, closeDialogue } = useOpenDialogue()
+
+  // Parse-once: compile every rule on the form into a closure when the form
+  // (or its field list) loads. Evaluate-per-render: useWatch subscribes to
+  // RHF; combined with the side-state below we re-evaluate when anything the
+  // rules could read changes.
+  const evaluator = useMemo(
+    () => compileRules(form?.formFields ?? []),
+    [form?.formFields],
+  )
+  // useWatch returns `{}`/the form snapshot, but TS types it loosely; the
+  // `?? {}` guards the first-render case before any Controller has mounted.
+  const watchedValues = (useWatch({ control }) as Record<string, unknown> | undefined) ?? {}
+  const ruleStabilization = useMemo(() => {
+    if (!form) return null
+    const scope = EventForm.buildRuleScope({
+      formFields: form.formFields,
+      watchedValues,
+      diagnoses,
+      medicines,
+      fileUploads,
+      ctx: {
+        now: new Date().toISOString(),
+        language,
+        provider: { id: provider.id, name: provider.name },
+      },
+    })
+    return stabilizeComputedValues({ evaluator, initialScope: scope })
+  }, [form, watchedValues, diagnoses, medicines, fileUploads, evaluator, language, provider])
+  const ruleEvaluation = ruleStabilization?.evaluation ?? null
+
+  // Pre-bucket validator errors by field id so the renderer doesn't filter
+  // the full list per field.
+  const errorsByFieldId = useMemo(() => {
+    const map = new Map<string, ValidationError[]>()
+    if (!ruleEvaluation) return map
+    for (const err of ruleEvaluation.validationErrors) {
+      const bucket = map.get(err.fieldId)
+      if (bucket) bucket.push(err)
+      else map.set(err.fieldId, [err])
+    }
+    return map
+  }, [ruleEvaluation])
+
+  // Inline validator errors are gated on touched OR dirty so an editable
+  // field that the user hasn't reached yet doesn't show a red error from
+  // a rule that fails on `undefined`. Submit consolidation is independent
+  // — clicking Save still surfaces everything.
+  const { touchedFields, dirtyFields } = useFormState({ control })
+
+  // Dev-only diagnostics. Logger.* is a no-op in production builds.
+  useEffect(() => {
+    if (!ruleEvaluation || ruleEvaluation.diagnostics.length === 0) return
+    Logger.warn({ msg: "[EventForm] rule diagnostics", diagnostics: ruleEvaluation.diagnostics })
+  }, [ruleEvaluation])
+  useEffect(() => {
+    if (!ruleStabilization || ruleStabilization.convergence !== "cycle") return
+    // Author-time guardrail in the form-builder catches this before save.
+    // If we still see one here, the form shipped a cyclic computedValue
+    // chain — suppress writebacks (stabilize already emptied the map)
+    // and surface the diagnostic for dev visibility.
+    Logger.warn({
+      msg: "[EventForm] computedValue cycle detected — writebacks suppressed",
+      iterations: ruleStabilization.iterations,
+    })
+  }, [ruleStabilization])
+
+  // Clear-on-hide writeback: when a field transitions visible→hidden we wipe
+  // its value from form state so (a) a stale answer can't sneak into the
+  // submit payload, and (b) if the user reshows the field later they see a
+  // fresh input rather than the previous answer. We diff against a ref of
+  // the prior hidden set so we only act on the *transition* — once a field
+  // is cleared and still hidden, the next pass sees no transition and does
+  // nothing. That's what keeps the (setValue → useWatch → re-eval → effect)
+  // cycle from running unbounded.
+  //
+  // computedValue writeback: for fields whose `computedValue` rule produced
+  // a value this tick, push the value into RHF state. Structural-equality
+  // short-circuit prevents the (setValue → useWatch → re-eval → setValue)
+  // loop:
+  //   - Tick N: rule emits 5, current is undefined → setValue(5)
+  //   - Tick N+1: re-eval, rule still emits 5, current is 5 → skip
+  //   - No setValue → no re-render → cycle terminates.
+  // JSON.stringify equality covers primitives, arrays, dates (as ISO strings
+  // via toJSON), and plain objects — the value-shape JSONLogic is capable
+  // of producing.
+  useEffect(() => {
+    if (!form || !ruleEvaluation) return
+    if (computedCount(ruleEvaluation) === 0) return
+    for (const [fieldId, computed] of computedEntries(ruleEvaluation)) {
+      const field = form.formFields.find((f) => f.id === fieldId)
+      if (!field) continue
+      // computedValue is type-system-gated to input-collecting field
+      // variants (binary, free-text, date, options); defensive guard
+      // anyway in case misauthored data slips through the type wall.
+      if (field.fieldType === "diagnosis" || field.fieldType === "medicine") continue
+      if (field.inputType === "file") continue
+      const name = sanitizeFieldName(field.name)
+      const current = getValues(name)
+      if (computedValuesEqual(current, computed)) continue
+      setValue(name as never, computed as never)
+    }
+  }, [ruleEvaluation, form, setValue, getValues])
+
+  const previouslyHiddenIds = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!form || !ruleEvaluation) return
+    const { nowHidden, newlyHidden } = EventForm.computeNewlyHidden({
+      formFields: form.formFields,
+      evaluation: ruleEvaluation,
+      previouslyHidden: previouslyHiddenIds.current,
+    })
+    // Early-return guards against `useWatch` reference churn — if no field
+    // just hid, there is nothing to clear and no setter to call.
+    if (newlyHidden.length > 0) {
+      for (const field of newlyHidden) {
+        // NOTE: diagnoses / medicines are form-scope state shared across
+        // all fields of that type. A form only ever has one diagnosis and
+        // one medicine field in practice; hiding either resets the whole
+        // shared collection, which matches user intent.
+        if (field.fieldType === "diagnosis") {
+          setDiagnoses([])
+        } else if (field.fieldType === "medicine") {
+          setMedicines([])
+        } else if (field.inputType === "file") {
+          setFileUploads((prev) => {
+            if (!(field.name in prev)) return prev
+            const next = { ...prev }
+            delete next[field.name]
+            return next
+          })
+        } else {
+          setValue(sanitizeFieldName(field.name) as never, undefined as never)
+        }
+      }
+    }
+    previouslyHiddenIds.current = nowHidden
+  }, [ruleEvaluation, form, setValue])
 
   const bottomSheetModalRef = useRef<BottomSheetModal>(null)
 
@@ -281,19 +431,39 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
       return
     }
 
-    // Validate required fields before submission
+    // Validate required fields + validator rules before submission. Both
+    // classes of error are surfaced in a single toast so the user sees one
+    // coherent message instead of two competing ones. Dedup of identical
+    // validator messages lives in `summarizeSubmitBlockers`.
     if (form) {
-      const missingFields = EventForm.getMissingRequiredFields({
-        formFields: form.formFields,
-        data,
-        diagnoses,
-        medicines,
-        fileUploads,
+      const gate = summarizeSubmitBlockers({
+        missingFieldNames: EventForm.getMissingRequiredFields({
+          formFields: form.formFields,
+          data,
+          diagnoses,
+          medicines,
+          fileUploads,
+          evaluation: ruleEvaluation ?? undefined,
+        }),
+        validatorErrors: ruleEvaluation?.validationErrors ?? [],
       })
-      if (missingFields.length > 0) {
-        Logger.log(`[EventForm] Missing required fields: ${missingFields},
-          Form data: ${JSON.stringify(data, null, 2)}`)
-        Toast.show(`Please fill in required fields: ${missingFields.join(", ")}`, {
+
+      if (gate.blocked) {
+        const parts: string[] = []
+        if (gate.missingRequired.length > 0) {
+          parts.push(`missing required fields: ${gate.missingRequired.join(", ")}`)
+        }
+        if (gate.validatorErrors.length > 0) {
+          parts.push(gate.validatorErrors.map((e) => e.message).join("; "))
+        }
+        const msg = `Please fix: ${parts.join(" — ")}`
+        Logger.log({
+          msg: "[EventForm] submission blocked",
+          missingFields: gate.missingRequired,
+          validatorErrors: gate.validatorErrors,
+          data,
+        })
+        Toast.show(msg, {
           duration: Toast.durations.LONG,
           position: Toast.positions.BOTTOM,
           shadow: true,
@@ -307,32 +477,41 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
 
     setLoading(true)
 
-    const formData =
-      form?.formFields
-        .filter((field) => !EventForm.isDisplayOnly(field))
-        .map((field) => ({
-          fieldId: field.id,
-          fieldType: field.fieldType,
-          value:
-            field.inputType === "file"
-              ? fileUploads[field.name]?.fileId || ""
-              : data[field.name] || "",
-          inputType: field.inputType,
-          name: field.name,
-        }))
-        .filter(
-          (field) =>
-            field.name.toLowerCase() !== "diagnosis" &&
-            field.name.toLowerCase() !== "medications" &&
-            field.fieldType.toLowerCase() !== "diagnosis" &&
-            field.name.toLowerCase() !== "medicine" &&
-            field.fieldType.toLowerCase() !== "medicine",
-        ) || []
+    // Defense-in-depth: filter hidden fields out of the outbound payload.
+    // The clear-on-hide effect already wiped their values, but there's a
+    // one-tick race if the user clicks Save in the same frame a field hides
+    // (effects run after paint, submit handlers don't). Belt and suspenders.
+    const visibleFields = filterVisibleFields(
+      (form?.formFields ?? []).filter((f) => !EventForm.isDisplayOnly(f)),
+      ruleEvaluation,
+    )
+    const formData = visibleFields
+      .map((field) => ({
+        fieldId: field.id,
+        fieldType: field.fieldType,
+        value:
+          field.inputType === "file"
+            ? fileUploads[field.name]?.fileId || ""
+            : data[field.name] || "",
+        inputType: field.inputType,
+        name: field.name,
+      }))
+      .filter(
+        (field) =>
+          field.name.toLowerCase() !== "diagnosis" &&
+          field.name.toLowerCase() !== "medications" &&
+          field.fieldType.toLowerCase() !== "diagnosis" &&
+          field.name.toLowerCase() !== "medicine" &&
+          field.fieldType.toLowerCase() !== "medicine",
+      )
 
-    // if the form has medicine and diagnosis fields, add them to the form data
+    // if the form has medicine and diagnosis fields, add them to the form data.
+    // Visibility re-check here covers the per-field tail-append path.
+    const isFieldVisible = (field: { id: string }): boolean =>
+      ruleEvaluation ? ruleEvaluation.isVisible(field.id) : true
     const medicineField = form?.formFields.find((field) => field.fieldType === "medicine")
     const diagnosisField = form?.formFields.find((field) => field.fieldType === "diagnosis")
-    if (medicineField) {
+    if (medicineField && isFieldVisible(medicineField)) {
       // add the medications state array to the form data
       formData.push({
         fieldId: medicineField.id,
@@ -342,7 +521,7 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
         name: medicineField.name,
       })
     }
-    if (diagnosisField) {
+    if (diagnosisField && isFieldVisible(diagnosisField)) {
       // add the diagnoses state array to the form data
       formData.push({
         fieldId: diagnosisField.id,
@@ -633,9 +812,55 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
     <BottomSheetModalProvider>
       <Screen style={$root} preset="scroll">
         <View gap={12} pb={24}>
-          {form.formFields.map((field, idx) => {
+          {form.formFields.map((field) => {
+            // Visibility gate. Hiding via early-return rather than a wrapper
+            // keeps the existing branch tree untouched. NOTE: the key on this
+            // <View> was previously index-based; switched to field.id so that
+            // visibility toggles don't shift indices and re-mount every
+            // Controller after the toggled field (which would reset values).
+            if (ruleEvaluation && !ruleEvaluation.isVisible(field.id)) return null
+            const fieldErrors = errorsByFieldId.get(field.id)
+            // Editable inputs hide inline errors until the user has touched
+            // or modified the field; read-only computed fields always show
+            // them (the user can't touch them, so the only way to learn
+            // about a blocking validator is to see the message). The
+            // submit-time consolidated toast surfaces everything either way.
+            const fieldName = sanitizeFieldName(field.name)
+            const fieldInteracted = Boolean(
+              touchedFields[fieldName] || dirtyFields[fieldName],
+            )
+
+            // A field with a successful computedValue rule renders as a
+            // read-only labelled display of the computed value (skipping the
+            // editable Controller branches). The writeback effect keeps RHF
+            // state in sync with the computation; submit reads from RHF as
+            // usual.
+            if (ruleEvaluation && hasComputed(ruleEvaluation, field.id)) {
+              const computed = getComputed(ruleEvaluation, field.id)
+              return (
+                <View key={field.id}>
+                  <Text
+                    text={resolved?.fieldNames[field.id] ?? field.name}
+                    preset="formLabel"
+                  />
+                  <Text text={formatComputedValue(computed)} />
+                  {fieldErrors && fieldErrors.length > 0 ? (
+                    <View pt={4}>
+                      {fieldErrors.map((err) => (
+                        <Text
+                          key={err.validatorId}
+                          text={err.message}
+                          color={colors.error}
+                        />
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              )
+            }
+
             return (
-              <View key={`formField-${idx}`}>
+              <View key={field.id}>
                 {/* Static text display (read-only) */}
                 <If condition={field.fieldType === "text"}>
                   <Text
@@ -950,6 +1175,23 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                     value={diagnoses || []}
                   />
                 </If>
+
+                {/* Validator errors. Rendered at the end of the field block so
+                    every input variant gets them without modifying its branch.
+                    Gated on touched/dirty to avoid eager errors on untouched
+                    fields whose rule can't evaluate against `undefined`. */}
+                {fieldInteracted && fieldErrors && fieldErrors.length > 0 ? (
+                  <View gap={2} mt={4}>
+                    {fieldErrors.map((err) => (
+                      <Text
+                        key={err.validatorId}
+                        text={err.message}
+                        size="xs"
+                        color={colors.error}
+                      />
+                    ))}
+                  </View>
+                ) : null}
               </View>
             )
           })}

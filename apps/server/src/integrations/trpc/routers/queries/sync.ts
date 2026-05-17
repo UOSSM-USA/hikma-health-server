@@ -44,7 +44,7 @@ export const syncQueryRouter = createTRPCRouter({
    * Pull changes since last sync timestamp.
    * Delegates to Sync.getDeltaRecords with peerType inferred from context.
    *
-   * Implementation details (Phase 4):
+   * Implementation details:
    * - Constructs a RequestCaller from the authenticated tRPC context
    * - Passes peerType as "unknown" (treated as mobile — safe default)
    * - Caller can optionally specify peerType to get hub-scoped results

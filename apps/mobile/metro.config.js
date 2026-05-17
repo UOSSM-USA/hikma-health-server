@@ -1,3 +1,4 @@
+const path = require("path")
 const { getSentryExpoConfig } = require("@sentry/react-native/metro")
 
 /** @type {import('expo/metro-config').MetroConfig} */
@@ -32,5 +33,27 @@ config.resolver.sourceExts.push("cjs")
 // but our code imports without extensions (e.g. "@noble/curves/ed25519").
 // unstable_enablePackageExports makes Metro resolve them correctly.
 config.resolver.unstable_enablePackageExports = true
+
+// `@hikmahealth/forms` ReScript output uses deep imports
+// (`@nd/jsonlogic/src/JsonLogic.res.mjs`). The vendored package's exports
+// map only exposes the package root, so Metro's strict exports
+// resolution (above) rejects the deep import. The vendor package is
+// off-limits to edit (a fix exists upstream); intercept the request
+// and route it to the vendored file directly.
+const vendoredJsonLogic = path.resolve(__dirname, "../../vendor/@nd/jsonlogic")
+const upstreamResolveRequest = config.resolver.resolveRequest
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName.startsWith("@nd/jsonlogic/")) {
+    const subpath = moduleName.slice("@nd/jsonlogic/".length)
+    return {
+      type: "sourceFile",
+      filePath: path.join(vendoredJsonLogic, subpath),
+    }
+  }
+  if (upstreamResolveRequest) {
+    return upstreamResolveRequest(context, moduleName, platform)
+  }
+  return context.resolveRequest(context, moduleName, platform)
+}
 
 module.exports = config

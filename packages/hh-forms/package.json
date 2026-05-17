@@ -1,26 +1,75 @@
 {
   "name": "@hikmahealth/forms",
   "version": "0.1.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "private": true,
+  "description": "Shared form-definition types, decoders, and helpers for the Hikma Health platform (event forms and patient registration forms).",
   "type": "module",
-  "peerDependencies": {
-    "react": "*",
-    "react-dom": "*"
+  "main": "./src/HhForms.res.mjs",
+  "types": "./src/HhForms.gen.ts",
+  "exports": {
+    ".": {
+      "types": "./src/HhForms.gen.ts",
+      "import": "./src/HhForms.res.mjs"
+    },
+    "./EventForm": {
+      "types": "./src/EventForm.gen.ts",
+      "import": "./src/EventForm.res.mjs"
+    },
+    "./RegistrationForm": {
+      "types": "./src/RegistrationForm.gen.ts",
+      "import": "./src/RegistrationForm.res.mjs"
+    },
+    "./Translations": {
+      "types": "./src/Translations.gen.ts",
+      "import": "./src/Translations.res.mjs"
+    },
+    "./Shared": {
+      "types": "./src/Shared.gen.ts",
+      "import": "./src/Shared.res.mjs"
+    },
+    "./Rules": {
+      "types": "./src/Rules.gen.ts",
+      "import": "./src/Rules.res.mjs"
+    },
+    "./RuleValidation": {
+      "types": "./src/RuleValidation.gen.ts",
+      "import": "./src/RuleValidation.res.mjs"
+    },
+    "./RuleTemplates": {
+      "types": "./src/RuleTemplates.gen.ts",
+      "import": "./src/RuleTemplates.res.mjs"
+    },
+    "./RuleCycles": {
+      "types": "./src/RuleCycles.gen.ts",
+      "import": "./src/RuleCycles.res.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/**/*.res",
+    "src/**/*.resi",
+    "src/**/*.res.mjs",
+    "src/**/*.gen.ts",
+    "rescript.json",
+    "README.md"
+  ],
+  "scripts": {
+    "res:build": "rescript",
+    "res:clean": "rescript clean",
+    "res:dev": "rescript watch",
+    "build": "rescript",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "zod": "^4.3.5"
+    "@nd/jsonlogic": "workspace:*",
+    "@rescript/runtime": "12.2.0"
   },
   "devDependencies": {
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "@types/node": "^24.5.2",
+    "fast-check": "^4.5.3",
+    "rescript": "12.2.0",
+    "typescript": "^6.0.2",
+    "vitest": "^3.0.5"
   }
 }

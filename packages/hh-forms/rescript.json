@@ -1,0 +1,23 @@
+{
+  "name": "@hikmahealth/forms",
+  "sources": [
+    {
+      "dir": "src",
+      "subdirs": true
+    }
+  ],
+  "package-specs": {
+    "module": "esmodule",
+    "in-source": true
+  },
+  "gentypeconfig": {
+    "module": "esmodule",
+    "moduleResolution": "nodenext",
+    "generatedFileExtension": ".gen.ts"
+  },
+  "suffix": ".res.mjs",
+  "dependencies": [
+    "@nd/jsonlogic"
+  ],
+  "compiler-flags": []
+}

@@ -4,7 +4,7 @@ module.exports = {
   setupFiles: ["<rootDir>/test/setup.ts"],
   testPathIgnorePatterns: ["/node_modules/", "/.maestro/"],
   transformIgnorePatterns: [
-    "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|@noble/curves|@noble/hashes|@noble/ciphers|@scure/base|immer|use-immer|uuid)",
+    "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|@noble/curves|@noble/hashes|@noble/ciphers|@scure/base|immer|use-immer|uuid|@nd/jsonlogic|@rescript/runtime)",
   ],
   // jest-expo's default transform regex only matches .ts/.tsx/.js/.jsx, so
   // ReScript-emitted `.res.mjs` files (e.g. @hikmahealth/js-utils) fall
@@ -21,6 +21,24 @@ module.exports = {
     "^@noble/curves/([^.]+)$": "@noble/curves/$1.js",
     "^@noble/hashes/([^.]+)$": "@noble/hashes/$1.js",
     "^@noble/ciphers/([^.]+)$": "@noble/ciphers/$1.js",
+    // @nd/jsonlogic only declares an `"import"` conditional export and no
+    // `"default"` fallback. Jest's CJS-mode resolver doesn't match the
+    // `"import"` condition, so we map to the actual entry file. The
+    // package is vendored as a git subtree — fixing the exports field
+    // upstream is the long-term move; this mapping keeps the subtree
+    // pristine in the meantime.
+    "^@nd/jsonlogic$": "<rootDir>/node_modules/@nd/jsonlogic/src/JsonLogic.res.mjs",
+    // Same problem for deep paths emitted by ReScript-generated `.res.mjs`
+    // inside @hikmahealth/forms (e.g. `@nd/jsonlogic/src/JsonLogic.res.mjs`).
+    // The vendor package's exports map doesn't expose `./src/*`; route deep
+    // paths through the workspace symlink instead.
+    "^@nd/jsonlogic/(.*)$": "<rootDir>/node_modules/@nd/jsonlogic/$1",
+    // @hikmahealth/forms uses subpath exports (`/Rules`, `/RuleValidation`,
+    // `/RuleTemplates`, etc.) via the `"import"` conditional. Same
+    // resolver-condition gap as @nd/jsonlogic — map subpaths to the
+    // generated `.res.mjs` files inside the workspace package.
+    "^@hikmahealth/forms$": "<rootDir>/node_modules/@hikmahealth/forms/src/HhForms.res.mjs",
+    "^@hikmahealth/forms/(.+)$": "<rootDir>/node_modules/@hikmahealth/forms/src/$1.res.mjs",
   },
   coveragePathIgnorePatterns: ["/node_modules/", "app/db/sync.ts"],
   collectCoverage: false,

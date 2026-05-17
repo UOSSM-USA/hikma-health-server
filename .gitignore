@@ -54,6 +54,7 @@ postserver
 *.local.txt
 *.local
 *.local.md
+*.local.json
 
 # Rust/Cargo
 target/
@@ -128,9 +129,22 @@ venv/
 *.db
 *.wasm
 
+
 # ReScript build artifacts
 packages/utils/js/lib/
 packages/utils/js/dist/
+
+packages/hh-forms/**/*.mjs
+packages/hh-forms/**/*.res.mjs
+packages/hh-forms/**/*.gen.ts
+
+
+# ReScript build artifacts — caches/byproducts, never committed regardless of where the package lives
+packages/**/lib/
+packages/**/.bsb.lock
+.merlin
+*.res.d.mts
+
 
 # moon
 .moon/cache

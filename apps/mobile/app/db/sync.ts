@@ -255,26 +255,26 @@ function validateTurboResponse(rawJson: string): { valid: boolean; reason: strin
 }
 
 /**
- * PHASE 5: Tracks turbo sync fallback attempts to prevent infinite loops
+ * Tracks turbo sync fallback attempts to prevent infinite loops
  */
 let turboFallbackAttempted = false
 
 /**
- * PHASE 5: Resets the turbo fallback flag (call this at the start of each sync)
+ * Resets the turbo fallback flag (call this at the start of each sync)
  */
 function resetTurboFallback() {
   turboFallbackAttempted = false
 }
 
 /**
- * PHASE 5: Checks if we can attempt a fallback to standard sync
+ * Checks if we can attempt a fallback to standard sync
  */
 function canAttemptTurboFallback(): boolean {
   return !turboFallbackAttempted
 }
 
 /**
- * PHASE 5: Marks that we've attempted a turbo fallback
+ * Marks that we've attempted a turbo fallback
  */
 function markTurboFallbackAttempted() {
   turboFallbackAttempted = true
@@ -326,10 +326,7 @@ export async function syncDB(
   const headers = new Headers()
   headers.append("Authorization", "Basic " + encodedUsernameAndPassword)
 
-  // ============================================================================
-  // PHASE 2 & 3: Turbo Sync Detection
-  // ============================================================================
-  // Reset fallback tracking at the start of each sync
+  // Turbo sync detection. Reset fallback tracking at the start of each sync.
   resetTurboFallback()
 
   // Check if we should use turbo sync (only for first sync with empty database)
@@ -340,7 +337,7 @@ export async function syncDB(
     `[Sync] Turbo mode: ${useTurbo ? "ENABLED ✅" : "DISABLED ❌"} - Reason: ${turboDecision.reason}`,
   )
 
-  // Log to Sentry for monitoring (PHASE 6)
+  // Log to Sentry for monitoring
   Sentry.addBreadcrumb({
     category: "sync",
     message: `Sync started with turbo mode: ${useTurbo}`,
@@ -357,7 +354,7 @@ export async function syncDB(
     await synchronize({
       database,
       sendCreatedAsUpdated: false,
-      unsafeTurbo: useTurbo, // PHASE 3: Enable turbo sync flag
+      unsafeTurbo: useTurbo,
       pullChanges: async ({ lastPulledAt, schemaVersion, migration }) => {
         // changes object looks something like this
         // changes: {
@@ -374,7 +371,7 @@ export async function syncDB(
         const pullStartTime = Date.now()
 
         // ============================================================================
-        // PHASE 2: Conditional Turbo/Standard Mode Logic
+        // Conditional turbo/standard mode logic.
         // ============================================================================
         if (useTurbo) {
           // TURBO MODE: Return raw JSON text without parsing
@@ -397,7 +394,7 @@ export async function syncDB(
               const errorText = await response.text()
               Logger.error({ mgs: "[Sync Turbo] Error fetching data from server:", errorText })
 
-              // PHASE 6: Track error with Sentry
+              // Track error with Sentry
               Sentry.captureException(new Error(`Turbo sync fetch failed: ${response.status}`), {
                 tags: { component: "sync", mode: "turbo", phase: "fetch" },
                 extra: {
@@ -413,12 +410,12 @@ export async function syncDB(
             const rawJson = await response.text()
             const pullDuration = Date.now() - pullStartTime
 
-            // PHASE 4: Validate backend response for turbo sync
+            // Validate backend response for turbo sync
             const validation = validateTurboResponse(rawJson)
             if (!validation.valid) {
               Logger.error(`[Sync Turbo] ❌ Response validation failed: ${validation.reason}`)
 
-              // PHASE 6: Track validation failure with Sentry
+              // Track validation failure with Sentry
               Sentry.captureMessage("Turbo sync validation failed", {
                 level: "warning",
                 tags: { component: "sync", mode: "turbo", phase: "validation" },
@@ -435,7 +432,7 @@ export async function syncDB(
               `[Sync Turbo] ✅ Successfully fetched and validated raw JSON (${rawJson.length} chars in ${pullDuration}ms)`,
             )
 
-            // PHASE 6: Log performance metrics to Sentry
+            // Log performance metrics to Sentry
             Sentry.addBreadcrumb({
               category: "sync-turbo",
               message: "Turbo sync pull completed",
@@ -456,7 +453,7 @@ export async function syncDB(
               error,
             })
 
-            // PHASE 6: Capture exception with detailed context
+            // Capture exception with detailed context
             Sentry.captureException(error, {
               tags: { component: "sync", mode: "turbo", phase: "pull" },
               extra: {
@@ -523,7 +520,7 @@ export async function syncDB(
               }, 2_500)
             }
 
-            // PHASE 6: Log performance metrics to Sentry
+            // Log performance metrics to Sentry
             Sentry.addBreadcrumb({
               category: "sync-standard",
               message: "Standard sync pull completed",
@@ -540,7 +537,7 @@ export async function syncDB(
             Logger.error(`[Sync Standard] ❌ Error pulling changes (after ${pullDuration}ms)`)
             Logger.error(error)
 
-            // PHASE 6: Capture exception with detailed context
+            // Capture exception with detailed context
             Sentry.captureException(error, {
               tags: { component: "sync", mode: "standard", phase: "pull" },
               extra: {
@@ -596,13 +593,13 @@ export async function syncDB(
     })
   } catch (error) {
     // ============================================================================
-    // PHASE 5: Turbo Sync Fallback Mechanism
+    // Turbo sync fallback mechanism.
     // ============================================================================
     // If turbo sync fails and we haven't tried fallback yet, retry with standard sync
     if (useTurbo && canAttemptTurboFallback()) {
       Logger.warn("[Sync Fallback] ⚠️ Turbo sync failed, attempting fallback to standard sync...")
 
-      // PHASE 6: Track fallback attempt with Sentry
+      // Track fallback attempt with Sentry
       Sentry.captureMessage("Turbo sync failed, falling back to standard sync", {
         level: "warning",
         tags: { component: "sync", mode: "turbo", phase: "fallback" },
@@ -670,7 +667,7 @@ export async function syncDB(
                 }, 2_500)
               }
 
-              // PHASE 6: Track successful fallback
+              // Track successful fallback
               Sentry.addBreadcrumb({
                 category: "sync-fallback",
                 message: "Fallback to standard sync succeeded",
@@ -685,7 +682,7 @@ export async function syncDB(
             } catch (fallbackError) {
               Logger.error({ mgs: "[Sync Fallback] ❌ Fallback also failed:", fallbackError })
 
-              // PHASE 6: Track failed fallback
+              // Track failed fallback
               Sentry.captureException(fallbackError, {
                 tags: { component: "sync", mode: "fallback", phase: "pull" },
                 extra: { originalError: String(error) },
@@ -728,7 +725,7 @@ export async function syncDB(
 
         Logger.log("[Sync Fallback] ✅ Fallback sync completed successfully")
 
-        // PHASE 6: Track successful complete fallback
+        // Track successful complete fallback
         Sentry.captureMessage("Turbo sync fallback completed successfully", {
           level: "info",
           tags: { component: "sync", mode: "fallback", phase: "complete" },
@@ -736,7 +733,7 @@ export async function syncDB(
       } catch (fallbackError) {
         Logger.error({ mgs: "[Sync Fallback] ❌ Fallback sync failed:", fallbackError })
 
-        // PHASE 6: Track complete fallback failure
+        // Track complete fallback failure
         Sentry.captureException(fallbackError, {
           tags: { component: "sync", mode: "fallback", phase: "complete" },
           extra: {
@@ -752,7 +749,7 @@ export async function syncDB(
       // Either not using turbo, or already attempted fallback - just propagate the error
       Logger.error({ mgs: "[Sync] ❌ Sync failed:", error })
 
-      // PHASE 6: Track sync failure
+      // Track sync failure
       Sentry.captureException(error, {
         tags: { component: "sync", mode: useTurbo ? "turbo" : "standard", phase: "complete" },
         extra: {
