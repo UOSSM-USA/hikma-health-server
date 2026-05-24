@@ -94,10 +94,16 @@ build-database:
 build-ui:
     pnpm --filter @hikmahealth/ui run build
 
+# ReScript outputs (`.res.mjs` + `.gen.ts`) are gitignored and consumed by
+# server + mobile at runtime/type-check time, so every recipe that builds
+# or tests those apps must run this first.
+build-hh-forms:
+    pnpm --filter @hikmahealth/forms run build
+
 
 # ---- App builds : deps drive ordering so `just build-server` is one command ----
 
-build-server: install-server build-utils-js build-database
+build-server: install-server build-utils-js build-database build-hh-forms
     #!/usr/bin/env bash
     set -euo pipefail
     ENV_ARGS="-f .env"
@@ -111,7 +117,7 @@ build-aiproxy: install-aiproxy build-utils-js
     [ -f apps/aiproxy/.env ] && ENV_ARGS="$ENV_ARGS -f apps/aiproxy/.env"
     pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hh-ai-proxy run build
 
-typecheck-mobile: build-utils-js
+typecheck-mobile: build-utils-js build-hh-forms
     pnpm --filter hikma-health-mobile run check-types
 
 
@@ -123,7 +129,7 @@ typecheck-mobile: build-utils-js
 # Placeholder `test` scripts in packages/{data,common,client-native,hh-forms}
 # are intentionally not invoked here.
 
-test-server: build-utils-js build-database
+test-server: build-utils-js build-database build-hh-forms
     pnpm --filter hikma-health-server run test
 
 test-aiproxy: build-utils-js
@@ -141,13 +147,13 @@ test-local-hub-backend:
 
 test-local-hub: test-local-hub-frontend test-local-hub-backend
 
-test-mobile: build-utils-js
+test-mobile: build-utils-js build-hh-forms
     pnpm --filter hikma-health-mobile run test
 
 
 # ---- Aggregator Scripts : Buy one get N free !! ----
 
-build-packages: build-utils-js build-database build-ui
+build-packages: build-utils-js build-database build-ui build-hh-forms
 
 build-apps: build-server build-aiproxy typecheck-mobile
 
@@ -192,7 +198,7 @@ start-aiproxy:
 # build-utils-js / build-database deps mirror test-server — vite needs the
 # workspace builds present to resolve imports.
 
-dev-server: build-utils-js build-database
+dev-server: build-utils-js build-database build-hh-forms
     #!/usr/bin/env bash
     set -euo pipefail
     ENV_ARGS="-f .env"
@@ -212,7 +218,7 @@ dev-server: build-utils-js build-database
 #                                         no fast refresh) — for on-device perf
 #                                         testing in real-world conditions.
 
-start-mobile-android mode='dev': build-utils-js
+start-mobile-android mode='dev': build-utils-js build-hh-forms
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{ mode }}" in
@@ -225,7 +231,7 @@ start-mobile-android mode='dev': build-utils-js
         exit 2 ;;
     esac
 
-start-mobile-ios mode='dev': build-utils-js
+start-mobile-ios mode='dev': build-utils-js build-hh-forms
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{ mode }}" in
