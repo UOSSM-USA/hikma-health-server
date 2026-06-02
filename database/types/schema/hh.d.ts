@@ -105,6 +105,8 @@ export interface ClinicInventory {
 export interface Clinics {
   address: string | null;
   attributes: Generated<string[]>;
+  city: string | null;
+  country: string | null;
   created_at: Generated<Timestamp | null>;
   deleted_at: Timestamp | null;
   id: string;

@@ -11,6 +11,9 @@ export default class ClinicModel extends Model {
   }
 
   @text("name") name!: string
+  @text("country") country!: string | null
+  @text("city") city!: string | null
+  @text("address") address!: string | null
   @field("is_deleted") isDeleted!: boolean
   @date("deleted_at") deletedAt!: Date
 

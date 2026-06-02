@@ -28,6 +28,9 @@ import { Logger } from "@hikmahealth/js-utils";
 // Define the form schema
 const formSchema = z.object({
   name: z.string().min(1, "Clinic name is required"),
+  country: z.string().optional(),
+  city: z.string().optional(),
+  address: z.string().optional(),
 });
 
 // Type for the form values
@@ -49,9 +52,23 @@ const getClinicById = createServerFn({ method: "GET" })
 
 // Server function to create or update a clinic
 const saveClinic = createServerFn({ method: "POST" })
-  .inputValidator((data: { id?: string; name: string }) => data)
+  .inputValidator(
+    (data: {
+      id?: string;
+      name: string;
+      country?: string | null;
+      city?: string | null;
+      address?: string | null;
+    }) => data,
+  )
   .handler(async ({ data }) => {
-    return await Clinic.save({ id: data.id, name: data.name });
+    return await Clinic.save({
+      id: data.id,
+      name: data.name,
+      country: data.country,
+      city: data.city,
+      address: data.address,
+    });
   });
 
 export const Route = createFileRoute("/app/clinics/edit/$")({
@@ -77,6 +94,9 @@ function RouteComponent() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: clinic?.name || "",
+      country: clinic?.country || "",
+      city: clinic?.city || "",
+      address: clinic?.address || "",
     },
   });
 
@@ -87,6 +107,9 @@ function RouteComponent() {
         data: {
           id: clinic?.id || undefined,
           name: values.name,
+          country: values.country,
+          city: values.city,
+          address: values.address,
         },
       });
 
@@ -127,6 +150,51 @@ function RouteComponent() {
                   <FormDescription>
                     The name of the clinic as it will appear in the system
                   </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="country"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Country</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Enter country (optional)"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="city"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>City</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Enter city (optional)" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="address"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Address</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Enter address (optional)"
+                      {...field}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

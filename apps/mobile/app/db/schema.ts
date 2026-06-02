@@ -52,6 +52,9 @@ const clinicSchema = tableSchema({
   name: "clinics",
   columns: [
     { name: "name", type: "string" },
+    { name: "country", type: "string", isOptional: true },
+    { name: "city", type: "string", isOptional: true },
+    { name: "address", type: "string", isOptional: true },
     { name: "updated_at", type: "number" },
     { name: "created_at", type: "number" },
     { name: "is_deleted", type: "boolean" },
@@ -506,7 +509,7 @@ export const peersSchema = tableSchema({
 })
 
 export default appSchema({
-  version: 9, // 🔥 IMPORTANT!! 🔥 when migrating dont forget to change this number
+  version: 10, // 🔥 IMPORTANT!! 🔥 when migrating dont forget to change this number
   tables: [
     patientSchema,
     clinicSchema,

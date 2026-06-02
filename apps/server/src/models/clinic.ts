@@ -19,6 +19,9 @@ namespace Clinic {
   export const ClinicSchema = Schema.Struct({
     id: Schema.String,
     name: Schema.OptionFromNullOr(Schema.String),
+    address: Schema.OptionFromNullOr(Schema.String),
+    country: Schema.OptionFromNullOr(Schema.String),
+    city: Schema.OptionFromNullOr(Schema.String),
     is_deleted: Schema.OptionFromNullOr(Schema.Boolean),
     created_at: Schema.DateFromSelf,
     updated_at: Schema.DateFromSelf,
@@ -58,6 +61,9 @@ namespace Clinic {
     export const columns = {
       id: "id",
       name: "name",
+      address: "address",
+      country: "country",
+      city: "city",
       is_deleted: "is_deleted",
       created_at: "created_at",
       updated_at: "updated_at",
@@ -70,6 +76,9 @@ namespace Clinic {
     export interface T {
       id: string;
       name: string | null;
+      address: string | null;
+      country: string | null;
+      city: string | null;
       is_deleted: Generated<boolean>;
       created_at: Generated<ColumnType<Date, string | undefined, never>>;
       updated_at: Generated<
@@ -193,13 +202,39 @@ namespace Clinic {
   );
 
   /**
-   * Updates a clinic given an id and name - if the clinic id is not provided, a new clinic will be created
-   * @param {string} id - The id of the clinic to update
-   * @param {string} name - The new name of the clinic
-   * @returns {Promise<void>} - Resolves when the clinic is updated
+   * Trims a free-text field and collapses unset/blank values to null so the
+   * optional location columns always store null rather than empty strings.
+   */
+  const toNullableText = (value?: string | null): string | null => {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
+  };
+
+  /**
+   * Creates or updates a clinic. If the clinic id is not provided, a new clinic
+   * is created. The optional location fields (address, country, city) default
+   * to null when not provided.
+   * @param {string} [id] - The id of the clinic to update
+   * @param {string} name - The name of the clinic
+   * @param {string} [address] - Optional free-text street address
+   * @param {string} [country] - Optional country
+   * @param {string} [city] - Optional city
+   * @returns {Promise<void>} - Resolves when the clinic is saved
    */
   export const save = createServerOnlyFn(
-    async ({ id, name }: { id?: string; name: string }): Promise<void> => {
+    async ({
+      id,
+      name,
+      address,
+      country,
+      city,
+    }: {
+      id?: string;
+      name: string;
+      address?: string | null;
+      country?: string | null;
+      city?: string | null;
+    }): Promise<void> => {
       const token = getCookie("token");
       if (!token) {
         return Promise.reject(new Error("Unauthorized"));
@@ -218,6 +253,9 @@ namespace Clinic {
           .values({
             id: clinicId,
             name,
+            address: toNullableText(address),
+            country: toNullableText(country),
+            city: toNullableText(city),
             is_deleted: false,
             created_at: sql`now()`,
             updated_at: sql`now()`,
@@ -236,6 +274,11 @@ namespace Clinic {
           .updateTable(Clinic.Table.name)
           .set({
             name,
+            address: toNullableText(address),
+            country: toNullableText(country),
+            city: toNullableText(city),
+            updated_at: sql`now()`,
+            last_modified: sql`now()`,
           })
           .where("id", "=", id)
           .execute();

@@ -6,6 +6,9 @@ namespace Clinic {
   export type T = {
     id: string
     name: string
+    country: Option.Option<string>
+    city: Option.Option<string>
+    address: Option.Option<string>
     isDeleted: boolean
     createdAt: Date
     updatedAt: Date
@@ -19,6 +22,9 @@ namespace Clinic {
   export const empty: T = {
     id: "",
     name: "",
+    country: Option.none(),
+    city: Option.none(),
+    address: Option.none(),
     isDeleted: false,
     createdAt: new Date(),
     updatedAt: new Date(),

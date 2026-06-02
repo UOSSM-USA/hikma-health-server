@@ -4,6 +4,20 @@ const decimal = "string"
 
 export default schemaMigrations({
   migrations: [
+    // V10
+    {
+      toVersion: 10,
+      steps: [
+        addColumns({
+          table: "clinics",
+          columns: [
+            { name: "country", type: "string", isOptional: true },
+            { name: "city", type: "string", isOptional: true },
+            { name: "address", type: "string", isOptional: true },
+          ],
+        }),
+      ],
+    },
     // V9
     {
       toVersion: 9,
