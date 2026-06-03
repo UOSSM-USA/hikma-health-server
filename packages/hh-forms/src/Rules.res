@@ -397,6 +397,48 @@ let computeValidatorErrors = (
 }
 
 // ---------------------------------------------------------------------------
+// Pre-compile sanitize — drop rules that depend on non-live fields
+// ---------------------------------------------------------------------------
+
+// Remove fields that are not live (hidden via the static `visible` column,
+// or deleted) and strip from the survivors any rule slot that references a
+// non-live field. A rule depending on a removed or hidden field is thus
+// ignored rather than evaluated against a stale or absent value. Pure: it
+// returns a new field list and leaves the evaluator itself untouched, so it
+// slots in as `compileRules(pruneRulesForLiveFields(fields, liveIds))`.
+//
+// `liveFieldIds` is supplied by the caller because the engine field shape
+// carries no visibility/deletion metadata: registration callers pass the
+// ids of fields with `visible && !deleted`; event-form callers pass every
+// present field id (a deleted event field is already absent from the array).
+@genType
+let pruneRulesForLiveFields = (
+  fields: array<fieldWithRules>,
+  ~liveFieldIds: array<string>,
+): array<fieldWithRules> => {
+  let live: dict<bool> = Dict.make()
+  liveFieldIds->Array.forEach(id => live->Dict.set(id, true))
+  let isLive = id => live->Dict.get(id)->Option.isSome
+  // A rule with no form references (empty array, or only ctx references)
+  // is kept — `every` over an empty array is true.
+  let refsAllLive = (rule: option<jsonLogicRule>): bool =>
+    RuleCycles.extractReferencedFieldIds(rule)->Array.every(isLive)
+  fields
+  ->Array.filter(f => isLive(f.id))
+  ->Array.map(f => {
+    id: f.id,
+    required: ?f.required,
+    visibleIf: ?(refsAllLive(f.visibleIf) ? f.visibleIf : None),
+    requiredIf: ?(refsAllLive(f.requiredIf) ? f.requiredIf : None),
+    computedValue: ?(refsAllLive(f.computedValue) ? f.computedValue : None),
+    validators: ?switch f.validators {
+    | None => None
+    | Some(vs) => Some(vs->Array.filter(v => refsAllLive(Some(v.rule))))
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 

@@ -42,6 +42,7 @@ import {
   computedEntries,
   computedValuesEqual,
   MAX_STABILIZE_ITERATIONS,
+  pruneRulesForLiveFields,
   type CompiledEvaluator,
   type FieldWithRules,
   type RuleEvaluation,
@@ -241,7 +242,12 @@ export const formStateMachine = setup({
 }).createMachine({
   id: "form-state",
   context: ({ input }) => {
-    const evaluator = compileRules(input.fields)
+    const evaluator = compileRules(
+      pruneRulesForLiveFields(
+        [...input.fields],
+        input.fields.map((f) => f.id),
+      ),
+    )
     // Default to clear-immediately because it's the simpler invariant;
     // patient form opts into skip-first-render explicitly.
     const baselineMode = input.baselineHidden ?? "clear-immediately"

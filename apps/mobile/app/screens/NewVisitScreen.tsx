@@ -242,9 +242,9 @@ function EventFormItem({
   return (
     <View style={$formListItem}>
       <Pressable onPress={onPress} style={$formListItemBtn}>
-        <View direction="row" flexWrap="wrap" justifyContent="space-between">
-          <View direction="row" justifyContent="space-between" gap={8}>
-            <View direction="row" flexWrap="wrap" gap={6}>
+        <View direction="column" justifyContent="space-between" gap={8}>
+          <View direction="row" flexWrap="wrap" justifyContent="space-between" gap={6}>
+            <View direction="row" flexWrap="wrap" justifyContent="space-between" gap={6}>
               {entries.length > 0 && <LucideCheckCheck color="green" />}
               <Text weight="bold" style={$eventFormTitle}>
                 {translatedName}
@@ -260,10 +260,10 @@ function EventFormItem({
                 <Text text={form.language} color="white" size="xxs" />
               </View>
             </View>*/}
+            <ChevronRight color={colors.palette.neutral500} />
           </View>
           <Text size="xs">{translatedDescription}</Text>
         </View>
-        <ChevronRight color={colors.palette.neutral500} />
       </Pressable>
 
       <If condition={entries.length > 0}>
@@ -299,10 +299,6 @@ const $eventFormTitle: TextStyle = {
 
 const $formListItemBtn: ViewStyle = {
   display: "flex",
-  flexDirection: "row",
-  justifyContent: "space-between",
-  alignItems: "center",
-  paddingRight: 10,
 }
 
 const $languageBadge: ViewStyle = {

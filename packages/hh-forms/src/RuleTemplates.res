@@ -65,8 +65,12 @@ let comparisonOpLabels: dict<string> = {
   d
 }
 
-// `Always`     — no visibleIf rule; field is always visible.
-// `Comparison` — single comparison between a field reference and a literal.
+// A single leaf condition over one field. This is the reusable seam: a
+// future nested/mixed boolean tree would wrap these leaves in group nodes
+// without changing the leaf shape, and the serialized JSONLogic is
+// identical either way (storage is always one rule).
+//
+// `Comparison` — comparison between a field reference and a literal.
 // `Truthy`     — `{!!: {var: "form.<id>"}}` — field has any truthy value.
 // `Falsy`      — `{!: {var: "form.<id>"}}` — field is empty / falsy.
 //
@@ -74,11 +78,27 @@ let comparisonOpLabels: dict<string> = {
 // string / number / boolean / null literals — exactly the JSON primitive
 // space minus arrays/objects. Callers narrow via JSON.t pattern matching.
 @genType
-type simpleVisibilityTemplate =
-  | Always
+type visibilityCondition =
   | Comparison({fieldId: string, op: comparisonOp, value: JSON.t})
   | Truthy({fieldId: string})
   | Falsy({fieldId: string})
+
+// How a list of conditions combines. Only `#and` is surfaced in the UI
+// today; `#or` is defined now so the type and serializer are ready for a
+// later OR/mixed-logic editor with no structural change.
+@genType
+type connector = [#"and" | #"or"]
+
+// `Always`     — no visibleIf rule; field is always visible.
+// `Conditions` — one or more leaf conditions combined by `connector`.
+//                A single condition compiles to the bare leaf rule (no
+//                wrapper); two or more compile to `{and: [...]}` /
+//                `{or: [...]}`. `conditions` is expected non-empty;
+//                an empty list compiles to "no rule" defensively.
+@genType
+type simpleVisibilityTemplate =
+  | Always
+  | Conditions({connector: connector, conditions: array<visibilityCondition>})
 
 let formVarPrefix = "form."
 
@@ -118,39 +138,35 @@ let isLiteral = (v: JSON.t): bool =>
   | _ => false
   }
 
+// Compile one leaf condition into its JSONLogic rule object.
+let compileCondition = (c: visibilityCondition): JSON.t => {
+  let varRef = fieldId =>
+    JSON.Object(Dict.fromArray([("var", JSON.String(formVarPrefix ++ fieldId))]))
+  switch c {
+  | Comparison({fieldId, op, value}) =>
+    JSON.Object(Dict.fromArray([((op :> string), JSON.Array([varRef(fieldId), value]))]))
+  | Truthy({fieldId}) => JSON.Object(Dict.fromArray([("!!", varRef(fieldId))]))
+  | Falsy({fieldId}) => JSON.Object(Dict.fromArray([("!", varRef(fieldId))]))
+  }
+}
+
 // Compile a SimpleVisibilityTemplate into a JSONLogic rule.
 //
-// `Always` returns `None` — the absence of a rule. Other variants return
-// a constructed `Object` carrying the operator + operand.
+// `Always` (and a defensively-empty condition list) returns `None` — the
+// absence of a rule. A single condition compiles to the bare leaf rule so
+// existing stored single-condition rules round-trip byte-identically; two
+// or more wrap in `{and: [...]}` / `{or: [...]}`.
 @genType
 let compileVisibilityTemplate = (t: simpleVisibilityTemplate): option<JSON.t> =>
   switch t {
   | Always => None
-  | Comparison({fieldId, op, value}) =>
-    let varRef = JSON.Object(Dict.fromArray([("var", JSON.String(formVarPrefix ++ fieldId))]))
-    let args = JSON.Array([varRef, value])
-    let opStr = (op :> string)
-    Some(JSON.Object(Dict.fromArray([(opStr, args)])))
-  | Truthy({fieldId}) =>
+  | Conditions({conditions}) if Array.length(conditions) === 0 => None
+  | Conditions({conditions}) if Array.length(conditions) === 1 =>
+    Some(compileCondition(Array.getUnsafe(conditions, 0)))
+  | Conditions({connector, conditions}) =>
     Some(
       JSON.Object(
-        Dict.fromArray([
-          (
-            "!!",
-            JSON.Object(Dict.fromArray([("var", JSON.String(formVarPrefix ++ fieldId))])),
-          ),
-        ]),
-      ),
-    )
-  | Falsy({fieldId}) =>
-    Some(
-      JSON.Object(
-        Dict.fromArray([
-          (
-            "!",
-            JSON.Object(Dict.fromArray([("var", JSON.String(formVarPrefix ++ fieldId))])),
-          ),
-        ]),
+        Dict.fromArray([((connector :> string), JSON.Array(conditions->Array.map(compileCondition)))]),
       ),
     )
   }
@@ -166,76 +182,109 @@ let comparisonOpFromString = (s: string): option<comparisonOp> =>
   | _ => None
   }
 
-// Decompile a JSONLogic rule back into a SimpleVisibilityTemplate, or
-// None if the rule doesn't match a template shape — meaning it was
-// authored in advanced (raw-JSON) mode. `Null` / undefined-equivalent
-// rules decompile to `Always`.
-//
-// Returns `Some(Always)` for both the explicit `Null` JSON literal and
-// the "rule was missing" case (callers pass `JSON.Null` for the missing
-// case to stay total — there is no `undefined` in ReScript-land).
-@genType
-let decompileVisibilityTemplate = (rule: option<JSON.t>): option<simpleVisibilityTemplate> =>
+// Read the field id from a unary boolean operand: either the direct
+// `{var: "form.<id>"}` form or the legacy single-element array wrapper.
+let unaryFieldId = (arg: JSON.t): option<string> =>
+  switch isFormVar(arg) {
+  | Some(id) => Some(id)
+  | None =>
+    switch arg {
+    | Array(a) if Array.length(a) === 1 => isFormVar(a->Array.getUnsafe(0))
+    | _ => None
+    }
+  }
+
+// Decompile a single bare leaf rule into a condition, or None if it
+// doesn't match a leaf shape (comparison / truthy / falsy).
+let decompileCondition = (rule: JSON.t): option<visibilityCondition> =>
   switch rule {
-  | None | Some(Null) => Some(Always)
-  | Some(Object(obj)) =>
-    let keys = Dict.keysToArray(obj)
-    if Array.length(keys) !== 1 {
-      None
-    } else {
-      let op = keys[0]->Option.getUnsafe
+  | Object(obj) =>
+    switch Dict.keysToArray(obj) {
+    | [op] =>
       let arg = obj->Dict.get(op)->Option.getUnsafe
       // Comparison: { "<op>": [{var: "form.<id>"}, <literal>] }
       switch comparisonOpFromString(op) {
       | Some(cop) =>
         switch arg {
         | Array(args) if Array.length(args) === 2 =>
-          let lhs = args[0]->Option.getUnsafe
-          let rhs = args[1]->Option.getUnsafe
+          let lhs = args->Array.getUnsafe(0)
+          let rhs = args->Array.getUnsafe(1)
           switch isFormVar(lhs) {
-          | None => None
-          | Some(fieldId) =>
-            if isLiteral(rhs) {
-              Some(Comparison({fieldId, op: cop, value: rhs}))
-            } else {
-              None
-            }
+          | Some(fieldId) if isLiteral(rhs) => Some(Comparison({fieldId, op: cop, value: rhs}))
+          | _ => None
           }
         | _ => None
         }
+      // Truthy / Falsy: { "!!" | "!": {var: "form.<id>"} }
       | None =>
-        // Truthy: { "!!": {var: "form.<id>"} } — accept both the unary form
-        // and the legacy single-element array form.
         switch op {
-        | "!!" =>
-          let fieldId = switch isFormVar(arg) {
-          | Some(id) => Some(id)
-          | None =>
-            switch arg {
-            | Array(a) if Array.length(a) === 1 => isFormVar(a[0]->Option.getUnsafe)
-            | _ => None
-            }
-          }
-          switch fieldId {
-          | Some(id) => Some(Truthy({fieldId: id}))
-          | None => None
-          }
-        | "!" =>
-          let fieldId = switch isFormVar(arg) {
-          | Some(id) => Some(id)
-          | None =>
-            switch arg {
-            | Array(a) if Array.length(a) === 1 => isFormVar(a[0]->Option.getUnsafe)
-            | _ => None
-            }
-          }
-          switch fieldId {
-          | Some(id) => Some(Falsy({fieldId: id}))
-          | None => None
-          }
+        | "!!" => unaryFieldId(arg)->Option.map(id => Truthy({fieldId: id}))
+        | "!" => unaryFieldId(arg)->Option.map(id => Falsy({fieldId: id}))
         | _ => None
         }
       }
+    | _ => None
+    }
+  | _ => None
+  }
+
+// Decompile every element of an `and`/`or` argument list into a leaf
+// condition. Returns None — conservatively dropping the whole group to
+// advanced mode — if any element is a nested group or non-leaf shape.
+let decompileConditions = (items: array<JSON.t>): option<array<visibilityCondition>> => {
+  let out = []
+  let ok = ref(true)
+  let i = ref(0)
+  while ok.contents && i.contents < Array.length(items) {
+    switch decompileCondition(items->Array.getUnsafe(i.contents)) {
+    | Some(c) => Array.push(out, c)
+    | None => ok := false
+    }
+    i := i.contents + 1
+  }
+  ok.contents ? Some(out) : None
+}
+
+// Decompile a JSONLogic rule back into a SimpleVisibilityTemplate, or
+// None if the rule doesn't match a template shape — meaning it was
+// authored in advanced (raw-JSON) mode. `Null` / undefined-equivalent
+// rules decompile to `Always`.
+//
+// Shapes recognised:
+//   - missing / Null            → Always
+//   - a single bare leaf        → Conditions(#and, [leaf])   (connector is
+//                                 canonically #and for one condition)
+//   - `{and|or: [leaf, leaf…]}` → Conditions(connector, leaves), iff every
+//                                 element is a leaf and there are ≥2 of them
+//
+// Conservative by design: an `and`/`or` with <2 elements, a nested group,
+// or any non-leaf member returns None and stays in advanced mode.
+@genType
+let decompileVisibilityTemplate = (rule: option<JSON.t>): option<simpleVisibilityTemplate> =>
+  switch rule {
+  | None | Some(Null) => Some(Always)
+  | Some(Object(obj)) =>
+    switch Dict.keysToArray(obj) {
+    | [op] =>
+      let arg = obj->Dict.get(op)->Option.getUnsafe
+      let connectorOpt: option<connector> = switch op {
+      | "and" => Some(#"and")
+      | "or" => Some(#"or")
+      | _ => None
+      }
+      switch connectorOpt {
+      | Some(conn) =>
+        switch arg {
+        | Array(items) if Array.length(items) >= 2 =>
+          decompileConditions(items)->Option.map(cs => Conditions({connector: conn, conditions: cs}))
+        | _ => None
+        }
+      | None =>
+        decompileCondition(JSON.Object(obj))->Option.map(c =>
+          Conditions({connector: #"and", conditions: [c]})
+        )
+      }
+    | _ => None
     }
   | _ => None
   }

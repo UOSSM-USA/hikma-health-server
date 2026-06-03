@@ -10,6 +10,7 @@ import {
   getComputed,
   hasComputed,
   maxStabilizeIterations,
+  pruneRulesForLiveFields,
   stabilizeComputedValues,
   summarizeSubmitBlockers,
   type fieldWithRules,
@@ -833,5 +834,83 @@ describe("filterVisibleFields", () => {
       ),
       { numRuns: 100 },
     );
+  });
+});
+
+describe("pruneRulesForLiveFields", () => {
+  const ref = (id: string) => ({ var: `form.${id}` });
+  const gt0 = (id: string) => ({ ">": [ref(id), 0] });
+
+  it("drops fields whose id is not in the live set", () => {
+    const out = pruneRulesForLiveFields([field("a"), field("b")], ["a"]);
+    expect(out.map((f) => f.id)).toEqual(["a"]);
+  });
+
+  it("keeps a live field whose rules reference only live fields", () => {
+    const out = pruneRulesForLiveFields(
+      [field("a", { visibleIf: gt0("b") })],
+      ["a", "b"],
+    );
+    expect(out[0]?.visibleIf).toEqual(gt0("b"));
+  });
+
+  it("strips visibleIf / requiredIf / computedValue referencing a non-live field", () => {
+    const out = pruneRulesForLiveFields(
+      [
+        field("a", {
+          visibleIf: gt0("gone"),
+          requiredIf: gt0("gone"),
+          computedValue: ref("gone"),
+        }),
+      ],
+      ["a"],
+    );
+    expect(out[0]?.visibleIf).toBeUndefined();
+    expect(out[0]?.requiredIf).toBeUndefined();
+    expect(out[0]?.computedValue).toBeUndefined();
+  });
+
+  it("keeps rules with no form references (constants / ctx-only)", () => {
+    const ctxRule = { "==": [{ var: "ctx.language" }, "en"] };
+    const out = pruneRulesForLiveFields(
+      [field("a", { visibleIf: true, requiredIf: ctxRule })],
+      ["a"],
+    );
+    expect(out[0]?.visibleIf).toBe(true);
+    expect(out[0]?.requiredIf).toEqual(ctxRule);
+  });
+
+  it("removes only the validators that reference a non-live field", () => {
+    const live = { id: "v-live", rule: gt0("b"), message: "live" };
+    const dead = { id: "v-dead", rule: gt0("gone"), message: "dead" };
+    const out = pruneRulesForLiveFields(
+      [field("a", { validators: [live, dead] })],
+      ["a", "b"],
+    );
+    expect(out[0]?.validators).toEqual([live]);
+  });
+
+  it("ignored visibleIf (referencing a removed field) leaves the field visible by default", () => {
+    const fields = [field("a", { visibleIf: gt0("gone") })];
+    const evaluate = compileRules(pruneRulesForLiveFields(fields, ["a"]));
+    expect(evaluate(withForm({})).isVisible("a")).toBe(true);
+  });
+
+  it("a validator referencing a removed field no longer fires", () => {
+    const v = { id: "v1", rule: gt0("gone"), message: "boom" };
+    const fields = [field("a", { validators: [v] })];
+    const evaluate = compileRules(pruneRulesForLiveFields(fields, ["a"]));
+    expect(evaluate(withForm({ a: 1 })).validationErrors).toEqual([]);
+  });
+
+  it("a non-live field's own rules never fire (dropped from the evaluated set)", () => {
+    // Soft-delete shape: the field stays in the array but isn't live.
+    const v = { id: "v1", rule: gt0("a"), message: "boom" };
+    const fields = [field("a", { required: true, validators: [v] })];
+    const result = compileRules(pruneRulesForLiveFields(fields, []))(
+      withForm({ a: -5 }),
+    );
+    expect(result.validationErrors).toEqual([]);
+    expect(result.isRequired("a")).toBe(false);
   });
 });

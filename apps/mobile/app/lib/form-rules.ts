@@ -34,6 +34,7 @@ export type StabilizeResult = RsRules.stabilizeResult
 // ---------------------------------------------------------------------------
 
 export const compileRules = RsRules.compileRules
+export const pruneRulesForLiveFields = RsRules.pruneRulesForLiveFields
 export const computedValuesEqual = RsRules.computedValuesEqual
 export const formatComputedValue = RsRules.formatComputedValue
 

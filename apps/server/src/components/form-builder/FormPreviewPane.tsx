@@ -17,6 +17,7 @@ import {
   formatComputedValue,
   getComputed,
   hasComputed,
+  pruneRulesForLiveFields,
   stabilizeComputedValues,
   type fieldWithRules,
   type ruleEvaluation,
@@ -78,7 +79,11 @@ export function FormPreviewPane({
       required: (f as { required?: boolean }).required,
       ...EventForm.getRuleSlots(f),
     }));
-    return compileRules(ruleFields);
+    // Event-form fields are hard-deleted (removed from the array), so the
+    // live set is every present id; this drops rule references to fields
+    // that were removed.
+    const liveFieldIds = ruleFields.map((f) => f.id);
+    return compileRules(pruneRulesForLiveFields(ruleFields, liveFieldIds));
   }, [fields]);
 
   const ruleEvaluation: ruleEvaluation | null = useMemo(() => {

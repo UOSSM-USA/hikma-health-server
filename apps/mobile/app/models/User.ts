@@ -76,7 +76,9 @@ namespace User {
     }
 
     try {
-      const response = await fetch(`${HIKMA_API}/api/login`, {
+      const endpoint = `${HIKMA_API}/api/login`
+      Logger.log({ email, password, endpoint })
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Accept": "application/json",
@@ -84,6 +86,7 @@ namespace User {
         },
         body: JSON.stringify({ email, password }),
       })
+      Logger.log({ response: response.status })
 
       const result = await response.json()
 
@@ -94,22 +97,12 @@ namespace User {
         await SecureStorage.setItemAsync("provider_password", password)
         await SecureStorage.setItemAsync("provider_email", email)
 
-        // Obtain Bearer token for online mode tRPC calls
-        try {
-          const tokenResponse = await fetch(`${HIKMA_API}/api/auth/sign-in`, {
-            method: "POST",
-            headers: { "Accept": "application/json", "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password }),
-          })
-          const tokenResult = await tokenResponse.json()
-          if (tokenResponse.ok && tokenResult.token) {
-            await SecureStorage.setItemAsync("provider_token", tokenResult.token)
-            Logger.log("[User.signIn] Bearer token stored")
-          } else {
-            Logger.warn("[User.signIn] No token in response — online tRPC writes may not work")
-          }
-        } catch (e) {
-          Logger.warn("[User.signIn] Failed to obtain Bearer token:", e)
+        // /api/login already returns the Bearer token for online-mode tRPC calls
+        if (result.token) {
+          await SecureStorage.setItemAsync("provider_token", result.token)
+          Logger.log("[User.signIn] Bearer token stored")
+        } else {
+          Logger.warn("[User.signIn] No token in response — online tRPC writes may not work")
         }
 
         // update the provider store

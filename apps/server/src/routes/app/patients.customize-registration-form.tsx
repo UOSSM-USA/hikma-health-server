@@ -550,21 +550,8 @@ function RouteComponent() {
         {sortBy(fields, "position")
           .filter((f) => !f.deleted)
           .map((field) => {
-            const {
-              baseField,
-              id,
-              label,
-              options,
-              position,
-              fieldType,
-              required,
-              isSearchField,
-              showsInSummary,
-            } = field;
+            const { id, baseField } = field;
             const isInEditMode = editField.id === id;
-            const getTranslation = Language.getTranslation;
-            const friendlyLang = Language.friendlyLang;
-            const inputTypes = PatientRegistrationForm.inputTypes;
 
             return (
               <div
@@ -573,121 +560,7 @@ function RouteComponent() {
                 }`}
                 key={field.id}
               >
-                {fieldType === "select" && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                      {getTranslation(label, formLanguage)}
-                      {!field.visible && (
-                        <span className="text-muted-foreground"> (hidden)</span>
-                      )}
-                    </label>
-                    <Select
-                      value={
-                        options.length > 0 && options[0].en
-                          ? options[0].en
-                          : "placeholder-value"
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select an option" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {translationObjectOptions(options, formLanguage).map(
-                          (option, index) => (
-                            <SelectItem
-                              key={index}
-                              value={option.value || `option-${index}`}
-                            >
-                              {option.label}
-                            </SelectItem>
-                          ),
-                        )}
-                      </SelectContent>
-                    </Select>
-                    {required && (
-                      <span className="text-xs text-destructive">
-                        *Required
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {fieldType === "checkbox" && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                      {getTranslation(label, formLanguage)}
-                      {!field.visible && (
-                        <span className="text-muted-foreground"> (hidden)</span>
-                      )}
-                    </label>
-                    <div className="space-y-1">
-                      {translationObjectOptions(options, formLanguage).map(
-                        (option, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center space-x-2"
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                              disabled
-                            />
-                            <span className="text-sm">{option.label}</span>
-                          </div>
-                        ),
-                      )}
-                    </div>
-                    {required && (
-                      <span className="text-xs text-destructive">
-                        *Required
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {(fieldType === "text" || fieldType === "number") && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                      {getTranslation(label, formLanguage)}
-                      {!field.visible && (
-                        <span className="text-muted-foreground"> (hidden)</span>
-                      )}
-                    </label>
-                    <input
-                      type={fieldType}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      placeholder={
-                        fieldType === "number" ? "0" : "Enter text..."
-                      }
-                    />
-                    {required && (
-                      <span className="text-xs text-destructive">
-                        *Required
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {field.fieldType === "date" && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                      {getTranslation(label, formLanguage)}
-                      {!field.visible && (
-                        <span className="text-muted-foreground"> (hidden)</span>
-                      )}
-                    </label>
-                    <input
-                      type="date"
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      placeholder="YYYY-MM-DD"
-                    />
-                    {required && (
-                      <span className="text-xs text-destructive">
-                        *Required
-                      </span>
-                    )}
-                  </div>
-                )}
+                <FieldPreview field={field} language={formLanguage} />
 
                 {editField.id === "" && (
                   <div className="flex gap-2 mt-4">
@@ -721,424 +594,17 @@ function RouteComponent() {
                   </div>
                 )}
 
-                {editField.id === id && (
-                  <div className="mt-6 border-t border-border pt-6">
-                    <div className="grid grid-cols-12 gap-4">
-                      {Object.keys(field.label).map((languageKey) => {
-                        return (
-                          <React.Fragment key={languageKey}>
-                            <div className="col-span-4">
-                              <div className="space-y-2">
-                                <label className="text-sm font-medium leading-none">
-                                  Language
-                                </label>
-                                <Select value={languageKey || "en"}>
-                                  <SelectTrigger>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="en">English</SelectItem>
-                                    <SelectItem value="es">Spanish</SelectItem>
-                                    <SelectItem value="ar">Arabic</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-                            <div className="col-span-8">
-                              <div className="space-y-2">
-                                <label className="text-sm font-medium leading-none">
-                                  Field Name
-                                </label>
-                                <input
-                                  type="text"
-                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                  value={getTranslation(label, languageKey)}
-                                  onChange={(e) => {
-                                    dispatch({
-                                      type: "update-field-label",
-                                      payload: {
-                                        id: id,
-                                        label: e.target.value,
-                                        translation: languageKey,
-                                      },
-                                    });
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          </React.Fragment>
-                        );
-                      })}
-
-                      <div className="col-span-12">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium leading-none">
-                            Field Type
-                          </label>
-                          <Select
-                            value={fieldType || "text"}
-                            onValueChange={(value) =>
-                              dispatch({
-                                type: "update-field-type",
-                                payload: {
-                                  id,
-                                  type: value as PatientRegistrationForm.InputType,
-                                },
-                              })
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {inputTypes.map((type) => (
-                                <SelectItem key={type} value={type}>
-                                  {type}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      {(fieldType === "select" || fieldType === "checkbox") && (
-                        <div className="col-span-12">
-                          <div className="space-y-4">
-                            <label className="text-sm font-medium leading-none">
-                              Options
-                            </label>
-                            {field.options.map((option, idx) => {
-                              return (
-                                <div key={idx}>
-                                  <div className="grid grid-cols-12 gap-2">
-                                    <div className="col-span-11">
-                                      <div className="space-y-2">
-                                        <label className="text-sm font-medium leading-none">{`Option ${
-                                          idx + 1
-                                        } (English)`}</label>
-                                        <input
-                                          type="text"
-                                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                          value={option.en}
-                                          onChange={({ target: { value } }) =>
-                                            dispatch({
-                                              type: "update-select-option-translation",
-                                              payload: {
-                                                id,
-                                                index: idx,
-                                                language: "en",
-                                                value,
-                                              },
-                                            })
-                                          }
-                                        />
-                                      </div>
-                                    </div>
-                                    <div className="col-span-1 flex items-end justify-center">
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() =>
-                                          dispatch({
-                                            type: "remove-select-option",
-                                            payload: { id, index: idx },
-                                          })
-                                        }
-                                        className="text-destructive hover:text-destructive"
-                                      >
-                                        <svg
-                                          xmlns="http://www.w3.org/2000/svg"
-                                          width="18"
-                                          height="18"
-                                          viewBox="0 0 24 24"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          strokeWidth="2"
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                          className="lucide lucide-circle-minus"
-                                        >
-                                          <circle cx="12" cy="12" r="10" />
-                                          <path d="M8 12h8" />
-                                        </svg>
-                                      </Button>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex gap-2 mt-2">
-                                    {!("es" in option) && (
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() =>
-                                          dispatch({
-                                            type: "add-select-option-translation",
-                                            payload: {
-                                              id,
-                                              index: idx,
-                                              language: "es",
-                                            },
-                                          })
-                                        }
-                                      >
-                                        + Spanish
-                                      </Button>
-                                    )}
-                                    {!("ar" in option) && (
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() =>
-                                          dispatch({
-                                            type: "add-select-option-translation",
-                                            payload: {
-                                              id,
-                                              index: idx,
-                                              language: "ar",
-                                            },
-                                          })
-                                        }
-                                      >
-                                        + Arabic
-                                      </Button>
-                                    )}
-                                  </div>
-
-                                  <div className="pl-8 space-y-2 pb-5">
-                                    {Object.keys(option)
-                                      .filter((k) => k !== "en")
-                                      .map((languageKey) => (
-                                        <div
-                                          className="grid grid-cols-12 gap-2"
-                                          key={languageKey}
-                                        >
-                                          <div className="col-span-10">
-                                            <div className="space-y-2">
-                                              <label className="text-sm font-medium leading-none">{`Option ${
-                                                idx + 1
-                                              } (${friendlyLang(
-                                                languageKey,
-                                              )})`}</label>
-                                              <input
-                                                type="text"
-                                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                                value={option[languageKey]}
-                                                onChange={({
-                                                  target: { value },
-                                                }) =>
-                                                  dispatch({
-                                                    type: "update-select-option-translation",
-                                                    payload: {
-                                                      id,
-                                                      index: idx,
-                                                      language: languageKey,
-                                                      value,
-                                                    },
-                                                  })
-                                                }
-                                              />
-                                            </div>
-                                          </div>
-                                          <div className="col-span-2 flex items-end">
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              onClick={() =>
-                                                dispatch({
-                                                  type: "remove-select-option-translation",
-                                                  payload: {
-                                                    id,
-                                                    index: idx,
-                                                    language: languageKey,
-                                                  },
-                                                })
-                                              }
-                                              className="text-destructive hover:text-destructive"
-                                            >
-                                              <svg
-                                                xmlns="http://www.w3.org/2000/svg"
-                                                width="18"
-                                                height="18"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                className="lucide lucide-circle-minus"
-                                              >
-                                                <circle
-                                                  cx="12"
-                                                  cy="12"
-                                                  r="10"
-                                                />
-                                                <path d="M8 12h8" />
-                                              </svg>
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            <Button
-                              variant="outline"
-                              className="w-full mt-2"
-                              onClick={() =>
-                                dispatch({
-                                  type: "add-select-option",
-                                  payload: { id },
-                                })
-                              }
-                            >
-                              Add Select Option
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="col-span-12 space-y-3">
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`visible-${id}`}
-                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                            checked={field.visible}
-                            onChange={() =>
-                              dispatch({
-                                type: "toggle-visibility",
-                                payload: { id },
-                              })
-                            }
-                          />
-                          <label
-                            htmlFor={`visible-${id}`}
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            This field is visible to clinicians
-                          </label>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`required-${id}`}
-                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                            checked={required}
-                            onChange={() =>
-                              dispatch({
-                                type: "toggle-field-required",
-                                payload: { id },
-                              })
-                            }
-                          />
-                          <label
-                            htmlFor={`required-${id}`}
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            This field is required
-                          </label>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`searchable-${id}`}
-                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                            checked={isSearchField}
-                            onChange={() =>
-                              dispatch({
-                                type: "toggle-field-searchable",
-                                payload: { id },
-                              })
-                            }
-                          />
-                          <label
-                            htmlFor={`searchable-${id}`}
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            This field is included in advanced search
-                          </label>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`summary-${id}`}
-                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                            checked={showsInSummary}
-                            onChange={() =>
-                              dispatch({
-                                type: "toggle-field-shows-in-summary",
-                                payload: { id },
-                              })
-                            }
-                          />
-                          <label
-                            htmlFor={`summary-${id}`}
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            This field is visible in the patient file summary
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="col-span-12">
-                        <FieldLogicPanel
-                          form={PatientRegistrationForm.toLogicFields(
-                            state.fields,
-                          )}
-                          fieldId={id}
-                          initial={{
-                            visibleIf: field.visibleIf,
-                            requiredIf: field.requiredIf,
-                            validators: field.validators,
-                            computedValue: field.computedValue,
-                          }}
-                          onSave={(slots) =>
-                            dispatch({
-                              type: "set-field-rule-slots",
-                              payload: { id, slots },
-                            })
-                          }
-                        />
-                      </div>
-
-                      <div className="col-span-12">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium leading-none">
-                            Field Position
-                          </label>
-                          <input
-                            type="number"
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            value={position}
-                            onChange={(e) =>
-                              dispatch({
-                                type: "change-position",
-                                payload: { id, position: +e.target.value },
-                              })
-                            }
-                          />
-                        </div>
-                      </div>
-
-                      <div className="col-span-12">
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => {
-                            setEditField((draft) => {
-                              draft.id = "";
-                            });
-                          }}
-                        >
-                          Save Changes
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
+                {isInEditMode && (
+                  <FieldEditPanel
+                    field={field}
+                    formFields={state.fields}
+                    dispatch={dispatch}
+                    onClose={() =>
+                      setEditField((draft) => {
+                        draft.id = "";
+                      })
+                    }
+                  />
                 )}
               </div>
             );
@@ -1146,37 +612,11 @@ function RouteComponent() {
       </div>
 
       {/** Deleted fields show here */}
-      {deletedFields.length > 0 && (
-        <div>
-          <hr />
-          <label>Deleted fields</label>
-
-          {deletedFields.map((field) => {
-            return (
-              <div className="flex items-center gap-2" key={field.id}>
-                <div>
-                  <label>
-                    {Language.getTranslation(field.label, formLanguage)}
-                  </label>
-                </div>
-
-                <Button
-                  variant="outline"
-                  aria-label="Settings"
-                  onClick={() =>
-                    dispatch({
-                      type: "restore-field",
-                      payload: { id: field.id },
-                    })
-                  }
-                >
-                  Restore
-                </Button>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <DeletedFieldsList
+        fields={deletedFields}
+        language={formLanguage}
+        dispatch={dispatch}
+      />
 
       <div className=" max-w-lg">
         <div className="flex flex-col gap-4 mt-4">
@@ -1197,6 +637,542 @@ function RouteComponent() {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+type FormDispatch = (action: Action) => void;
+
+const CircleMinusIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="lucide lucide-circle-minus"
+  >
+    <circle cx="12" cy="12" r="10" />
+    <path d="M8 12h8" />
+  </svg>
+);
+
+/** Read-only preview of a single field, rendered per field type. */
+function FieldPreview({
+  field,
+  language,
+}: {
+  field: PatientRegistrationForm.Field;
+  language: Language.LanguageKey;
+}) {
+  const { fieldType, label, options, required, visible } = field;
+
+  const heading = (
+    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+      {Language.getTranslation(label, language)}
+      {!visible && <span className="text-muted-foreground"> (hidden)</span>}
+    </label>
+  );
+  const requiredMark = required ? (
+    <span className="text-xs text-destructive">*Required</span>
+  ) : null;
+
+  if (fieldType === "select") {
+    return (
+      <div className="space-y-2">
+        {heading}
+        <Select
+          value={
+            options.length > 0 && options[0].en
+              ? options[0].en
+              : "placeholder-value"
+          }
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select an option" />
+          </SelectTrigger>
+          <SelectContent>
+            {translationObjectOptions(options, language).map((option, index) => (
+              <SelectItem key={index} value={option.value || `option-${index}`}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {requiredMark}
+      </div>
+    );
+  }
+
+  if (fieldType === "checkbox") {
+    return (
+      <div className="space-y-2">
+        {heading}
+        <div className="space-y-1">
+          {translationObjectOptions(options, language).map((option, index) => (
+            <div key={index} className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                disabled
+              />
+              <span className="text-sm">{option.label}</span>
+            </div>
+          ))}
+        </div>
+        {requiredMark}
+      </div>
+    );
+  }
+
+  if (fieldType === "text" || fieldType === "number") {
+    return (
+      <div className="space-y-2">
+        {heading}
+        <input
+          type={fieldType}
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          placeholder={fieldType === "number" ? "0" : "Enter text..."}
+        />
+        {requiredMark}
+      </div>
+    );
+  }
+
+  if (fieldType === "date") {
+    return (
+      <div className="space-y-2">
+        {heading}
+        <input
+          type="date"
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          placeholder="YYYY-MM-DD"
+        />
+        {requiredMark}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+/** Per-language option editor for select/checkbox fields. */
+function OptionsEditor({
+  field,
+  dispatch,
+}: {
+  field: PatientRegistrationForm.Field;
+  dispatch: FormDispatch;
+}) {
+  const { id } = field;
+  const friendlyLang = Language.friendlyLang;
+
+  return (
+    <div className="col-span-12">
+      <div className="space-y-4">
+        <label className="text-sm font-medium leading-none">Options</label>
+        {field.options.map((option, idx) => {
+          return (
+            <div key={idx}>
+              <div className="grid grid-cols-12 gap-2">
+                <div className="col-span-11">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium leading-none">{`Option ${
+                      idx + 1
+                    } (English)`}</label>
+                    <input
+                      type="text"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={option.en}
+                      onChange={({ target: { value } }) =>
+                        dispatch({
+                          type: "update-select-option-translation",
+                          payload: { id, index: idx, language: "en", value },
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="col-span-1 flex items-end justify-center">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      dispatch({
+                        type: "remove-select-option",
+                        payload: { id, index: idx },
+                      })
+                    }
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <CircleMinusIcon />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-2">
+                {!("es" in option) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      dispatch({
+                        type: "add-select-option-translation",
+                        payload: { id, index: idx, language: "es" },
+                      })
+                    }
+                  >
+                    + Spanish
+                  </Button>
+                )}
+                {!("ar" in option) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      dispatch({
+                        type: "add-select-option-translation",
+                        payload: { id, index: idx, language: "ar" },
+                      })
+                    }
+                  >
+                    + Arabic
+                  </Button>
+                )}
+              </div>
+
+              <div className="pl-8 space-y-2 pb-5">
+                {Object.keys(option)
+                  .filter((k) => k !== "en")
+                  .map((languageKey) => (
+                    <div className="grid grid-cols-12 gap-2" key={languageKey}>
+                      <div className="col-span-10">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium leading-none">{`Option ${
+                            idx + 1
+                          } (${friendlyLang(languageKey)})`}</label>
+                          <input
+                            type="text"
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            value={option[languageKey]}
+                            onChange={({ target: { value } }) =>
+                              dispatch({
+                                type: "update-select-option-translation",
+                                payload: {
+                                  id,
+                                  index: idx,
+                                  language: languageKey,
+                                  value,
+                                },
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="col-span-2 flex items-end">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            dispatch({
+                              type: "remove-select-option-translation",
+                              payload: { id, index: idx, language: languageKey },
+                            })
+                          }
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <CircleMinusIcon />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          );
+        })}
+        <Button
+          variant="outline"
+          className="w-full mt-2"
+          onClick={() =>
+            dispatch({ type: "add-select-option", payload: { id } })
+          }
+        >
+          Add Select Option
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CheckboxRow({
+  id,
+  checked,
+  onChange,
+  label,
+}: {
+  id: string;
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center space-x-2">
+      <input
+        type="checkbox"
+        id={id}
+        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+        checked={checked}
+        onChange={onChange}
+      />
+      <label
+        htmlFor={id}
+        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+      >
+        {label}
+      </label>
+    </div>
+  );
+}
+
+/** The visibility / required / searchable / summary toggles for a field. */
+function FieldFlagsEditor({
+  field,
+  dispatch,
+}: {
+  field: PatientRegistrationForm.Field;
+  dispatch: FormDispatch;
+}) {
+  const { id, visible, required, isSearchField, showsInSummary } = field;
+
+  return (
+    <div className="col-span-12 space-y-3">
+      <CheckboxRow
+        id={`visible-${id}`}
+        checked={visible}
+        onChange={() => dispatch({ type: "toggle-visibility", payload: { id } })}
+        label="This field is visible to clinicians"
+      />
+      <CheckboxRow
+        id={`required-${id}`}
+        checked={required}
+        onChange={() =>
+          dispatch({ type: "toggle-field-required", payload: { id } })
+        }
+        label="This field is required"
+      />
+      <CheckboxRow
+        id={`searchable-${id}`}
+        checked={isSearchField}
+        onChange={() =>
+          dispatch({ type: "toggle-field-searchable", payload: { id } })
+        }
+        label="This field is included in advanced search"
+      />
+      <CheckboxRow
+        id={`summary-${id}`}
+        checked={showsInSummary}
+        onChange={() =>
+          dispatch({ type: "toggle-field-shows-in-summary", payload: { id } })
+        }
+        label="This field is visible in the patient file summary"
+      />
+    </div>
+  );
+}
+
+/** Full edit form for a single field, shown when a field is in edit mode. */
+function FieldEditPanel({
+  field,
+  formFields,
+  dispatch,
+  onClose,
+}: {
+  field: PatientRegistrationForm.Field;
+  formFields: PatientRegistrationForm.Field[];
+  dispatch: FormDispatch;
+  onClose: () => void;
+}) {
+  const { id, label, fieldType, position } = field;
+  const getTranslation = Language.getTranslation;
+  const inputTypes = PatientRegistrationForm.inputTypes;
+
+  return (
+    <div className="mt-6 border-t border-border pt-6">
+      <div className="grid grid-cols-12 gap-4">
+        {Object.keys(field.label).map((languageKey) => {
+          return (
+            <React.Fragment key={languageKey}>
+              <div className="col-span-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium leading-none">
+                    Language
+                  </label>
+                  <Select value={languageKey || "en"}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="en">English</SelectItem>
+                      <SelectItem value="es">Spanish</SelectItem>
+                      <SelectItem value="ar">Arabic</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="col-span-8">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium leading-none">
+                    Field Name
+                  </label>
+                  <input
+                    type="text"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={getTranslation(label, languageKey)}
+                    onChange={(e) => {
+                      dispatch({
+                        type: "update-field-label",
+                        payload: {
+                          id: id,
+                          label: e.target.value,
+                          translation: languageKey,
+                        },
+                      });
+                    }}
+                  />
+                </div>
+              </div>
+            </React.Fragment>
+          );
+        })}
+
+        <div className="col-span-12">
+          <div className="space-y-2">
+            <label className="text-sm font-medium leading-none">
+              Field Type
+            </label>
+            <Select
+              value={fieldType || "text"}
+              onValueChange={(value) =>
+                dispatch({
+                  type: "update-field-type",
+                  payload: {
+                    id,
+                    type: value as PatientRegistrationForm.InputType,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {inputTypes.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {(fieldType === "select" || fieldType === "checkbox") && (
+          <OptionsEditor field={field} dispatch={dispatch} />
+        )}
+
+        <FieldFlagsEditor field={field} dispatch={dispatch} />
+
+        <div className="col-span-12">
+          <FieldLogicPanel
+            form={PatientRegistrationForm.toLogicFields(formFields)}
+            fieldId={id}
+            initial={{
+              visibleIf: field.visibleIf,
+              requiredIf: field.requiredIf,
+              validators: field.validators,
+              computedValue: field.computedValue,
+            }}
+            onSave={(slots) =>
+              dispatch({
+                type: "set-field-rule-slots",
+                payload: { id, slots },
+              })
+            }
+          />
+        </div>
+
+        <div className="col-span-12">
+          <div className="space-y-2">
+            <label className="text-sm font-medium leading-none">
+              Field Position
+            </label>
+            <input
+              type="number"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              value={position}
+              onChange={(e) =>
+                dispatch({
+                  type: "change-position",
+                  payload: { id, position: +e.target.value },
+                })
+              }
+            />
+          </div>
+        </div>
+
+        <div className="col-span-12">
+          <Button variant="outline" className="w-full" onClick={onClose}>
+            Save Changes
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** List of soft-deleted fields with a restore action. */
+function DeletedFieldsList({
+  fields,
+  language,
+  dispatch,
+}: {
+  fields: PatientRegistrationForm.Field[];
+  language: Language.LanguageKey;
+  dispatch: FormDispatch;
+}) {
+  if (fields.length === 0) return null;
+
+  return (
+    <div>
+      <hr />
+      <label>Deleted fields</label>
+
+      {fields.map((field) => {
+        return (
+          <div className="flex items-center gap-2" key={field.id}>
+            <div>
+              <label>{Language.getTranslation(field.label, language)}</label>
+            </div>
+
+            <Button
+              variant="outline"
+              aria-label="Settings"
+              onClick={() =>
+                dispatch({
+                  type: "restore-field",
+                  payload: { id: field.id },
+                })
+              }
+            >
+              Restore
+            </Button>
+          </div>
+        );
+      })}
     </div>
   );
 }

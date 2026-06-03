@@ -39,6 +39,7 @@ import {
   formatComputedValue,
   getComputed,
   hasComputed,
+  pruneRulesForLiveFields,
   stabilizeComputedValues,
   summarizeSubmitBlockers,
   type ValidationError,
@@ -108,7 +109,14 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
   // id (load-bearing decision #1), so we feed compileRules the raw
   // RegistrationFormField[] which carries the rule slots — not the
   // derived FormField[] from the hook, which drops them.
-  const compiledRules = useMemo(() => compileRules(ruleFields), [ruleFields])
+  const compiledRules = useMemo(() => {
+    // `ruleFields` is the raw DB record (unfiltered), so build the live set
+    // from the static admin flags: a hidden (`visible: false`) or
+    // soft-deleted field neither contributes its own rules nor can be
+    // referenced by another field's rule.
+    const liveFieldIds = ruleFields.filter((f) => f.visible && !f.deleted).map((f) => f.id)
+    return compileRules(pruneRulesForLiveFields(ruleFields, liveFieldIds))
+  }, [ruleFields])
 
   // Build the per-render rule scope. values is already keyed by field
   // id, so this is straightforward (unlike EventFormScreen, which

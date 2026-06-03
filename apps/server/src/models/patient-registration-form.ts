@@ -21,14 +21,8 @@ import {
 import { baseFields } from "@/data/registration-form-base-fields";
 import type { WithInputRules } from "@/models/form-rules";
 import { assertFieldRulesValid } from "@/models/form-rules";
-import type {
-  LogicField,
-  LogicPrimitiveKind,
-} from "@/lib/form-rule-templates";
-import type {
-  ruleEvaluation,
-  ruleScope,
-} from "@hikmahealth/forms/Rules";
+import type { LogicField, LogicPrimitiveKind } from "@/lib/form-rule-templates";
+import type { ruleEvaluation, ruleScope } from "@hikmahealth/forms/Rules";
 
 namespace PatientRegistrationForm {
   export type T = {
@@ -186,7 +180,9 @@ namespace PatientRegistrationForm {
       // this catches direct-API and future-refactor bypasses. Throws
       // FormFieldRulesValidationError on invalid rules.
       assertFieldRulesValid(
-        (form.fields ?? []) as Array<{ id?: unknown } & Record<string, unknown>>,
+        (form.fields ?? []) as Array<
+          { id?: unknown } & Record<string, unknown>
+        >,
       );
 
       // NOTE: it is possible for the form to not have an id (if it is a new form)
@@ -355,11 +351,9 @@ namespace PatientRegistrationForm {
    * `LogicField[]` consumed by `FieldLogicPanel`. Deleted fields are
    * elided — they can't sensibly be referenced by a rule.
    */
-  export const toLogicFields = (
-    fields: ReadonlyArray<Field>,
-  ): LogicField[] =>
+  export const toLogicFields = (fields: ReadonlyArray<Field>): LogicField[] =>
     fields
-      .filter((f) => !f.deleted)
+      .filter((f) => !f.deleted && f.visible)
       .map((f) => ({
         id: f.id,
         // `||` rather than `??` so a stored-but-empty translation entry

@@ -84,6 +84,24 @@ describe("FieldLogicPanel — initial mode advisory", () => {
       <FieldLogicPanel
         form={sampleForm}
         fieldId="this-field"
+        // An if/else has no simple-template equivalent.
+        initial={{
+          visibleIf: {
+            if: [{ ">=": [{ var: "form.age" }, 18] }, true, false],
+          },
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.getByText(/authored in Advanced mode/i)).toBeDefined();
+  });
+
+  it("does NOT advise for an AND of conditions — it now opens in Simple mode", () => {
+    render(
+      <FieldLogicPanel
+        form={sampleForm}
+        fieldId="this-field"
         initial={{
           visibleIf: {
             and: [
@@ -96,7 +114,86 @@ describe("FieldLogicPanel — initial mode advisory", () => {
       />,
     );
     fireEvent.click(screen.getByText("Logic & Validation"));
-    expect(screen.getByText(/authored in Advanced mode/i)).toBeDefined();
+    expect(screen.queryByText(/authored in Advanced mode/i)).toBeNull();
+    // Both AND-ed conditions render as rows.
+    expect(screen.getByTestId("condition-row-0")).toBeDefined();
+    expect(screen.getByTestId("condition-row-1")).toBeDefined();
+  });
+});
+
+describe("FieldLogicPanel — multiple AND-ed visibility conditions", () => {
+  const twoConditionRule = {
+    and: [
+      { ">=": [{ var: "form.age" }, 18] },
+      { "==": [{ var: "form.consent" }, true] },
+    ],
+  };
+
+  it("saves an unedited multi-condition rule unchanged", () => {
+    const onSave = vi.fn();
+    render(
+      <FieldLogicPanel
+        form={sampleForm}
+        fieldId="this-field"
+        initial={{ visibleIf: twoConditionRule }}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    fireEvent.click(screen.getByRole("button", { name: /Save visibility/i }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0]?.[0].visibleIf).toEqual(twoConditionRule);
+  });
+
+  it("adding a second condition saves an `and` of both", () => {
+    const onSave = vi.fn();
+    render(
+      <FieldLogicPanel
+        form={sampleForm}
+        fieldId="this-field"
+        // Open in Simple mode on a single consent condition.
+        initial={{ visibleIf: { "==": [{ var: "form.consent" }, true] } }}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    // Add a second condition — defaults to a comparison on the first
+    // primitive (age) with an empty value, which needs filling in.
+    fireEvent.click(screen.getByRole("button", { name: /Add condition/i }));
+    const secondValue = within(
+      screen.getByTestId("condition-row-1"),
+    ).getByTestId("rule-value");
+    fireEvent.change(secondValue, { target: { value: "18" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Save visibility/i }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0]?.[0].visibleIf).toEqual({
+      and: [
+        { "==": [{ var: "form.consent" }, true] },
+        { "==": [{ var: "form.age" }, 18] },
+      ],
+    });
+  });
+
+  it("removing a condition down to one saves the bare single-condition rule", () => {
+    const onSave = vi.fn();
+    render(
+      <FieldLogicPanel
+        form={sampleForm}
+        fieldId="this-field"
+        initial={{ visibleIf: twoConditionRule }}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    // Drop the first condition (age) — leaving the consent comparison.
+    fireEvent.click(screen.getAllByLabelText("Remove condition")[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /Save visibility/i }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    // One condition compiles to the bare leaf rule, not an `and` wrapper.
+    expect(onSave.mock.calls[0]?.[0].visibleIf).toEqual({
+      "==": [{ var: "form.consent" }, true],
+    });
   });
 });
 
@@ -590,12 +687,11 @@ describe("FieldLogicPanel — requiredIf section", () => {
       <FieldLogicPanel
         form={sampleForm}
         fieldId="this-field"
+        // An if/else has no simple-template equivalent (an AND would now
+        // decompile, so it wouldn't trigger the advisory).
         initial={{
           requiredIf: {
-            and: [
-              { ">=": [{ var: "form.age" }, 18] },
-              { "==": [{ var: "form.consent" }, true] },
-            ],
+            if: [{ ">=": [{ var: "form.age" }, 18] }, true, false],
           },
         }}
         onSave={vi.fn()}
@@ -912,32 +1008,20 @@ describe("syncTextFromSimple", () => {
 });
 
 describe("syncTemplateFromAdvanced", () => {
-  it("decompiles a comparison rule back to the simple template", () => {
+  it("decompiles a single comparison rule into a one-condition group", () => {
     const status: ValidationStatus = {
       kind: "ok",
       parsed: { "==": [{ var: "form.age" }, 18] },
     };
-    const result = syncTemplateFromAdvanced(status, true);
+    const result = syncTemplateFromAdvanced(status, true, true);
     expect(result).toEqual({
-      TAG: "Comparison",
-      fieldId: "age",
-      op: "==",
-      value: 18,
+      TAG: "Conditions",
+      connector: "and",
+      conditions: [{ TAG: "Comparison", fieldId: "age", op: "==", value: 18 }],
     });
   });
 
-  it("returns null on a malformed JSON status (skip-sync)", () => {
-    const status: ValidationStatus = {
-      kind: "parseError",
-      message: "Unexpected token",
-    };
-    expect(syncTemplateFromAdvanced(status, true)).toBeNull();
-  });
-
-  it("returns null on a non-template rule (preserves the simple draft)", () => {
-    // A nested AND/OR has no template equivalent — switching back to
-    // simple should leave the prior simple draft alone rather than
-    // snap to a default.
+  it("decompiles an AND of conditions into a multi-condition group", () => {
     const status: ValidationStatus = {
       kind: "ok",
       parsed: {
@@ -947,12 +1031,53 @@ describe("syncTemplateFromAdvanced", () => {
         ],
       },
     };
-    expect(syncTemplateFromAdvanced(status, true)).toBeNull();
+    expect(syncTemplateFromAdvanced(status, true, true)).toEqual({
+      TAG: "Conditions",
+      connector: "and",
+      conditions: [
+        { TAG: "Comparison", fieldId: "age", op: ">=", value: 18 },
+        { TAG: "Comparison", fieldId: "consent", op: "==", value: true },
+      ],
+    });
+  });
+
+  it("returns null for a multi-condition AND when the section is single-only", () => {
+    // Validator section (allowMultiple=false) can't render a group — keep
+    // the existing simple draft rather than collapse the user's rule.
+    const status: ValidationStatus = {
+      kind: "ok",
+      parsed: {
+        and: [
+          { ">=": [{ var: "form.age" }, 18] },
+          { "==": [{ var: "form.consent" }, true] },
+        ],
+      },
+    };
+    expect(syncTemplateFromAdvanced(status, false, false)).toBeNull();
+  });
+
+  it("returns null on a malformed JSON status (skip-sync)", () => {
+    const status: ValidationStatus = {
+      kind: "parseError",
+      message: "Unexpected token",
+    };
+    expect(syncTemplateFromAdvanced(status, true, true)).toBeNull();
+  });
+
+  it("returns null on a non-template rule (preserves the simple draft)", () => {
+    // An if/else has no template equivalent — switching back to simple
+    // should leave the prior simple draft alone rather than snap to a
+    // default.
+    const status: ValidationStatus = {
+      kind: "ok",
+      parsed: { if: [{ ">=": [{ var: "form.age" }, 18] }, true, false] },
+    };
+    expect(syncTemplateFromAdvanced(status, true, true)).toBeNull();
   });
 
   it("snaps to 'Always' on empty advanced JSON when the section allows it", () => {
     const status: ValidationStatus = { kind: "empty" };
-    expect(syncTemplateFromAdvanced(status, true)).toBe("Always");
+    expect(syncTemplateFromAdvanced(status, true, true)).toBe("Always");
   });
 
   it("returns null on empty advanced JSON when the section disallows 'Always'", () => {
@@ -960,6 +1085,6 @@ describe("syncTemplateFromAdvanced", () => {
     // empty advanced textarea can't promote the simple side to "Always".
     // Keep the existing simple draft.
     const status: ValidationStatus = { kind: "empty" };
-    expect(syncTemplateFromAdvanced(status, false)).toBeNull();
+    expect(syncTemplateFromAdvanced(status, false, false)).toBeNull();
   });
 });

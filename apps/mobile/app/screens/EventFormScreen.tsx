@@ -58,6 +58,7 @@ import {
   formatComputedValue,
   getComputed,
   hasComputed,
+  pruneRulesForLiveFields,
   stabilizeComputedValues,
   summarizeSubmitBlockers,
   type ValidationError,
@@ -180,10 +181,18 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
   // (or its field list) loads. Evaluate-per-render: useWatch subscribes to
   // RHF; combined with the side-state below we re-evaluate when anything the
   // rules could read changes.
-  const evaluator = useMemo(
-    () => compileRules(form?.formFields ?? []),
-    [form?.formFields],
-  )
+  const evaluator = useMemo(() => {
+    const formFields = form?.formFields ?? []
+    // Event-form fields are hard-deleted (absent from the array), so the
+    // live set is every present id; this drops rules referencing fields
+    // that were removed.
+    return compileRules(
+      pruneRulesForLiveFields(
+        formFields,
+        formFields.map((f) => f.id),
+      ),
+    )
+  }, [form?.formFields])
   // useWatch returns `{}`/the form snapshot, but TS types it loosely; the
   // `?? {}` guards the first-render case before any Controller has mounted.
   const watchedValues = (useWatch({ control }) as Record<string, unknown> | undefined) ?? {}

@@ -326,16 +326,21 @@ async function configureSimpleComparison(
 ): Promise<void> {
   const section = card.getByTestId(sectionTestId);
 
-  await section.getByTestId("rule-when-kind").click();
+  // Multi-condition sections (visibility / requiredIf) open on "Always"
+  // with no rows — add the first condition, then drive it.
+  await section.getByTestId("rule-add-condition").click();
+  const row = section.getByTestId("condition-row-0");
+
+  await row.getByTestId("rule-when-kind").click();
   await page.getByRole("option", { name: args.kindLabel }).click();
 
-  await section.getByTestId("rule-field-picker").click();
+  await row.getByTestId("rule-field-picker").click();
   await page.getByRole("option", { name: args.fieldLabel, exact: true }).click();
 
-  await section.getByTestId("rule-operator").click();
+  await row.getByTestId("rule-operator").click();
   await page.getByRole("option", { name: args.operatorLabel, exact: true }).click();
 
-  await section.getByTestId("rule-value").fill(args.value);
+  await row.getByTestId("rule-value").fill(args.value);
 }
 
 /**

@@ -39,20 +39,77 @@ import {
   COMPARISON_OPS,
   type ComparisonOp,
   compileVisibilityTemplate,
+  type Connector,
   decompileVisibilityTemplate,
   type LogicField,
   ruleReferencesField,
   type SimpleVisibilityTemplate,
+  type VisibilityCondition,
 } from "@/lib/form-rule-templates";
 
-// SimpleVisibilityTemplate is the ReScript-emitted variant: `"Always"`
-// is a bare string, the rest are tagged records. Centralize the variant-tag
-// extraction so the rest of the file reads `kindOf(t)` instead of repeating
-// the discriminant.
+// SimpleVisibilityTemplate is the ReScript-emitted variant: `"Always"` is
+// a bare string; otherwise a `{TAG: "Conditions", connector, conditions}`
+// group whose members are `VisibilityCondition` leaves. The slot-level
+// "Always" state is an empty condition list, not a per-row kind.
 type VisibilityKind = "Always" | "Comparison" | "Truthy" | "Falsy";
 
-const kindOf = (t: SimpleVisibilityTemplate): VisibilityKind =>
-  typeof t === "string" ? t : t.TAG;
+// Per-row leaf kinds — what a single condition can be.
+type ConditionKind = "Comparison" | "Truthy" | "Falsy";
+const CONDITION_KINDS: ConditionKind[] = ["Comparison", "Truthy", "Falsy"];
+
+// The conditions a template carries; "Always" has none.
+const conditionsOf = (t: SimpleVisibilityTemplate): VisibilityCondition[] =>
+  t === "Always" ? [] : t.conditions;
+
+// Build a template from a connector + condition list, collapsing an empty
+// list to "Always" when the section permits a no-rule state.
+function templateFromConditions(
+  conditions: VisibilityCondition[],
+  connector: Connector,
+  allowAlways: boolean,
+): SimpleVisibilityTemplate {
+  if (conditions.length === 0 && allowAlways) return "Always";
+  return { TAG: "Conditions", connector, conditions };
+}
+
+// A fresh comparison condition, defaulting to the preferred field when it's
+// a primitive in the picker, otherwise the first primitive available.
+function defaultConditionFor(
+  fields: ReadonlyArray<LogicField>,
+  preferredFieldId?: string,
+): VisibilityCondition {
+  const preferred = fields.find(
+    (f) => f.id === preferredFieldId && f.kind === "primitive",
+  );
+  const firstId =
+    preferred?.id ?? fields.find((f) => f.kind === "primitive")?.id ?? "";
+  return { TAG: "Comparison", fieldId: firstId, op: "==", value: "" };
+}
+
+// Whether the simple editor can represent a decompiled template:
+//   - "Always" only when the section allows a no-rule state
+//   - a single condition always (one row)
+//   - multiple conditions only when the section allows multiple AND the
+//     connector is `and` (OR / mixed logic stays in advanced mode for now)
+function isSimpleRepresentable(
+  t: SimpleVisibilityTemplate,
+  allowAlways: boolean,
+  allowMultiple: boolean,
+): boolean {
+  if (t === "Always") return allowAlways;
+  if (t.conditions.length <= 1) return true;
+  return allowMultiple && t.connector === "and";
+}
+
+// A stored visibility/requiredIf rule is "stuck in advanced" when the
+// simple editor can't represent it. Both sections allow a no-rule state
+// and multiple AND-ed conditions, so OR, nesting, or unknown operators
+// stick. Shared by both sections' advisories.
+function isStuckInAdvanced(initialRule: JsonLogicRule | undefined): boolean {
+  if (initialRule === undefined) return false;
+  const t = decompileVisibilityTemplate(initialRule);
+  return t === undefined || !isSimpleRepresentable(t, true, true);
+}
 
 // ============================================================================
 // FieldLogicPanel
@@ -107,19 +164,30 @@ export function FieldLogicPanel({
   );
 
   return (
-    <div className="pt-2" data-testid="field-logic-panel">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setIsOpen(!isOpen)}
-        data-testid="field-logic-toggle"
-      >
-        <LucideSlidersHorizontal size="1rem" />
-        {isOpen ? "Hide Logic & Validation" : "Logic & Validation"}
-      </Button>
+    <Collapsible
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      className="pt-2"
+      data-testid="field-logic-panel"
+    >
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          data-testid="field-logic-toggle"
+          className="flex w-full items-center justify-between rounded-md border border-border bg-card px-3 py-2 text-left text-sm font-semibold hover:bg-muted/40"
+        >
+          <span className="flex items-center gap-2">
+            <LucideSlidersHorizontal size="1rem" />
+            Logic & Validation
+          </span>
+          <LucideChevronDown
+            size="1rem"
+            className={`transition-transform ${isOpen ? "rotate-0" : "-rotate-90"}`}
+          />
+        </button>
+      </CollapsibleTrigger>
 
-      {isOpen && (
+      <CollapsibleContent>
         <div className="mt-3 ml-2 space-y-3 border-l-2 border-muted pl-4">
           <CollapsibleSection
             title="Visibility"
@@ -201,8 +269,8 @@ export function FieldLogicPanel({
             />
           )}
         </div>
-      )}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -278,12 +346,10 @@ function VisibilitySection({
   initialRule,
   onSave,
 }: VisibilitySectionProps) {
-  // Decide initial advisory state: a rule that doesn't decompile to a
-  // template lives in advanced mode and the simple editor can't
-  // represent it. We surface that above the tabs.
+  // Decide initial advisory state: a rule the simple editor can't
+  // represent lives in advanced mode. We surface that above the tabs.
   const stuckInAdvanced = useMemo(
-    () =>
-      initialRule !== undefined && decompileVisibilityTemplate(initialRule) === undefined,
+    () => isStuckInAdvanced(initialRule),
     [initialRule],
   );
 
@@ -311,6 +377,7 @@ function VisibilitySection({
         referenceableFields={referenceableFields}
         initialRule={initialRule}
         allowAlways={true}
+        allowMultiple={true}
         kindLabels={VISIBILITY_KIND_LABELS}
         onChange={setCurrent}
       />
@@ -346,9 +413,7 @@ function RequiredIfSection({
   onSave,
 }: RequiredIfSectionProps) {
   const stuckInAdvanced = useMemo(
-    () =>
-      initialRule !== undefined &&
-      decompileVisibilityTemplate(initialRule) === undefined,
+    () => isStuckInAdvanced(initialRule),
     [initialRule],
   );
 
@@ -373,6 +438,7 @@ function RequiredIfSection({
         referenceableFields={referenceableFields}
         initialRule={initialRule}
         allowAlways={true}
+        allowMultiple={true}
         kindLabels={REQUIRED_KIND_LABELS}
         onChange={setCurrent}
       />
@@ -612,6 +678,7 @@ function ValidatorRow({
           referenceableFields={referenceableFields}
           initialRule={draft.rule}
           allowAlways={false}
+          allowMultiple={false}
           kindLabels={VALIDATOR_KIND_LABELS}
           defaultFieldId={currentFieldId}
           onChange={(state) =>
@@ -662,6 +729,13 @@ type RuleEditorProps = {
    */
   allowAlways: boolean;
   /**
+   * Whether the section can combine several conditions (joined by AND).
+   * Visibility / requiredIf do; validators don't — a validator carries a
+   * single condition, and multiple validators are already AND-ed at the
+   * section level.
+   */
+  allowMultiple: boolean;
+  /**
    * Per-kind labels for the Simple "When" dropdown. Sections pass
    * context-appropriate verbs — visibility uses "Show when…", validators
    * use "Valid when…" — so the same template shape reads correctly in
@@ -683,6 +757,7 @@ function RuleEditor({
   referenceableFields,
   initialRule,
   allowAlways,
+  allowMultiple,
   kindLabels,
   defaultFieldId,
   onChange,
@@ -691,12 +766,13 @@ function RuleEditor({
     () => decompileVisibilityTemplate(initialRule),
     [initialRule],
   );
-  // `decompileVisibilityTemplate(undefined) === "Always"`. When
-  // `allowAlways=false` and the incoming rule is undefined, treat the
-  // template as null so the simple editor starts in a non-"Always" kind.
+  // A decompiled template only seeds Simple mode when this section can
+  // actually represent it (see `isSimpleRepresentable`): otherwise the
+  // editor opens in Advanced. Covers the no-rule "Always" case for
+  // validators and OR/multi-condition rules the section can't render.
   const safeTemplate =
     initialTemplate !== undefined &&
-    (allowAlways || kindOf(initialTemplate) !== "Always")
+    isSimpleRepresentable(initialTemplate, allowAlways, allowMultiple)
       ? initialTemplate
       : null;
   const initialMode: "simple" | "advanced" = safeTemplate ? "simple" : "advanced";
@@ -755,7 +831,11 @@ function RuleEditor({
       const synced = syncTextFromSimple(simpleState);
       if (synced !== null) setText(synced);
     } else {
-      const synced = syncTemplateFromAdvanced(advancedStatus, allowAlways);
+      const synced = syncTemplateFromAdvanced(
+        advancedStatus,
+        allowAlways,
+        allowMultiple,
+      );
       if (synced !== null) setTemplate(synced);
     }
     setMode(next);
@@ -778,6 +858,7 @@ function RuleEditor({
           template={template}
           onTemplateChange={setTemplate}
           allowAlways={allowAlways}
+          allowMultiple={allowMultiple}
           kindLabels={kindLabels}
         />
       </TabsContent>
@@ -799,17 +880,16 @@ function defaultTemplateFor(
   fields: ReadonlyArray<LogicField>,
   preferredFieldId?: string,
 ): SimpleVisibilityTemplate {
+  // Sections that allow a no-rule state open on "Always"; validators (which
+  // must carry a rule) open on a single comparison row — preferring the
+  // caller's `preferredFieldId` so "Add validator" opens with the current
+  // field selected, the common case.
   if (allowAlways) return "Always";
-  // Prefer the caller's `preferredFieldId` when it's a primitive in the
-  // picker (typical for validators: open with the current field selected,
-  // matching the most common authoring intent). Otherwise fall back to
-  // the first primitive in the form.
-  const preferred = fields.find(
-    (f) => f.id === preferredFieldId && f.kind === "primitive",
-  );
-  const firstId =
-    preferred?.id ?? fields.find((f) => f.kind === "primitive")?.id ?? "";
-  return { TAG: "Comparison", fieldId: firstId, op: "==", value: "" };
+  return {
+    TAG: "Conditions",
+    connector: "and",
+    conditions: [defaultConditionFor(fields, preferredFieldId)],
+  };
 }
 
 // ============================================================================
@@ -822,6 +902,7 @@ type SimpleRuleInputProps = {
   template: SimpleVisibilityTemplate;
   onTemplateChange: (t: SimpleVisibilityTemplate) => void;
   allowAlways: boolean;
+  allowMultiple: boolean;
   kindLabels: Record<VisibilityKind, string>;
 };
 
@@ -858,49 +939,136 @@ function SimpleRuleInput({
   template,
   onTemplateChange,
   allowAlways,
+  allowMultiple,
   kindLabels,
 }: SimpleRuleInputProps) {
   const primitiveFields = referenceableFields.filter(
     (f) => f.kind === "primitive",
   );
 
-  const availableKinds: VisibilityKind[] = allowAlways
-    ? ["Always", "Comparison", "Truthy", "Falsy"]
-    : ["Comparison", "Truthy", "Falsy"];
+  const conditions = conditionsOf(template);
+  // Only AND is surfaced today; preserve whatever connector the template
+  // carries so a future OR editor doesn't lose it.
+  const connector: Connector = template === "Always" ? "and" : template.connector;
 
-  const onKindChange = (kind: VisibilityKind) => {
-    if (kind === "Always") {
-      onTemplateChange("Always");
-      return;
-    }
-    // Preserve the current fieldId when switching between non-Always kinds;
-    // fall back to the first primitive field if the user is leaving Always.
-    const fieldId =
-      typeof template !== "string" && "fieldId" in template
-        ? template.fieldId
-        : (primitiveFields[0]?.id ?? "");
+  const emit = (next: VisibilityCondition[]) =>
+    onTemplateChange(templateFromConditions(next, connector, allowAlways));
+
+  const updateCondition = (index: number, c: VisibilityCondition) =>
+    emit(conditions.map((existing, i) => (i === index ? c : existing)));
+
+  // Single-condition surfaces (validators) render exactly one row with no
+  // add/remove affordances. The condition always exists via defaultTemplateFor.
+  if (!allowMultiple) {
+    const only = conditions[0] ?? defaultConditionFor(primitiveFields);
+    return (
+      <ConditionRow
+        primitiveFields={primitiveFields}
+        condition={only}
+        kindLabels={kindLabels}
+        onChange={(c) => updateCondition(0, c)}
+      />
+    );
+  }
+
+  const addCondition = () =>
+    emit([...conditions, defaultConditionFor(primitiveFields)]);
+  const removeCondition = (index: number) =>
+    emit(conditions.filter((_, i) => i !== index));
+
+  return (
+    <div className="space-y-3" data-testid="condition-list">
+      {conditions.length === 0 && (
+        <p className="text-xs text-muted-foreground italic">
+          {kindLabels.Always}. Add a condition to restrict when this applies.
+        </p>
+      )}
+
+      {conditions.map((c, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: ConditionRow is fully controlled by the template (no internal state), so a positional key stays correct across add/remove.
+        <div key={i} className="space-y-2">
+          {i > 0 && (
+            <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
+              and
+            </p>
+          )}
+          <div
+            className="flex items-start justify-between gap-2 rounded-md border border-border bg-card p-3"
+            data-testid={`condition-row-${i}`}
+          >
+            <div className="flex-1">
+              <ConditionRow
+                primitiveFields={primitiveFields}
+                condition={c}
+                kindLabels={kindLabels}
+                onChange={(next) => updateCondition(i, next)}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => removeCondition(i)}
+              aria-label="Remove condition"
+              data-testid="condition-remove"
+            >
+              <LucideX size="0.875rem" />
+            </Button>
+          </div>
+        </div>
+      ))}
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={addCondition}
+        data-testid="rule-add-condition"
+      >
+        <LucidePlus size="0.875rem" />
+        Add condition
+      </Button>
+    </div>
+  );
+}
+
+// One leaf condition: kind dropdown + field picker + (for comparisons) the
+// operator/value inputs. Shared by the single-condition (validator) layout
+// and each row of the multi-condition list.
+function ConditionRow({
+  primitiveFields,
+  condition,
+  kindLabels,
+  onChange,
+}: {
+  primitiveFields: ReadonlyArray<LogicField>;
+  condition: VisibilityCondition;
+  kindLabels: Record<VisibilityKind, string>;
+  onChange: (c: VisibilityCondition) => void;
+}) {
+  const onKindChange = (kind: ConditionKind) => {
+    // Preserve the chosen field when switching condition kinds.
+    const fieldId = condition.fieldId;
     if (kind === "Comparison") {
-      onTemplateChange({ TAG: "Comparison", fieldId, op: "==", value: "" });
+      onChange({ TAG: "Comparison", fieldId, op: "==", value: "" });
     } else {
-      onTemplateChange({ TAG: kind, fieldId });
+      onChange({ TAG: kind, fieldId });
     }
   };
-
-  const currentKind = kindOf(template);
 
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
         <Label className="text-xs">When</Label>
         <Select
-          value={currentKind}
-          onValueChange={(v) => onKindChange(v as VisibilityKind)}
+          value={condition.TAG}
+          onValueChange={(v) => onKindChange(v as ConditionKind)}
         >
           <SelectTrigger size="sm" data-testid="rule-when-kind">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {availableKinds.map((k) => (
+            {CONDITION_KINDS.map((k) => (
               <SelectItem key={k} value={k}>
                 {kindLabels[k]}
               </SelectItem>
@@ -909,30 +1077,28 @@ function SimpleRuleInput({
         </Select>
       </div>
 
-      {typeof template !== "string" && (
-        <FieldPickerRow
-          fields={primitiveFields}
-          fieldId={template.fieldId}
-          onChange={(fieldId) =>
-            onTemplateChange(
-              template.TAG === "Comparison"
-                ? { ...template, fieldId }
-                : { TAG: template.TAG, fieldId },
-            )
-          }
-        />
-      )}
+      <FieldPickerRow
+        fields={primitiveFields}
+        fieldId={condition.fieldId}
+        onChange={(fieldId) =>
+          onChange(
+            condition.TAG === "Comparison"
+              ? { ...condition, fieldId }
+              : { TAG: condition.TAG, fieldId },
+          )
+        }
+      />
 
-      {typeof template !== "string" && template.TAG === "Comparison" && (
+      {condition.TAG === "Comparison" && (
         <ComparisonInputs
-          op={template.op}
-          value={template.value as string | number | boolean | null}
+          op={condition.op}
+          value={condition.value as string | number | boolean | null}
           primitiveKind={
-            primitiveFields.find((f) => f.id === template.fieldId)
+            primitiveFields.find((f) => f.id === condition.fieldId)
               ?.primitiveKind
           }
-          onOpChange={(op) => onTemplateChange({ ...template, op })}
-          onValueChange={(value) => onTemplateChange({ ...template, value })}
+          onOpChange={(op) => onChange({ ...condition, op })}
+          onValueChange={(value) => onChange({ ...condition, value })}
         />
       )}
     </div>
@@ -1113,28 +1279,38 @@ function AdvancedRuleInput({
 // ============================================================================
 
 /**
+ * Whether a single condition is fully authored: a real field reference,
+ * and for comparisons a non-empty value. ("is null"/"is empty" cases
+ * belong to the `Falsy` kind, not a comparison-against-null.)
+ */
+function conditionValid(
+  c: VisibilityCondition,
+  primitiveFields: ReadonlyArray<LogicField>,
+): boolean {
+  const fieldRefValid =
+    c.fieldId !== "" && primitiveFields.some((f) => f.id === c.fieldId);
+  if (!fieldRefValid) return false;
+  if (c.TAG === "Comparison") {
+    return !(c.value === "" || c.value === null);
+  }
+  return true;
+}
+
+/**
  * Compile a simple-mode template + check whether the user has authored
- * everything we need (a field reference, and for comparisons a value).
- * Returns the {rule, isValid} the parent's Save button gates on.
+ * everything we need across every condition. Returns the {rule, isValid}
+ * the parent's Save button gates on.
  */
 function evaluateSimpleTemplate(
   template: SimpleVisibilityTemplate,
   primitiveFields: ReadonlyArray<LogicField>,
 ): RuleState {
   const rule = compileVisibilityTemplate(template);
-  const fieldRefValid =
-    template === "Always" ||
-    (template.fieldId !== "" &&
-      primitiveFields.some((f) => f.id === template.fieldId));
-  // Comparison-kind rules with an unspecified value compile to
-  // structurally valid JSONLogic but represent an un-authored value.
-  // "is null"/"is empty" cases belong to the `Falsy` kind, not a
-  // comparison-against-null.
-  const valueAuthored =
-    template === "Always" ||
-    template.TAG !== "Comparison" ||
-    !(template.value === "" || template.value === null);
-  return { rule, isValid: fieldRefValid && valueAuthored };
+  if (template === "Always") return { rule, isValid: true };
+  const isValid =
+    template.conditions.length > 0 &&
+    template.conditions.every((c) => conditionValid(c, primitiveFields));
+  return { rule, isValid };
 }
 
 /**
@@ -1162,15 +1338,17 @@ export function syncTextFromSimple(simpleState: RuleState): string | null {
  *  - the parsed rule doesn't match any template shape (e.g. a deeply
  *    nested AND/OR — leaves the user's existing simple-mode draft
  *    untouched rather than snapping to a default)
- *  - the decompiled kind is "Always" but the section doesn't allow
- *    "always" (validators must carry a rule, so we keep the
- *    pre-existing simple draft).
+ *  - the decompiled template can't be represented in this section (see
+ *    `isSimpleRepresentable`): "Always" where the section requires a rule,
+ *    or an OR / multi-condition group the section can't render — we keep
+ *    the pre-existing simple draft rather than drop the user's work.
  *
  * @internal
  */
 export function syncTemplateFromAdvanced(
   advancedStatus: ValidationStatus,
   allowAlways: boolean,
+  allowMultiple: boolean,
 ): SimpleVisibilityTemplate | null {
   let parsed: JsonLogicRule | undefined;
   if (advancedStatus.kind === "empty") parsed = undefined;
@@ -1178,7 +1356,7 @@ export function syncTemplateFromAdvanced(
   else return null;
   const decompiled = decompileVisibilityTemplate(parsed);
   if (decompiled === undefined) return null;
-  if (!allowAlways && kindOf(decompiled) === "Always") return null;
+  if (!isSimpleRepresentable(decompiled, allowAlways, allowMultiple)) return null;
   return decompiled;
 }
 

@@ -223,9 +223,9 @@ start-mobile-android mode='dev': build-utils-js build-hh-forms
     set -euo pipefail
     case "{{ mode }}" in
       prod|production|release)
-        pnpm --filter hikma-health-mobile run android -- --variant release ;;
+        dotenv -f .env run pnpm --filter hikma-health-mobile run android -- --variant release ;;
       dev|debug)
-        pnpm --filter hikma-health-mobile run android ;;
+        dotenv -f .env run pnpm --filter hikma-health-mobile run android ;;
       *)
         echo "start-mobile-android: unknown mode '{{ mode }}' (use 'dev' or 'prod')" >&2
         exit 2 ;;
@@ -236,9 +236,9 @@ start-mobile-ios mode='dev': build-utils-js build-hh-forms
     set -euo pipefail
     case "{{ mode }}" in
       prod|production|release)
-        pnpm --filter hikma-health-mobile run ios -- --configuration Release ;;
+        dotenv -f .env run pnpm --filter hikma-health-mobile run ios -- --configuration Release ;;
       dev|debug)
-        pnpm --filter hikma-health-mobile run ios ;;
+        dotenv -f .env run pnpm --filter hikma-health-mobile run ios ;;
       *)
         echo "start-mobile-ios: unknown mode '{{ mode }}' (use 'dev' or 'prod')" >&2
         exit 2 ;;

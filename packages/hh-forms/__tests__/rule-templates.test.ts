@@ -7,21 +7,39 @@ import {
   decompileVisibilityTemplate,
   ruleReferencesField,
   type simpleVisibilityTemplate,
+  type visibilityCondition,
   type comparisonOp,
 } from "../src/RuleTemplates.gen";
 
 /**
- * Parity tests for the simple-visibility template compile/decompile and
- * the ruleReferencesField walker. Mirrors
- * apps/server/tests/lib/form-rule-templates.test.ts adapted to the
- * ReScript-emitted variant shape:
+ * Compile/decompile parity for the simple-visibility template model and
+ * the ruleReferencesField walker. The ReScript-emitted variant shape:
  *
- *   - `Always` is a bare string
- *   - other variants are `{TAG: "Comparison" | "Truthy" | "Falsy", ...}`
+ *   - `Always` is a bare string.
+ *   - otherwise `{ TAG: "Conditions", connector, conditions }`, where each
+ *     condition is `{ TAG: "Comparison" | "Truthy" | "Falsy", ... }`.
  *
- * Compile returns `undefined` for `Always` and the rule object otherwise.
- * Decompile takes `undefined` (missing rule) or a JSON value.
+ * A single condition compiles to the bare leaf rule (backward compatible);
+ * two or more compile to `{ and: [...] }` / `{ or: [...] }`. Decompile is
+ * conservative: any non-leaf member, an `and`/`or` with <2 elements, or a
+ * nested group falls back to `undefined` (advanced mode).
  */
+
+const cmp = (
+  fieldId: string,
+  op: comparisonOp,
+  value: unknown,
+): visibilityCondition => ({ TAG: "Comparison", fieldId, op, value });
+const truthy = (fieldId: string): visibilityCondition => ({ TAG: "Truthy", fieldId });
+const falsy = (fieldId: string): visibilityCondition => ({ TAG: "Falsy", fieldId });
+
+// Canonical single-condition template (connector is irrelevant with one
+// condition; decompile always reports `and`).
+const one = (c: visibilityCondition): simpleVisibilityTemplate => ({
+  TAG: "Conditions",
+  connector: "and",
+  conditions: [c],
+});
 
 describe("comparisonOps and labels", () => {
   it("exposes all six operators in the legacy order", () => {
@@ -41,47 +59,84 @@ describe("compileVisibilityTemplate", () => {
     expect(compileVisibilityTemplate("Always")).toBeUndefined();
   });
 
-  it("compiles a == comparison to a JSONLogic comparison rule", () => {
-    const rule = compileVisibilityTemplate({
-      TAG: "Comparison",
-      fieldId: "f1",
-      op: "==",
-      value: "yes",
+  it("compiles an empty condition list to undefined (defensive)", () => {
+    expect(
+      compileVisibilityTemplate({ TAG: "Conditions", connector: "and", conditions: [] }),
+    ).toBeUndefined();
+  });
+
+  it("compiles a single == comparison to the bare comparison rule", () => {
+    expect(compileVisibilityTemplate(one(cmp("f1", "==", "yes")))).toEqual({
+      "==": [{ var: "form.f1" }, "yes"],
     });
-    expect(rule).toEqual({ "==": [{ var: "form.f1" }, "yes"] });
   });
 
-  it("compiles a >= comparison with a numeric literal", () => {
-    const rule = compileVisibilityTemplate({
-      TAG: "Comparison",
-      fieldId: "age",
-      op: ">=",
-      value: 18,
+  it("compiles a single >= comparison with a numeric literal", () => {
+    expect(compileVisibilityTemplate(one(cmp("age", ">=", 18)))).toEqual({
+      ">=": [{ var: "form.age" }, 18],
     });
-    expect(rule).toEqual({ ">=": [{ var: "form.age" }, 18] });
   });
 
-  it("compiles Truthy to a !! unary form", () => {
-    const rule = compileVisibilityTemplate({ TAG: "Truthy", fieldId: "x" });
-    expect(rule).toEqual({ "!!": { var: "form.x" } });
+  it("compiles a single Truthy to a bare !! unary form", () => {
+    expect(compileVisibilityTemplate(one(truthy("x")))).toEqual({
+      "!!": { var: "form.x" },
+    });
   });
 
-  it("compiles Falsy to a ! unary form", () => {
-    const rule = compileVisibilityTemplate({ TAG: "Falsy", fieldId: "x" });
-    expect(rule).toEqual({ "!": { var: "form.x" } });
+  it("compiles a single Falsy to a bare ! unary form", () => {
+    expect(compileVisibilityTemplate(one(falsy("x")))).toEqual({
+      "!": { var: "form.x" },
+    });
+  });
+
+  it("compiles two AND-ed conditions to an `and` compound", () => {
+    expect(
+      compileVisibilityTemplate({
+        TAG: "Conditions",
+        connector: "and",
+        conditions: [cmp("age", ">=", 18), cmp("consent", "==", true)],
+      }),
+    ).toEqual({
+      and: [
+        { ">=": [{ var: "form.age" }, 18] },
+        { "==": [{ var: "form.consent" }, true] },
+      ],
+    });
+  });
+
+  it("compiles OR-ed conditions to an `or` compound", () => {
+    expect(
+      compileVisibilityTemplate({
+        TAG: "Conditions",
+        connector: "or",
+        conditions: [truthy("a"), truthy("b")],
+      }),
+    ).toEqual({
+      or: [{ "!!": { var: "form.a" } }, { "!!": { var: "form.b" } }],
+    });
   });
 });
 
 describe("decompileVisibilityTemplate — round-trip across every template", () => {
   const cases: simpleVisibilityTemplate[] = [
     "Always",
-    { TAG: "Comparison", fieldId: "f1", op: "==", value: "yes" },
-    { TAG: "Comparison", fieldId: "age", op: ">=", value: 18 },
-    { TAG: "Comparison", fieldId: "alive", op: "!=", value: true },
-    { TAG: "Comparison", fieldId: "score", op: "<", value: 0 },
-    { TAG: "Comparison", fieldId: "x", op: ">", value: null },
-    { TAG: "Truthy", fieldId: "consent" },
-    { TAG: "Falsy", fieldId: "is_empty" },
+    one(cmp("f1", "==", "yes")),
+    one(cmp("age", ">=", 18)),
+    one(cmp("alive", "!=", true)),
+    one(cmp("score", "<", 0)),
+    one(cmp("x", ">", null)),
+    one(truthy("consent")),
+    one(falsy("is_empty")),
+    {
+      TAG: "Conditions",
+      connector: "and",
+      conditions: [cmp("age", ">=", 18), cmp("consent", "==", true)],
+    },
+    {
+      TAG: "Conditions",
+      connector: "or",
+      conditions: [truthy("a"), falsy("b"), cmp("c", "==", 1)],
+    },
   ];
 
   for (const tpl of cases) {
@@ -101,27 +156,19 @@ describe("decompileVisibilityTemplate — round-trip across every template", () 
     expect(decompileVisibilityTemplate(null)).toBe("Always");
   });
 
-  it("decompiles the legacy single-element !! array form", () => {
+  it("decompiles a single bare condition to a one-element `and` group", () => {
     expect(
-      decompileVisibilityTemplate({ "!!": [{ var: "form.x" }] }),
-    ).toEqual({ TAG: "Truthy", fieldId: "x" });
+      decompileVisibilityTemplate({ "==": [{ var: "form.age" }, 18] }),
+    ).toEqual(one(cmp("age", "==", 18)));
   });
 
-  it("covers every comparisonOps entry", () => {
-    for (const op of comparisonOps) {
-      const t: simpleVisibilityTemplate = {
-        TAG: "Comparison",
-        fieldId: "f",
-        op,
-        value: 1,
-      };
-      expect(decompileVisibilityTemplate(compileVisibilityTemplate(t))).toEqual(t);
-    }
+  it("decompiles the legacy single-element !! array form", () => {
+    expect(decompileVisibilityTemplate({ "!!": [{ var: "form.x" }] })).toEqual(
+      one(truthy("x")),
+    );
   });
-});
 
-describe("decompileVisibilityTemplate — non-template rules return undefined", () => {
-  it("returns undefined for an and compound", () => {
+  it("decompiles an `and` compound of leaves to a group", () => {
     expect(
       decompileVisibilityTemplate({
         and: [
@@ -129,13 +176,62 @@ describe("decompileVisibilityTemplate — non-template rules return undefined", 
           { "==": [{ var: "form.consent" }, true] },
         ],
       }),
-    ).toBeUndefined();
+    ).toEqual({
+      TAG: "Conditions",
+      connector: "and",
+      conditions: [cmp("age", ">=", 18), cmp("consent", "==", true)],
+    });
   });
 
-  it("returns undefined for an or compound", () => {
+  it("decompiles an `or` compound of leaves to a group", () => {
     expect(
       decompileVisibilityTemplate({
         or: [{ "!!": { var: "form.a" } }, { "!!": { var: "form.b" } }],
+      }),
+    ).toEqual({
+      TAG: "Conditions",
+      connector: "or",
+      conditions: [truthy("a"), truthy("b")],
+    });
+  });
+
+  it("covers every comparisonOps entry", () => {
+    for (const op of comparisonOps) {
+      const t = one(cmp("f", op, 1));
+      expect(decompileVisibilityTemplate(compileVisibilityTemplate(t))).toEqual(t);
+    }
+  });
+});
+
+describe("decompileVisibilityTemplate — non-template rules return undefined", () => {
+  it("returns undefined for an `and` with a single element", () => {
+    expect(
+      decompileVisibilityTemplate({ and: [{ ">=": [{ var: "form.age" }, 18] }] }),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for an empty `and`", () => {
+    expect(decompileVisibilityTemplate({ and: [] })).toBeUndefined();
+  });
+
+  it("returns undefined when an `and` member isn't a leaf", () => {
+    expect(
+      decompileVisibilityTemplate({
+        and: [
+          { ">=": [{ var: "form.age" }, 18] },
+          { if: [{ "==": [{ var: "form.x" }, 1] }, true, false] },
+        ],
+      }),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for a nested `and` of `and`", () => {
+    expect(
+      decompileVisibilityTemplate({
+        and: [
+          { and: [{ "==": [{ var: "form.a" }, 1] }, { "==": [{ var: "form.b" }, 2] }] },
+          { "==": [{ var: "form.c" }, 3] },
+        ],
       }),
     ).toBeUndefined();
   });
@@ -248,7 +344,7 @@ describe("ruleReferencesField", () => {
 });
 
 describe("ruleReferencesField — property: compiled templates always reference their field", () => {
-  it("for any single-field template", () => {
+  it("for any single-field condition", () => {
     const fieldIdArb = fc.stringMatching(/^[a-z][a-z0-9_]{0,15}$/);
     const opArb: fc.Arbitrary<comparisonOp> = fc.constantFrom(...comparisonOps);
     const literalArb = fc.oneof(
@@ -257,25 +353,17 @@ describe("ruleReferencesField — property: compiled templates always reference 
       fc.boolean(),
       fc.constant(null),
     );
-    const tplArb: fc.Arbitrary<simpleVisibilityTemplate> = fc.oneof(
-      fieldIdArb.map((fieldId) => ({ TAG: "Truthy" as const, fieldId })),
-      fieldIdArb.map((fieldId) => ({ TAG: "Falsy" as const, fieldId })),
-      fc.tuple(fieldIdArb, opArb, literalArb).map(([fieldId, op, value]) => ({
-        TAG: "Comparison" as const,
-        fieldId,
-        op,
-        value,
-      })),
+    const condArb: fc.Arbitrary<visibilityCondition> = fc.oneof(
+      fieldIdArb.map((fieldId) => truthy(fieldId)),
+      fieldIdArb.map((fieldId) => falsy(fieldId)),
+      fc.tuple(fieldIdArb, opArb, literalArb).map(([fieldId, op, value]) =>
+        cmp(fieldId, op, value),
+      ),
     );
     fc.assert(
-      fc.property(tplArb, (tpl) => {
-        const rule = compileVisibilityTemplate(tpl);
-        const fieldId =
-          typeof tpl === "string"
-            ? null
-            : (tpl as { fieldId: string }).fieldId;
-        if (fieldId === null) return true;
-        return ruleReferencesField(rule, fieldId) === true;
+      fc.property(condArb, (c) => {
+        const rule = compileVisibilityTemplate(one(c));
+        return ruleReferencesField(rule, c.fieldId) === true;
       }),
       { numRuns: 100 },
     );

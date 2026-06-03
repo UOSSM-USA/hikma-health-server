@@ -34,6 +34,7 @@ import {
   formatComputedValue,
   getComputed,
   hasComputed,
+  pruneRulesForLiveFields,
   stabilizeComputedValues,
   type fieldWithRules,
   type validationError,
@@ -153,7 +154,11 @@ function RouteComponent() {
       validators: f.validators,
       computedValue: f.computedValue,
     }));
-    return compileRules(ruleFields);
+    // `fields` is already pre-filtered to `visible && !deleted`, so the
+    // live set is just its ids; this drops rule references pointing at
+    // fields that were filtered out.
+    const liveFieldIds = ruleFields.map((f) => f.id);
+    return compileRules(pruneRulesForLiveFields(ruleFields, liveFieldIds));
   }, [fields]);
 
   const ruleStabilization = useMemo(() => {

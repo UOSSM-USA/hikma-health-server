@@ -9,8 +9,12 @@
  * Shape notes for consumers:
  *
  *   - `SimpleVisibilityTemplate` is the ReScript-emitted variant:
- *     `"Always"` for the no-rule case (bare string), and
- *     `{ TAG: "Comparison" | "Truthy" | "Falsy", ... }` for the rest.
+ *     `"Always"` for the no-rule case (bare string), or
+ *     `{ TAG: "Conditions", connector, conditions }` where each
+ *     condition is a `VisibilityCondition`
+ *     (`{ TAG: "Comparison" | "Truthy" | "Falsy", ... }`). A single
+ *     condition compiles to the bare leaf rule; two or more compile to
+ *     `{ and: [...] }` / `{ or: [...] }`.
  *
  *   - `decompileVisibilityTemplate` returns `undefined` (not `null`) when
  *     the rule doesn't match a template shape — that's the ReScript
@@ -30,5 +34,7 @@ export type {
   logicFieldKind as LogicFieldKind,
   logicPrimitiveKind as LogicPrimitiveKind,
   comparisonOp as ComparisonOp,
+  connector as Connector,
+  visibilityCondition as VisibilityCondition,
   simpleVisibilityTemplate as SimpleVisibilityTemplate,
 } from "@hikmahealth/forms/RuleTemplates";
