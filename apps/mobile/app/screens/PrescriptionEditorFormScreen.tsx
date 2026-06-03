@@ -95,11 +95,36 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
     },
   })
 
-  const [openPicker, setOpenPicker] = useState<"pickupClinic" | "priority" | "status" | null>(null)
+  const [openPicker, setOpenPicker] = useState<
+    "city" | "pickupClinic" | "priority" | "status" | null
+  >(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const isIos = Platform.OS === "ios"
 
+  const [selectedCity, setSelectedCity] = useState("")
+
+  // Clinics may have a null/blank city, so drop those before building the filter options.
+  const cityOptions = useMemo(() => {
+    const cities = clinics
+      .map((clinic) => clinic.city?.trim())
+      .filter((city): city is string => Boolean(city))
+    return [...new Set(cities)].sort().map((city) => ({ label: city, value: city }))
+  }, [clinics])
+
+  const filteredClinics = useMemo(
+    () => (selectedCity ? clinics.filter((clinic) => clinic.city === selectedCity) : clinics),
+    [clinics, selectedCity],
+  )
+
   const pickupClinicId = watch("pickupClinicId")
+
+  // If the chosen city no longer contains the selected pickup clinic, clear the stale selection.
+  useEffect(() => {
+    if (!selectedCity || !pickupClinicId) return
+    if (!filteredClinics.some((clinic) => clinic.id === pickupClinicId)) {
+      setValue("pickupClinicId", "")
+    }
+  }, [selectedCity, pickupClinicId, filteredClinics, setValue])
 
   // if pick-up clinic id is changed, reset the prescription items - stock could differ between the clinics
   useEffect(() => {
@@ -276,6 +301,23 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
         </View>
 
         <View gap={theme.spacing.md} pt={20}>
+          <If condition={cityOptions.length > 0}>
+            <View>
+              <Text preset="formLabel" text="City" />
+              <PlatformPicker
+                isIos={isIos}
+                options={cityOptions}
+                fieldKey="city"
+                label="All cities"
+                modalTitle="City"
+                setValue={() => (value: string) => setSelectedCity(value)}
+                setOpen={(value: boolean) => setOpenPicker(value ? "city" : null)}
+                isOpen={openPicker === "city"}
+                value={selectedCity}
+              />
+            </View>
+          </If>
+
           <Controller
             control={control}
             name="pickupClinicId"
@@ -291,7 +333,7 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
                 </View> */}
                 <PlatformPicker
                   isIos={isIos}
-                  options={sortBy(clinics, ["name"]).map((clinic) => ({
+                  options={sortBy(filteredClinics, ["name"]).map((clinic) => ({
                     label: clinic.name,
                     value: clinic.id,
                   }))}

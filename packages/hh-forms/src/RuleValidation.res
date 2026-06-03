@@ -50,8 +50,7 @@ type formFieldRuleIssue = {
 
 // Per-field slot shape the validator inspects. Mirrors Rules.fieldWithRules
 // minus the `id`/`required` fields it doesn't need; computedValue belongs
-// here because it's a rule slot from the validator's perspective even
-// though the slim Phase-6 evaluator doesn't fire it.
+// here because it's a rule slot the validator checks like any other.
 @genType
 type fieldRuleSlots = {
   visibleIf?: Rules.jsonLogicRule,

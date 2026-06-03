@@ -1,5 +1,3 @@
-// Logger.res
-
 /**
  * Dev-only logger. All methods are no-ops in production builds.
  *
@@ -8,19 +6,16 @@
  */
 let noop = (_args: 'a) => ()
 
-let isDev = switch %raw(`process.env.NODE_ENV === "production"`) {
-| Some(_) => true
-| None => false
-}
+let isProduction: bool = %raw(`process.env.NODE_ENV === "production"`)
 
 @genType
-let log = isDev ? Console.log : noop
+let log = isProduction ? noop : Console.log
 
 @genType
-let warn = isDev ? Console.warn : noop
+let warn = isProduction ? noop : Console.warn
 
 @genType
-let error = isDev ? Console.error : noop
+let error = isProduction ? noop : Console.error
 
 @genType
-let info = isDev ? Console.info : noop
+let info = isProduction ? noop : Console.info

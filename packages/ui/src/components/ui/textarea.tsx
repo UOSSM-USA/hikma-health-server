@@ -4,25 +4,11 @@ import { cn } from "@hikmahealth/ui/lib/utils";
 import { Label } from "@hikmahealth/ui/components/label";
 
 export interface TextareaProps extends React.ComponentProps<"textarea"> {
-  // Size variants
-  // size?: "sm" | "md" | "lg";
-  // Visual variants
-  // variant?: "default" | "filled" | "unstyled";
-  // State props
   error?: string | boolean;
-  // Icon props
-  // leftSection?: React.ReactNode;
-  // rightSection?: React.ReactNode;
-  // leftSectionPointerEvents?: "none" | "auto";
-  // rightSectionPointerEvents?: "none" | "auto";
-  // Layout props
-  // radius?: "none" | "sm" | "md" | "lg" | "full";
-  // Wrapper props
   withAsterisk?: boolean;
   required?: boolean;
   label?: string;
   description?: string;
-  // Input wrapper class
   wrapperProps?: React.HTMLAttributes<HTMLDivElement>;
 }
 

@@ -19,33 +19,28 @@ import {
 import { validateRule } from "../src/RuleValidation.gen";
 
 // =============================================================================
-// Adversarial review: packages/hh-forms
+// Hardening tests for packages/hh-forms.
 //
-// Each test below targets a specific finding. They are designed to FAIL when
-// the bug exists and PASS once the implementation is fixed. The block comment
-// above each suite states the finding, severity, mechanism, and the fix that
-// would make it pass.
+// Each suite guards a specific failure mode — resource exhaustion, off-by-one
+// iteration caps, type-confusion in equality, lenient input handling, and
+// DoS-shaped rules. The comment above each suite states the mechanism it
+// protects against, so a future maintainer who sees one fail fixes the cause
+// rather than loosening the assertion.
 // =============================================================================
 
 const ctx = { now: "2026-05-23T00:00:00Z", language: "en" };
 const scope = (form: Record<string, unknown> = {}): ruleScope => ({ form, ctx });
 
 // -----------------------------------------------------------------------------
-// Finding A — MEDIUM
+// Deep-nesting recursion on untrusted JSON (CWE-674).
 //
-// RuleCycles.collectRefs and RuleTemplates.ruleReferencesField recurse on
-// the raw JSON tree (pre-validation). The form-builder Save handlers call
-// detectComputedValueCycles BEFORE the server's `assertFieldRulesValid`
-// guard. An author who pastes deeply-nested JSON in advanced mode (the
-// editor exposes the textarea verbatim) crashes the browser tab with
-// `RangeError: Maximum call stack size exceeded`. Same hazard on rule
-// load if any future path walks a raw rule before validating.
-//
-// Class: resource-exhaustion / unhandled recursion on untrusted input
-// CWE: CWE-674 (uncontrolled recursion)
-// Fix: convert collectRefs and walk to iterative traversal (explicit
-//      worklist), OR call RuleValidation.validateRule (depth-bounded at
-//      256 by the engine) before walking.
+// collectRefs, ruleReferencesField, and the cycle walker traverse the raw JSON
+// tree before validation. The form-builder Save handlers call
+// detectComputedValueCycles before the server's `assertFieldRulesValid` guard,
+// so an author who pastes deeply-nested JSON in advanced mode (the editor
+// exposes the textarea verbatim) could otherwise overflow the JS stack and
+// crash the browser tab. The walkers use an explicit worklist with a node-visit
+// cap so untrusted depth can't exhaust the stack.
 // -----------------------------------------------------------------------------
 
 function buildDeeplyNestedRule(depth: number): unknown {
@@ -56,7 +51,7 @@ function buildDeeplyNestedRule(depth: number): unknown {
   return node;
 }
 
-describe("Finding A — deep-nesting recursion on untrusted JSON", () => {
+describe("deep-nesting recursion on untrusted JSON", () => {
   it("extractReferencedFieldIds does not stack-overflow on 20000-deep arrays", () => {
     const rule = buildDeeplyNestedRule(20000);
     expect(() => extractReferencedFieldIds(rule as any)).not.toThrow();
@@ -76,23 +71,15 @@ describe("Finding A — deep-nesting recursion on untrusted JSON", () => {
 });
 
 // -----------------------------------------------------------------------------
-// Finding B — MEDIUM
+// Long linear computedValue chains must stabilize, not be misreported as cycles.
 //
-// stabilizeComputedValues' maxStabilizeIterations cap is 16, but the loop
-// counts the INITIAL evaluation as iter=1, then needs ONE confirming pass
-// after the last value settles. A linear computedValue chain of N fields
-// (root + N-1 dependents, each reading the previous via {"+": [{var}, 1]})
-// requires N evals to propagate plus 1 to confirm no change — and the cap
-// fires before that confirmation. The result is `convergence: "cycle"` and
-// `computedValues: {}` (writeback suppressed) for a perfectly acyclic
-// chain. Author sees no warning, screen blanks the read-only fields,
-// Logger.warn fires "cycle detected" falsely.
-//
-// Class: off-by-one in iteration cap; logic flaw
-// Fix: either raise the cap (cheap; each iter is O(N_fields)), evaluate
-//      in topological order once instead of fixed-pointing, or only flag
-//      a cycle when the SAME computedValues map repeats (true oscillation,
-//      not slow propagation).
+// stabilizeComputedValues fixed-points by re-evaluating until values settle.
+// A linear chain of N fields (each reading the previous via {"+": [{var}, 1]})
+// needs N passes to propagate plus one to confirm no change. If the iteration
+// cap is too low it fires before that confirmation, returning
+// `convergence: "cycle"` with writeback suppressed — blanking read-only fields
+// and warning "cycle detected" for a perfectly acyclic chain. The cap is sized
+// well above the longest chain these tests exercise.
 // -----------------------------------------------------------------------------
 
 function buildLinearChain(n: number): fieldWithRules[] {
@@ -106,7 +93,7 @@ function buildLinearChain(n: number): fieldWithRules[] {
   return fields;
 }
 
-describe("Finding B — stabilize falsely flags long linear chains as cycles", () => {
+describe("stabilize handles long linear chains without flagging cycles", () => {
   it("15-field linear chain stabilizes", () => {
     const fields = buildLinearChain(15);
     const evaluator = compileRules(fields);
@@ -114,13 +101,13 @@ describe("Finding B — stabilize falsely flags long linear chains as cycles", (
     expect(result.convergence).toBe("stable");
   });
 
-  it("16-field linear chain stabilizes (currently flagged as cycle)", () => {
+  it("16-field linear chain stabilizes", () => {
     const fields = buildLinearChain(16);
     const evaluator = compileRules(fields);
     const result = stabilizeComputedValues(evaluator, scope({ f0: 1 }));
     expect(result.convergence).toBe("stable");
     // The acyclic chain has well-defined computed values; suppressing them
-    // is the user-visible part of the bug.
+    // is the user-visible regression this guards against.
     expect(Object.keys(result.evaluation.computedValues).length).toBe(15);
   });
 
@@ -131,34 +118,27 @@ describe("Finding B — stabilize falsely flags long linear chains as cycles", (
     expect(result.convergence).toBe("stable");
   });
 
-  it("documents the cap value used by stabilize (informational)", () => {
-    // Not a bug assertion — pins the constant so any cap change here surfaces
-    // alongside the Finding B fix.
+  it("stabilize iteration cap stays high enough for long chains", () => {
+    // Pins the cap so a future reduction surfaces here rather than silently
+    // reintroducing the false-cycle behavior on long acyclic chains.
     expect(maxStabilizeIterations).toBeGreaterThanOrEqual(32);
   });
 });
 
 // -----------------------------------------------------------------------------
-// Finding C — LOW
+// computedValuesEqual must not collapse NaN/Infinity onto null.
 //
-// computedValuesEqual falls back to JSON.stringify equality. JSON.stringify
-// maps NaN, Infinity, -Infinity, and null all to the string "null", so the
-// helper reports four distinct float states as equal. When a computedValue
-// rule transitions from a real number to NaN (or to null), the writeback
-// short-circuit suppresses the update, and the read-only display shows the
-// stale value. The JSONLogic evaluator's `finiteNum` guard prevents the
-// engine itself from emitting NaN/Infinity for arithmetic ops, so reach
-// requires a rule that constructs the value some other way (e.g. {merge:}
-// of arrays containing JSON-non-finite values from `ctx`, or a TS caller
-// hand-building JSON.t). Real but narrow.
-//
-// Class: type-confusion in equality / silent data masking
-// Fix: short-circuit `computedValuesEqual(a, b)` on tag mismatch (e.g.,
-//      typeof a !== typeof b → false) BEFORE stringify; or treat NaN as
-//      unequal-to-anything per IEEE-754 semantics.
+// The structural-equality fallback uses JSON.stringify, which maps NaN,
+// Infinity, -Infinity, and null all to the string "null" — so a naive fallback
+// reports four distinct float states as equal. If a computedValue transitions
+// from a real number to NaN (or null), an equality short-circuit would suppress
+// the writeback and leave a stale read-only display. The JSONLogic `finiteNum`
+// guard keeps the engine from emitting non-finite numbers for arithmetic, so
+// reach is narrow (a rule building the value another way, or a hand-built
+// JSON.t) but real. Equality must distinguish these by tag before stringifying.
 // -----------------------------------------------------------------------------
 
-describe("Finding C — computedValuesEqual collapses NaN/Infinity to null", () => {
+describe("computedValuesEqual keeps NaN/Infinity distinct from null", () => {
   it("NaN and null are NOT equal", () => {
     expect(computedValuesEqual(NaN as any, null as any)).toBe(false);
   });
@@ -172,10 +152,10 @@ describe("Finding C — computedValuesEqual collapses NaN/Infinity to null", () 
   });
 
   it("property: any two JSON.t values that stringify identically must agree on the equality result", () => {
-    // Sanity: well-formed JSON.t inputs (no NaN/Infinity) follow stringify
-    // equality — this is what makes the JSON-stringify fallback safe in
-    // normal use. We assert the property explicitly so a future fix can
-    // narrow without regressing the well-formed case.
+    // Well-formed JSON.t inputs (no NaN/Infinity) follow stringify equality —
+    // this is what makes the JSON-stringify fallback safe in normal use.
+    // Asserted explicitly so any future narrowing of the equality check keeps
+    // the well-formed case intact.
     fc.assert(
       fc.property(fc.jsonValue(), (v) => {
         const same = computedValuesEqual(v as any, v as any);
@@ -187,60 +167,37 @@ describe("Finding C — computedValuesEqual collapses NaN/Infinity to null", () 
 });
 
 // -----------------------------------------------------------------------------
-// Finding D — LOW
+// Empty fieldId references must not decompile to a template.
 //
-// RuleTemplates.isFormVar (used by decompileVisibilityTemplate) returns
-// `Some("")` for a `var: "form."` path — i.e. an empty fieldId reference.
-// The downstream comparison/truthy/falsy template that gets produced will
-// reference a non-existent field; the runtime treats unknown ids as
-// "default visible", so the rule silently becomes a no-op rather than
-// surfacing the malformed authoring. Authors get no signal that they
-// dropped the id.
-//
-// Class: lenient input handling / missing input validation
-// Fix: reject empty fieldId in isFormVar (return None when slice is "").
+// isFormVar (used by decompileVisibilityTemplate) must not return Some("") for
+// a `var: "form."` path — an empty fieldId reference. Downstream that produces
+// a template referencing a non-existent field; the runtime treats unknown ids
+// as "default visible", so the rule silently becomes a no-op instead of
+// surfacing the malformed authoring, and the author gets no signal they dropped
+// the id. Empty fieldId is rejected as malformed.
 // -----------------------------------------------------------------------------
 
-describe("Finding D — empty fieldId references should not decompile to a template", () => {
-  it("ruleReferencesField with empty fieldId target should NOT match `form.`", () => {
-    // An author who saves `{var: "form."}` and then a separate validator
-    // self-ref check tries to verify the rule references field "" — the
-    // current code returns true (target === "form."), which is misleading.
-    // After the fix it should return false (empty fieldId is malformed).
+describe("empty fieldId references do not decompile to a template", () => {
+  it("ruleReferencesField with empty fieldId target does NOT match `form.`", () => {
+    // A self-ref check verifying that a rule references field "" must not match
+    // `{var: "form."}`: an empty fieldId is a malformed shape, not a legitimate
+    // reference to a field named "".
     expect(ruleReferencesField({ var: "form." } as any, "")).toBe(false);
   });
 });
 
 // -----------------------------------------------------------------------------
-// Finding E — INFO / property-based sanity
+// JsonLogic DoS-shaped rules are rejected at authoring time (CWE-1333).
 //
-// summarizeSubmitBlockers prefixes dict keys with "k:" to guard against
-// prototype-chain collisions (a validator message of "__proto__" or
-// "constructor"). Property test to confirm: under arbitrary string
-// messages — including attacker-shaped ones — the function never produces
-// fewer deduped entries than the number of distinct messages. This is the
-// secure-coding guarantee we want to lock in against future refactors.
+// The vendored `@nd/jsonlogic` evaluator iterates map/filter/reduce/merge/
+// all/some/none argument arrays without a per-call cap. A multi-thousand-element
+// literal array or a long chain of iteration ops can freeze the mobile UI,
+// which re-evaluates rules on every keystroke. Rather than patch vendored code,
+// RuleValidation.validateRule runs a pre-flight node-count and iteration-op
+// budget so the rule never reaches the evaluator.
 // -----------------------------------------------------------------------------
 
-// -----------------------------------------------------------------------------
-// Finding F — HIGH
-//
-// The vendored `@nd/jsonlogic` evaluator iterates over `map`/`filter`/
-// `reduce`/`merge`/`all`/`some`/`none` argument arrays without a per-call
-// cap. An author who embeds a multi-thousand-element literal array or
-// chains many iteration ops can freeze the mobile UI per-keystroke
-// (rules re-evaluate on every form change). We don't patch the vendored
-// code; instead `RuleValidation.validateRule` runs a pre-flight that
-// enforces a node-count budget and an iteration-op count budget, so the
-// rule never reaches the evaluator. This test pins the closed surface:
-// the previously-DoS-able shapes are rejected at authoring time.
-//
-// Class: algorithmic complexity / DoS via untrusted input
-// CWE: CWE-1333 (inefficient algorithmic complexity)
-// Fix (landed): RuleValidation pre-flight (checkComplexityBudget).
-// -----------------------------------------------------------------------------
-
-describe("Finding F — JsonLogic DoS rules are rejected at authoring time", () => {
+describe("JsonLogic DoS-shaped rules are rejected at authoring time", () => {
   it("rule embedding a 2000-element literal array is rejected", () => {
     const huge: number[] = [];
     for (let i = 0; i < 2000; i++) huge.push(i);
@@ -259,23 +216,19 @@ describe("Finding F — JsonLogic DoS rules are rejected at authoring time", () 
 });
 
 // -----------------------------------------------------------------------------
-// Finding G — MEDIUM
+// Dynamic var paths are rejected at authoring time.
 //
-// `RuleCycles.collectRefs` deliberately skips dynamic `var` paths
-// (e.g. `{var: {cat: [...]}}`) — it can't statically resolve them. That
-// design choice opens a cycle-escape: an author can chain two
-// computed-value rules whose `var` lookup is constructed at eval time,
-// bypass the SCC check at save, and burn the stabilize-iteration budget
-// per-keystroke at runtime. Rather than make the cycle detector
-// pessimistic (would break legitimate dynamic refs in non-cycle uses),
-// we reject `{var: <non-string>}` shapes at authoring time in
-// RuleValidation — downstream consumers then only see static refs.
-//
-// Class: authoring-time check bypass / runtime DoS
-// Fix (landed): RuleValidation pre-flight (checkDynamicVarPaths).
+// RuleCycles.collectRefs skips dynamic `var` paths (e.g. `{var: {cat: [...]}}`)
+// because it can't statically resolve them. That leaves a cycle-escape: an
+// author can chain computed-value rules whose lookup is built at eval time,
+// pass the SCC check at save, and burn the stabilize-iteration budget per
+// keystroke at runtime. Rather than make the cycle detector pessimistic (which
+// would break legitimate dynamic refs elsewhere), RuleValidation rejects
+// `{var: <non-string>}` at authoring time, so downstream consumers only ever
+// see static refs.
 // -----------------------------------------------------------------------------
 
-describe("Finding G — dynamic var paths are rejected at authoring time", () => {
+describe("dynamic var paths are rejected at authoring time", () => {
   it("rule with a computed-path var is rejected", () => {
     const r = validateRule({ var: { cat: ["form.", "a"] } });
     expect(r.TAG).toBe("Error");
@@ -293,7 +246,16 @@ describe("Finding G — dynamic var paths are rejected at authoring time", () =>
   });
 });
 
-describe("Finding E — submit gate dedup is prototype-safe", () => {
+// -----------------------------------------------------------------------------
+// Submit-gate dedup is prototype-safe.
+//
+// summarizeSubmitBlockers prefixes dict keys with "k:" so a validator message
+// of "__proto__" or "constructor" can't collide with the prototype chain and
+// corrupt the dedup map. Under arbitrary (including attacker-shaped) messages,
+// the deduped count must always equal the distinct-message count.
+// -----------------------------------------------------------------------------
+
+describe("submit-gate dedup is prototype-safe", () => {
   it("property: dedup count equals distinct-message count", () => {
     fc.assert(
       fc.property(

@@ -18,15 +18,11 @@ import {
 } from "../src/Rules.gen";
 
 /**
- * Parity tests for the slim Rules.res evaluator. Mirrors the subset of
- * apps/mobile/test/lib/form-rules.test.ts covering features present in
- * the ReScript port: visibleIf, requiredIf, validators, fail-safe
- * semantics, evaluator closure purity, and the two screen-side helpers
- * that migrated (summarizeSubmitBlockers, filterVisibleFields).
- *
- * Out of scope for this file (kept in TS until the computedValue slice):
- * computedValue evaluation, stabilizeComputedValues, computedValuesEqual,
- * formatComputedValue.
+ * Tests for the Rules.res evaluator: visibleIf, requiredIf, validators,
+ * computedValue, fail-safe (parse-failure) semantics, evaluator closure
+ * purity, computed-value stabilization, and the screen-side helpers
+ * (summarizeSubmitBlockers, filterVisibleFields). Mirrors the equivalent
+ * cases in apps/mobile/test/lib/form-rules.test.ts.
  */
 
 const emptyScope: ruleScope = {

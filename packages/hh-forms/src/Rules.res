@@ -1,7 +1,6 @@
 // JSONLogic evaluator for form-rule slots (visibility, requiredIf,
-// validators). Slim Phase-6 port: the `computedValue` path and its
-// stabilizing iteration helper stay in TS for now (deferred to a later
-// slice — see decision #16 in hhform-logic-implementation.local.md).
+// validators, computedValue), including the computed-value stabilization
+// loop that fixed-points dependent computed fields.
 //
 // Design:
 //   1. `compileRules(fields)` parses every slot rule ONCE and returns a
@@ -66,9 +65,9 @@ type validationError = {
 // Where in the rule structure a parse/eval diagnostic originated.
 // Polyvariants so genType emits the same `"visibleIf" | "requiredIf" |
 // "validators" | "computedValue"` string-union the TS consumers expect.
-// `computedValue` is included in the slot type even though this slim
-// evaluator doesn't fire it — the future-slice deferred path will, and
-// keeping the type stable avoids breaking the diagnostic shape later.
+// `computedValue` is a real slot the evaluator fires; it shares the
+// diagnostic shape so a parse/eval failure on a computed rule reports
+// the same way as the other slots.
 @genType
 type ruleSlot = [#visibleIf | #requiredIf | #validators | #computedValue]
 

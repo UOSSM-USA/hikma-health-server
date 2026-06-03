@@ -5,32 +5,30 @@ function noop(_args) {
   
 }
 
-let match = (process.env.NODE_ENV === "production");
+let isProduction = (process.env.NODE_ENV === "production");
 
-let isDev = match !== undefined;
-
-let log = isDev ? prim => {
+let log = isProduction ? noop : prim => {
     console.log(prim);
-  } : noop;
+  };
 
-let warn = isDev ? prim => {
+let warn = isProduction ? noop : prim => {
     console.warn(prim);
-  } : noop;
+  };
 
-let error = isDev ? prim => {
+let error = isProduction ? noop : prim => {
     console.error(prim);
-  } : noop;
+  };
 
-let info = isDev ? prim => {
+let info = isProduction ? noop : prim => {
     console.info(prim);
-  } : noop;
+  };
 
 export {
   noop,
-  isDev,
+  isProduction,
   log,
   warn,
   error,
   info,
 }
-/* match Not a pure module */
+/* isProduction Not a pure module */
