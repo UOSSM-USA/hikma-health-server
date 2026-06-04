@@ -914,3 +914,73 @@ describe("pruneRulesForLiveFields", () => {
     expect(result.isRequired("a")).toBe(false);
   });
 });
+
+describe("pruneRulesForLiveFields — operand-level pruning of and/or", () => {
+  const ref = (id: string) => ({ var: `form.${id}` });
+  const eq = (id: string, val: unknown) => ({ "==": [ref(id), val] });
+
+  it("drops only the dead conjunct of an `and`, keeping live siblings", () => {
+    const out = pruneRulesForLiveFields(
+      [field("target", { visibleIf: { and: [eq("hidden", "x"), eq("live", "y")] } })],
+      ["target", "live"],
+    );
+    // single survivor is unwrapped
+    expect(out[0]?.visibleIf).toEqual(eq("live", "y"));
+  });
+
+  it("keeps an `and` object when two or more conjuncts survive", () => {
+    const out = pruneRulesForLiveFields(
+      [
+        field("target", {
+          visibleIf: { and: [eq("a", 1), eq("hidden", 2), eq("b", 3)] },
+        }),
+      ],
+      ["target", "a", "b"],
+    );
+    expect(out[0]?.visibleIf).toEqual({ and: [eq("a", 1), eq("b", 3)] });
+  });
+
+  it("drops only the dead disjunct of an `or`", () => {
+    const out = pruneRulesForLiveFields(
+      [field("target", { visibleIf: { or: [eq("hidden", "x"), eq("live", "y")] } })],
+      ["target", "live"],
+    );
+    expect(out[0]?.visibleIf).toEqual(eq("live", "y"));
+  });
+
+  it("drops the whole slot when every operand references a non-live field", () => {
+    const out = pruneRulesForLiveFields(
+      [field("target", { visibleIf: { and: [eq("gone1", 1), eq("gone2", 2)] } })],
+      ["target"],
+    );
+    expect(out[0]?.visibleIf).toBeUndefined();
+  });
+
+  it("prunes nested combinators recursively", () => {
+    const out = pruneRulesForLiveFields(
+      [
+        field("target", {
+          visibleIf: {
+            and: [eq("a", 1), { or: [eq("hidden", 2), eq("b", 3)] }],
+          },
+        }),
+      ],
+      ["target", "a", "b"],
+    );
+    // inner or collapses to its single live disjunct, outer and keeps both
+    expect(out[0]?.visibleIf).toEqual({ and: [eq("a", 1), eq("b", 3)] });
+  });
+
+  it("end-to-end: a hidden conjunct is ignored, the live conjunct still gates", () => {
+    // Mirrors the production case: visibleIf = (hidden == "opt1") AND (name == "jack").
+    const fields = [
+      field("target", {
+        visibleIf: { and: [eq("hidden", "opt1"), eq("name", "jack")] },
+      }),
+    ];
+    const evaluate = compileRules(pruneRulesForLiveFields(fields, ["target", "name"]));
+    expect(evaluate(withForm({ name: "jack" })).isVisible("target")).toBe(true);
+    expect(evaluate(withForm({ name: "jill" })).isVisible("target")).toBe(false);
+    expect(evaluate(withForm({})).isVisible("target")).toBe(false);
+  });
+});

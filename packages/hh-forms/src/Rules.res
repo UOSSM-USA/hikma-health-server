@@ -400,12 +400,53 @@ let computeValidatorErrors = (
 // Pre-compile sanitize — drop rules that depend on non-live fields
 // ---------------------------------------------------------------------------
 
+// Recursively drop conditions that reference a non-live field. An `and`/`or`
+// combinator is pruned operand-by-operand, so a single dead condition is
+// removed while its live siblings keep evaluating
+// (`{and:[liveCond, deadCond]}` → `liveCond`); a combinator left with no
+// survivors drops out entirely (`None`). Any other node is treated as one
+// unit — kept iff every field it references is live, dropped otherwise. A
+// node with no form references (a constant, or `ctx`-only) is always kept.
+let rec pruneRuleTree = (
+  rule: jsonLogicRule,
+  isLive: string => bool,
+): option<jsonLogicRule> => {
+  let keepIfAllLive = () =>
+    RuleCycles.extractReferencedFieldIds(Some(rule))->Array.every(isLive)
+      ? Some(rule)
+      : None
+  switch rule {
+  | Object(obj) =>
+    switch obj->Dict.keysToArray {
+    | [key] if key == "and" || key == "or" =>
+      switch obj->Dict.get(key) {
+      | Some(Array(items)) =>
+        let survivors = items->Array.filterMap(item => pruneRuleTree(item, isLive))
+        switch survivors {
+        | [] => None
+        // A single survivor is unwrapped: `and([x])` / `or([x])` evaluate
+        // to `x`, so the combinator wrapper is redundant.
+        | [single] => Some(single)
+        | _ =>
+          let out = Dict.make()
+          out->Dict.set(key, JSON.Array(survivors))
+          Some(Object(out))
+        }
+      | _ => keepIfAllLive()
+      }
+    | _ => keepIfAllLive()
+    }
+  | _ => keepIfAllLive()
+  }
+}
+
 // Remove fields that are not live (hidden via the static `visible` column,
-// or deleted) and strip from the survivors any rule slot that references a
-// non-live field. A rule depending on a removed or hidden field is thus
-// ignored rather than evaluated against a stale or absent value. Pure: it
-// returns a new field list and leaves the evaluator itself untouched, so it
-// slots in as `compileRules(pruneRulesForLiveFields(fields, liveIds))`.
+// or deleted) and prune from the survivors any rule (or rule fragment) that
+// references a non-live field — see `pruneRuleTree` for the operand-level
+// pruning of `and`/`or`. A rule depending on a removed or hidden field is
+// thus ignored rather than evaluated against a stale or absent value. Pure:
+// it returns a new field list and leaves the evaluator itself untouched, so
+// it slots in as `compileRules(pruneRulesForLiveFields(fields, liveIds))`.
 //
 // `liveFieldIds` is supplied by the caller because the engine field shape
 // carries no visibility/deletion metadata: registration callers pass the
@@ -419,21 +460,27 @@ let pruneRulesForLiveFields = (
   let live: dict<bool> = Dict.make()
   liveFieldIds->Array.forEach(id => live->Dict.set(id, true))
   let isLive = id => live->Dict.get(id)->Option.isSome
-  // A rule with no form references (empty array, or only ctx references)
-  // is kept — `every` over an empty array is true.
-  let refsAllLive = (rule: option<jsonLogicRule>): bool =>
-    RuleCycles.extractReferencedFieldIds(rule)->Array.every(isLive)
+  let pruneSlot = (slot: option<jsonLogicRule>): option<jsonLogicRule> =>
+    switch slot {
+    | None => None
+    | Some(r) => pruneRuleTree(r, isLive)
+    }
   fields
   ->Array.filter(f => isLive(f.id))
   ->Array.map(f => {
     id: f.id,
     required: ?f.required,
-    visibleIf: ?(refsAllLive(f.visibleIf) ? f.visibleIf : None),
-    requiredIf: ?(refsAllLive(f.requiredIf) ? f.requiredIf : None),
-    computedValue: ?(refsAllLive(f.computedValue) ? f.computedValue : None),
+    visibleIf: ?pruneSlot(f.visibleIf),
+    requiredIf: ?pruneSlot(f.requiredIf),
+    computedValue: ?pruneSlot(f.computedValue),
     validators: ?switch f.validators {
     | None => None
-    | Some(vs) => Some(vs->Array.filter(v => refsAllLive(Some(v.rule))))
+    | Some(vs) =>
+      Some(
+        vs->Array.filterMap(v =>
+          pruneRuleTree(v.rule, isLive)->Option.map(r => {...v, rule: r})
+        ),
+      )
     },
   })
 }

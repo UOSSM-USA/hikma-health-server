@@ -8,6 +8,7 @@ import PatientRegistrationForm from "@/models/patient-registration-form";
 import type { FieldRuleSlots } from "@/models/form-rules";
 import { detectComputedValueCycles } from "@/lib/form-rule-cycles";
 import { FieldLogicPanel } from "@/components/form-builder/FieldLogicPanel";
+import { RegistrationFormPreviewPane } from "@/components/form-builder/RegistrationFormPreviewPane";
 import { v1 as uuidv1 } from "uuid";
 import { baseFields } from "@/data/registration-form-base-fields";
 import {
@@ -19,17 +20,44 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import React from "react";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getPatientRegistrationForm } from "@/lib/server-functions/patient-registration-forms";
 import { Logger } from "@hikmahealth/js-utils";
+import {
+  LucideChevronDown,
+  LucideGripHorizontal,
+  LucideSlidersHorizontal,
+  LucideTrash2,
+} from "lucide-react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
-export const saveForm = createServerFn({ method: "POST" })
+const saveForm = createServerFn({ method: "POST" })
   .inputValidator((data: PatientRegistrationForm.EncodedT) => data)
   .handler(async ({ data }) => {
-    return PatientRegistrationForm.upsertPatientRegistrationForm(data);
+    return await PatientRegistrationForm.upsertPatientRegistrationForm(data);
   });
 
 export const Route = createFileRoute(
@@ -37,8 +65,9 @@ export const Route = createFileRoute(
 )({
   component: RouteComponent,
   loader: async () => {
+    const form = await getPatientRegistrationForm();
     return {
-      patientRegistrationForm: await getPatientRegistrationForm(),
+      patientRegistrationForm: form,
     };
   },
 });
@@ -304,8 +333,8 @@ function reducer(state: State, action: Action) {
     case "remove-field": {
       const { id } = action.payload;
       const field = state.fields.find((f) => f.id === id);
-      // if there is no field, or if the field is a base field
-      if (field === undefined || field?.baseField) return;
+      // if there is no field
+      if (field === undefined) return;
 
       // state.fields = state.fields.filter((field) => field.id !== id);
       // simply marking the field as deleted
@@ -322,7 +351,7 @@ function reducer(state: State, action: Action) {
     case "restore-field": {
       const { id } = action.payload;
       const field = state.fields.find((f) => f.id === id);
-      // if there is no field, or if the field is a base field
+      // if there is no field
       if (field === undefined) return;
 
       // simply marking the field as *NOT* deleted
@@ -376,7 +405,10 @@ function reducer(state: State, action: Action) {
     case "toggle-field-required": {
       const { id } = action.payload;
       const field = state.fields.find((f) => f.id === id);
-      if (field?.baseField) return;
+      // We used to enforce that baseFields are all required , since they are part of the actual columns and tables.
+      // This feature disabled June 4th 2026
+      // TOMBSTONE: June 4th 2026
+      // if (field?.baseField) return;
 
       if (field) {
         field.required = !field.required;
@@ -441,10 +473,6 @@ function RouteComponent() {
 
   const [formLanguage, setFormLanguage] = useState<Language.LanguageKey>("en");
   const [state, dispatch] = useImmerReducer(reducer, initialState);
-  const [editField, setEditField] = useImmer({
-    id: "",
-    // language: "en"
-  });
   const { fields } = state;
   const [loading, setLoading] = useState(false);
   const deletedFields = useMemo(
@@ -452,18 +480,52 @@ function RouteComponent() {
     [fields, fields.length],
   );
 
-  useEffect(() => {
-    const handleEsc = (event: any) => {
-      if (event.key === "Escape") {
-        setEditField((draft) => {
-          draft.id = "";
-        });
-      }
-    };
-    window.addEventListener("keydown", handleEsc);
+  const visibleFields = sortBy(fields, "position").filter((f) => !f.deleted);
 
+  const [expandedFields, setExpandedFields] = useState<string[]>([]);
+  const toggleExpandedField = (fieldId: string) => {
+    setExpandedFields((fields) => {
+      const index = fields.indexOf(fieldId);
+      if (index > -1) {
+        return fields.filter((f) => f !== fieldId);
+      } else {
+        return [...fields, fieldId];
+      }
+    });
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  // Reorder via the existing `change-position` action: drop the dragged
+  // field at the target field's stored position. Positions live in
+  // full-array (incl. deleted) coordinates, so use the over field's
+  // position rather than its index in the filtered render list.
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const overField = state.fields.find((f) => f.id === over.id);
+    if (overField === undefined) return;
+
+    dispatch({
+      type: "change-position",
+      payload: { id: String(active.id), position: overField.position },
+    });
+  };
+
+  useEffect(() => {
+    // Two independently-scrolling panes; lock the document so only the
+    // panes scroll (matches the event-form builder layout).
+    window.scrollTo(0, 0);
+    document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener("keydown", handleEsc);
+      window.scrollTo(0, 0);
+      document.body.style.overflow = "auto";
     };
   }, []);
 
@@ -530,113 +592,140 @@ function RouteComponent() {
       return;
     }
   };
+
+  const confirmRemoveField = (field: PatientRegistrationForm.Field) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to remove ${field.label.en}. This does not affect data already collected and can be undone in the future.`,
+      )
+    ) {
+      return;
+    }
+    dispatch({
+      type: "remove-field",
+      payload: { id: field.id },
+    });
+  };
+
   return (
-    <div className="mb-14">
-      <Select value={formLanguage} onValueChange={setFormLanguage}>
-        <SelectTrigger className="w-[180px]">
-          <SelectValue placeholder="Select a language" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            <SelectLabel>Languages</SelectLabel>
-            <SelectItem value="en">English</SelectItem>
-            <SelectItem value="ar">Arabic</SelectItem>
-            <SelectItem value="es">Spanish</SelectItem>
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-screen overflow-hidden">
+      <div className="mb-14 overflow-y-auto p-4">
+        <div className="pb-4">
+          <h1 className="text-xl font-semibold">{state.name}</h1>
+        </div>
+        <Select value={formLanguage} onValueChange={setFormLanguage}>
+          <SelectTrigger className="w-45">
+            <SelectValue placeholder="Select a language" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectLabel>Languages</SelectLabel>
+              <SelectItem value="en">English</SelectItem>
+              <SelectItem value="ar">Arabic</SelectItem>
+              <SelectItem value="es">Spanish</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
 
-      <div className="max-w-lg space-y-4 pt-6">
-        {sortBy(fields, "position")
-          .filter((f) => !f.deleted)
-          .map((field) => {
-            const { id, baseField } = field;
-            const isInEditMode = editField.id === id;
-
-            return (
-              <div
-                className={`border rounded p-4 ${
-                  isInEditMode ? "border-primary" : "border-border"
-                }`}
-                key={field.id}
+        <div className="max-w-lg pt-6">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="space-y-4">
+              <SortableContext
+                items={visibleFields.map((f) => f.id)}
+                strategy={verticalListSortingStrategy}
               >
-                <FieldPreview field={field} language={formLanguage} />
+                {visibleFields.map((field) => {
+                  const { id } = field;
+                  const isOpen = expandedFields.includes(id);
 
-                {editField.id === "" && (
-                  <div className="flex gap-2 mt-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setEditField((draft) => {
-                          draft.id = id;
-                        });
-                      }}
-                      size="sm"
-                    >
-                      Edit Field
-                    </Button>
+                  return (
+                    <SortableItem id={id} key={field.id}>
+                      <div className="p-4 bg-muted/50 rounded-lg border">
+                        <Collapsible
+                          open={isOpen}
+                          onOpenChange={() => toggleExpandedField(id)}
+                          className=""
+                          data-testid="registration-form-customizer-field"
+                        >
+                          <CollapsibleTrigger asChild>
+                            <div className="flex gap-2 py-1 font-semibold w-full items-center justify-between rounded-md">
+                              <h3 className="text-lg">
+                                {Language.getTranslation(
+                                  field.label,
+                                  formLanguage,
+                                )}
+                              </h3>
+                              <LucideChevronDown
+                                size="1rem"
+                                className={`transition-transform ${isOpen ? "rotate-0" : "-rotate-90"}`}
+                              />
+                            </div>
+                          </CollapsibleTrigger>
 
-                    {baseField !== true && (
-                      <Button
-                        variant="outline"
-                        className="text-destructive hover:bg-destructive/10"
-                        onClick={() =>
-                          dispatch({
-                            type: "remove-field",
-                            payload: { id: field.id },
-                          })
-                        }
-                        size="sm"
-                      >
-                        Delete Field
-                      </Button>
-                    )}
-                  </div>
-                )}
+                          <CollapsibleContent>
+                            <FieldEditPanel
+                              field={field}
+                              formFields={state.fields}
+                              dispatch={dispatch}
+                            />
 
-                {isInEditMode && (
-                  <FieldEditPanel
-                    field={field}
-                    formFields={state.fields}
-                    dispatch={dispatch}
-                    onClose={() =>
-                      setEditField((draft) => {
-                        draft.id = "";
-                      })
-                    }
-                  />
-                )}
-              </div>
-            );
-          })}
-      </div>
+                            <div className="pt-4">
+                              <Button
+                                variant="outline"
+                                className="text-destructive hover:bg-destructive/80 hover:text-white gap-2"
+                                onClick={() => confirmRemoveField(field)}
+                                size="sm"
+                              >
+                                <LucideTrash2 />
+                                Delete Field
+                              </Button>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </div>
+                    </SortableItem>
+                  );
+                })}
+              </SortableContext>
+            </div>
+          </DndContext>
+        </div>
 
-      {/** Deleted fields show here */}
-      <DeletedFieldsList
-        fields={deletedFields}
-        language={formLanguage}
-        dispatch={dispatch}
-      />
+        {/** Deleted fields show here */}
+        <DeletedFieldsList
+          fields={deletedFields}
+          language={formLanguage}
+          dispatch={dispatch}
+        />
 
-      <div className=" max-w-lg">
-        <div className="flex flex-col gap-4 mt-4">
-          <Button
-            onClick={() => dispatch({ type: "add-field" })}
-            variant="outline"
-            className="w-full"
-          >
-            + Add Field
-          </Button>
+        <div className=" max-w-lg">
+          <div className="flex flex-col gap-4 mt-4">
+            <Button
+              onClick={() => dispatch({ type: "add-field" })}
+              variant="outline"
+              className="w-full"
+            >
+              + Add Field
+            </Button>
 
-          <Button
-            disabled={loading}
-            className="w-full primary"
-            onClick={submit}
-          >
-            {loading ? "Loading ..." : "Submit"}
-          </Button>
+            <Button
+              disabled={loading}
+              className="w-full primary"
+              onClick={submit}
+            >
+              {loading ? "Loading ..." : "Submit"}
+            </Button>
+          </div>
         </div>
       </div>
+      <RegistrationFormPreviewPane
+        fields={state.fields}
+        language={formLanguage}
+      />
     </div>
   );
 }
@@ -661,103 +750,41 @@ const CircleMinusIcon = () => (
   </svg>
 );
 
-/** Read-only preview of a single field, rendered per field type. */
-function FieldPreview({
-  field,
-  language,
+/**
+ * Sortable wrapper for a field card. The drag listeners live only on the
+ * grip handle, so the card's own Collapsible trigger and inputs stay
+ * clickable; the whole item (handle + card) translates while dragging.
+ */
+function SortableItem({
+  id,
+  children,
 }: {
-  field: PatientRegistrationForm.Field;
-  language: Language.LanguageKey;
+  id: string;
+  children: React.ReactNode;
 }) {
-  const { fieldType, label, options, required, visible } = field;
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id });
 
-  const heading = (
-    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-      {Language.getTranslation(label, language)}
-      {!visible && <span className="text-muted-foreground"> (hidden)</span>}
-    </label>
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <div
+        {...listeners}
+        className="flex items-center content-center justify-center cursor-move -mb-2"
+      >
+        <LucideGripHorizontal
+          className="text-muted-foreground self-center"
+          color="var(--foreground)"
+          size="1rem"
+        />
+      </div>
+      {children}
+    </div>
   );
-  const requiredMark = required ? (
-    <span className="text-xs text-destructive">*Required</span>
-  ) : null;
-
-  if (fieldType === "select") {
-    return (
-      <div className="space-y-2">
-        {heading}
-        <Select
-          value={
-            options.length > 0 && options[0].en
-              ? options[0].en
-              : "placeholder-value"
-          }
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select an option" />
-          </SelectTrigger>
-          <SelectContent>
-            {translationObjectOptions(options, language).map((option, index) => (
-              <SelectItem key={index} value={option.value || `option-${index}`}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {requiredMark}
-      </div>
-    );
-  }
-
-  if (fieldType === "checkbox") {
-    return (
-      <div className="space-y-2">
-        {heading}
-        <div className="space-y-1">
-          {translationObjectOptions(options, language).map((option, index) => (
-            <div key={index} className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                disabled
-              />
-              <span className="text-sm">{option.label}</span>
-            </div>
-          ))}
-        </div>
-        {requiredMark}
-      </div>
-    );
-  }
-
-  if (fieldType === "text" || fieldType === "number") {
-    return (
-      <div className="space-y-2">
-        {heading}
-        <input
-          type={fieldType}
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          placeholder={fieldType === "number" ? "0" : "Enter text..."}
-        />
-        {requiredMark}
-      </div>
-    );
-  }
-
-  if (fieldType === "date") {
-    return (
-      <div className="space-y-2">
-        {heading}
-        <input
-          type="date"
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          placeholder="YYYY-MM-DD"
-        />
-        {requiredMark}
-      </div>
-    );
-  }
-
-  return null;
 }
 
 /** Per-language option editor for select/checkbox fields. */
@@ -880,7 +907,11 @@ function OptionsEditor({
                           onClick={() =>
                             dispatch({
                               type: "remove-select-option-translation",
-                              payload: { id, index: idx, language: languageKey },
+                              payload: {
+                                id,
+                                index: idx,
+                                language: languageKey,
+                              },
                             })
                           }
                           className="text-destructive hover:text-destructive"
@@ -953,7 +984,9 @@ function FieldFlagsEditor({
       <CheckboxRow
         id={`visible-${id}`}
         checked={visible}
-        onChange={() => dispatch({ type: "toggle-visibility", payload: { id } })}
+        onChange={() =>
+          dispatch({ type: "toggle-visibility", payload: { id } })
+        }
         label="This field is visible to clinicians"
       />
       <CheckboxRow
@@ -989,25 +1022,24 @@ function FieldEditPanel({
   field,
   formFields,
   dispatch,
-  onClose,
 }: {
   field: PatientRegistrationForm.Field;
   formFields: PatientRegistrationForm.Field[];
   dispatch: FormDispatch;
-  onClose: () => void;
 }) {
   const { id, label, fieldType, position } = field;
   const getTranslation = Language.getTranslation;
   const inputTypes = PatientRegistrationForm.inputTypes;
 
   return (
-    <div className="mt-6 border-t border-border pt-6">
-      <div className="grid grid-cols-12 gap-4">
-        {Object.keys(field.label).map((languageKey) => {
+    <div className="">
+      <div className="grid grid-cols-12 gap-3">
+        {Language.supportedLanguages.map((languageKey) => {
           return (
             <React.Fragment key={languageKey}>
-              <div className="col-span-4">
-                <div className="space-y-2">
+              {/*<div className="col-span-4">*/}
+              {/*<p>{Language.friendlyLang(languageKey)}</p>*/}
+              {/*<div className="space-y-2">
                   <label className="text-sm font-medium leading-none">
                     Language
                   </label>
@@ -1021,12 +1053,12 @@ function FieldEditPanel({
                       <SelectItem value="ar">Arabic</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
-              <div className="col-span-8">
-                <div className="space-y-2">
+                </div>*/}
+              {/*</div>*/}
+              <div className="col-span-full">
+                <div className="space-y-1">
                   <label className="text-sm font-medium leading-none">
-                    Field Name
+                    {Language.friendlyLang(languageKey)} Field Name
                   </label>
                   <input
                     type="text"
@@ -1049,8 +1081,8 @@ function FieldEditPanel({
           );
         })}
 
-        <div className="col-span-12">
-          <div className="space-y-2">
+        <div className="col-span-12 w-full">
+          <div className="space-y-2 w-full">
             <label className="text-sm font-medium leading-none">
               Field Type
             </label>
@@ -1066,7 +1098,7 @@ function FieldEditPanel({
                 })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1104,31 +1136,6 @@ function FieldEditPanel({
             }
           />
         </div>
-
-        <div className="col-span-12">
-          <div className="space-y-2">
-            <label className="text-sm font-medium leading-none">
-              Field Position
-            </label>
-            <input
-              type="number"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              value={position}
-              onChange={(e) =>
-                dispatch({
-                  type: "change-position",
-                  payload: { id, position: +e.target.value },
-                })
-              }
-            />
-          </div>
-        </div>
-
-        <div className="col-span-12">
-          <Button variant="outline" className="w-full" onClick={onClose}>
-            Save Changes
-          </Button>
-        </div>
       </div>
     </div>
   );
@@ -1147,9 +1154,9 @@ function DeletedFieldsList({
   if (fields.length === 0) return null;
 
   return (
-    <div>
+    <div className="py-4">
       <hr />
-      <label>Deleted fields</label>
+      <h3 className="text-lg mt-4 font-semibold">Deleted fields</h3>
 
       {fields.map((field) => {
         return (
@@ -1184,7 +1191,7 @@ Given a translation object, create options for a dropdown
 @param {LanguageKey} language
 @returns {Array<{label: string, value: string}>}
 */
-export function translationObjectOptions(
+function translationObjectOptions(
   translations: Language.TranslationObject[],
   language: Language.LanguageKey,
 ): Array<{ label: string; value: string }> {

@@ -68,6 +68,6 @@ export default defineConfig({
     ],
   },
   server: {
-    allowedHosts: true,
+    allowedHosts: ["localhost", ".ngrok.io"],
   },
 });

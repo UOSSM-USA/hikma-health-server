@@ -59,8 +59,11 @@ export const test = base.extend<AuthFixtures>({
       loginButton.click(),
     ]);
 
-    // Wait for navigation to the dashboard with explicit timeout
-    await page.waitForURL("/app", { timeout: 3000 });
+    // Wait for navigation to the dashboard. The /app dashboard loader runs
+    // several count(*) aggregates, which can exceed a few seconds against a
+    // remote DB, so this shares the same generous budget as the shell-render
+    // wait below rather than the old 3s.
+    await page.waitForURL("/app", { timeout: 15000 });
 
     // Wait for the app shell to render. Don't use networkidle — the
     // Tanstack Start + React 19 dev server keeps long-lived XHRs alive

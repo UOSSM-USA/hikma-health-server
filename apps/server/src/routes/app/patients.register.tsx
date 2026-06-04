@@ -1,15 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DatePickerInput } from "@/components/date-picker-input";
 import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
@@ -17,15 +13,17 @@ import PatientRegistrationForm from "@/models/patient-registration-form";
 import Language from "@/models/language";
 import { createServerFn } from "@tanstack/react-start";
 import { Label } from "@/components/ui/label";
-import upperFirst from "lodash/upperFirst";
 import { v1 as uuidv1 } from "uuid";
-import { SelectInput } from "@/components/select-input";
 import { getAllClinics } from "@/lib/server-functions/clinics";
-import { joinCheckboxValues, splitCheckboxValues } from "@/lib/utils";
 import { Result } from "@/lib/result";
 import { getCookie } from "@tanstack/react-start/server";
 import { createServerCaller } from "@/integrations/trpc/router";
 import { Logger } from "@hikmahealth/js-utils";
+import {
+  PatientRegistrationFields,
+  buildRegistrationFieldView,
+  type RegistrationFieldView,
+} from "@/components/form-builder/PatientRegistrationFields";
 import {
   compileRules,
   computedCount,
@@ -342,6 +340,37 @@ function RouteComponent() {
     );
   }
 
+  const handleFieldChange = (field: RegistrationFieldView, value: unknown) => {
+    setValue(field.column, value as never, { shouldValidate: true });
+  };
+
+  // Visible field set, pre-filtered the same way the rendered list is.
+  // Computed fields stay in this array so `testIndex` keeps counting them
+  // (the e2e fills inputs by positional `register-patient-N`).
+  const visibleFields = (patientRegistrationForm?.fields ?? [])
+    .filter((field) => field.visible && field.deleted !== true)
+    .filter((field) => ruleEvaluation.isVisible(field.id));
+
+  const fieldViews: RegistrationFieldView[] = visibleFields.map((field, idx) => {
+    const isComputed = hasComputed(ruleEvaluation, field.id);
+    const rhfError = formState.errors[field.column]?.message;
+    return buildRegistrationFieldView(field, idx, lang, {
+      value: watch(field.column),
+      required: ruleEvaluation.isRequired(field.id),
+      computedDisplay: isComputed
+        ? formatComputedValue(getComputed(ruleEvaluation, field.id))
+        : null,
+      errorMessage: typeof rhfError === "string" ? rhfError : null,
+      validatorErrors: Array.from(
+        new Set((errorsByFieldId.get(field.id) ?? []).map((e) => e.message)),
+      ),
+      clinicOptions: clinicsList.map((clinic) => ({
+        value: clinic.id,
+        label: clinic.name,
+      })),
+    });
+  });
+
   return (
     <div className="pb-4">
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -362,300 +391,29 @@ function RouteComponent() {
             </Select>
           </div>
 
-          {patientRegistrationForm?.fields
-            .filter((field) => field.visible && field.deleted !== true)
-            // Rule-driven visibility layered on top of the static flag.
-            .filter((field) => ruleEvaluation.isVisible(field.id))
-            .map((field, idx) => {
-              const fieldLabel = Language.getTranslation(field.label, lang);
-              const fieldError = formState.errors[field.column];
-              // `required` consults `requiredIf` when present, else falls
-              // back to `field.required` (the static flag).
+          <PatientRegistrationFields
+            fields={fieldViews}
+            onValueChange={handleFieldChange}
+          />
+
+          {/* Hidden RHF-registered inputs hold required-validation and
+              submit wiring inside the form, so the renderer above stays
+              free of react-hook-form. Computed fields are excluded — they
+              are read-only and their values arrive via writeback. */}
+          {visibleFields
+            .filter((field) => !hasComputed(ruleEvaluation, field.id))
+            .map((field) => {
               const required = ruleEvaluation.isRequired(field.id);
-              const validatorErrors =
-                errorsByFieldId.get(field.id) ?? [];
-
-              // Read-only computed-value display takes precedence over
-              // the editable field branches (matches mobile decision
-              // #15 — render as labelled <Text> rather than plumb
-              // `disabled` through every input variant).
-              if (hasComputed(ruleEvaluation, field.id)) {
-                const computed = getComputed(ruleEvaluation, field.id);
-                return (
-                  <div key={field.id} className="space-y-2">
-                    <Label className="text-muted-foreground">
-                      {fieldLabel}
-                      {required && (
-                        <span className="text-destructive"> *</span>
-                      )}
-                    </Label>
-                    <p className="text-sm rounded-md border border-input bg-muted/40 px-3 py-2">
-                      {formatComputedValue(computed)}
-                    </p>
-                    {/* Validator errors against a computed field
-                        appear unconditionally — the field is
-                        read-only, so users can't 'touch' it; gating
-                        on touched/dirty would hide the only signal
-                        explaining a blocked submit. */}
-                    <FieldErrors errors={validatorErrors} />
-                  </div>
-                );
-              }
-
-              if (
-                field.fieldType === "text" &&
-                field.column !== "primary_clinic_id"
-              ) {
-                return (
-                  <div key={field.id} className="space-y-2">
-                    <Label
-                      htmlFor={field.column}
-                      className="text-muted-foreground"
-                    >
-                      {fieldLabel}
-                      {required && (
-                        <span className="text-destructive"> *</span>
-                      )}
-                    </Label>
-                    <Input
-                      data-testid={"register-patient-" + idx}
-                      data-inputtype={"text"}
-                      data-column={field.column}
-                      key={field.id}
-                      {...register(field.column, {
-                        required: required && `${fieldLabel} is required`,
-                      })}
-                    />
-                    {fieldError && (
-                      <p className="text-sm text-destructive">
-                        {fieldError.message as string}
-                      </p>
-                    )}
-                    <FieldErrors errors={validatorErrors} />
-                  </div>
-                );
-              }
-              if (field.column === "primary_clinic_id") {
-                return (
-                  <div key={field.id} className="space-y-2">
-                    <SelectInput
-                      className="w-full"
-                      data-testid={"register-patient-" + idx}
-                      data-inputtype={"select"}
-                      label={required ? `${fieldLabel} *` : fieldLabel}
-                      data={clinicsList.map((clinic) => ({
-                        label: clinic.name,
-                        value: clinic.id,
-                      }))}
-                      value={watch(field.column)}
-                      onChange={(v) =>
-                        setValue(field.column, v, { shouldValidate: true })
-                      }
-                    />
-                    <input
-                      type="hidden"
-                      {...register(field.column, {
-                        required: required && `${fieldLabel} is required`,
-                      })}
-                    />
-                    {fieldError && (
-                      <p className="text-sm text-destructive">
-                        {fieldError.message as string}
-                      </p>
-                    )}
-                    <FieldErrors errors={validatorErrors} />
-                  </div>
-                );
-              }
-              if (field.fieldType === "number") {
-                return (
-                  <div key={field.id} className="space-y-2">
-                    <Label
-                      htmlFor={field.column}
-                      className="text-muted-foreground"
-                    >
-                      {fieldLabel}
-                      {required && (
-                        <span className="text-destructive"> *</span>
-                      )}
-                    </Label>
-                    <Input
-                      data-inputtype={"number"}
-                      data-testid={"register-patient-" + idx}
-                      key={field.id}
-                      {...register(field.column, {
-                        required: required && `${fieldLabel} is required`,
-                      })}
-                    />
-                    {fieldError && (
-                      <p className="text-sm text-destructive">
-                        {fieldError.message as string}
-                      </p>
-                    )}
-                    <FieldErrors errors={validatorErrors} />
-                  </div>
-                );
-              }
-              if (field.fieldType === "select") {
-                return (
-                  <div key={field.id} className="space-y-2">
-                    <Label
-                      htmlFor={field.column}
-                      className="text-muted-foreground"
-                    >
-                      {fieldLabel}
-                      {required && (
-                        <span className="text-destructive"> *</span>
-                      )}
-                    </Label>
-                    <Select
-                      key={field.id}
-                      value={watch(field.column)}
-                      data-inputtype="select"
-                      data-testid={"register-patient-" + idx}
-                      onValueChange={(value) =>
-                        setValue(field.column, value, { shouldValidate: true })
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder={`Select ${fieldLabel}`} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>{fieldLabel}</SelectLabel>
-                          {field.options.map((opt) => (
-                            <SelectItem
-                              key={Language.getTranslation(opt, "en")}
-                              data-testid={Language.getTranslation(opt, "en")}
-                              value={Language.getTranslation(opt, "en")}
-                            >
-                              {upperFirst(Language.getTranslation(opt, lang))}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <input
-                      type="hidden"
-                      {...register(field.column, {
-                        required: required && `${fieldLabel} is required`,
-                      })}
-                    />
-                    {fieldError && (
-                      <p className="text-sm text-destructive">
-                        {fieldError.message as string}
-                      </p>
-                    )}
-                    <FieldErrors errors={validatorErrors} />
-                  </div>
-                );
-              }
-              if (field.fieldType === "checkbox") {
-                const currentValue = watch(field.column) || "";
-                const selectedValues = splitCheckboxValues(currentValue);
-                return (
-                  <div key={field.id} className="space-y-2">
-                    <Label
-                      htmlFor={field.column}
-                      className="text-muted-foreground"
-                    >
-                      {fieldLabel}
-                      {required && (
-                        <span className="text-destructive"> *</span>
-                      )}
-                    </Label>
-                    <div className="space-y-1">
-                      {field.options.map((opt) => {
-                        const optValue = Language.getTranslation(opt, "en");
-                        const optDisplay = Language.getTranslation(opt, lang);
-                        const isChecked = selectedValues.includes(optValue);
-                        return (
-                          <div
-                            key={optValue}
-                            className="flex items-center space-x-2"
-                          >
-                            <input
-                              type="checkbox"
-                              id={`${field.column}-${optValue}`}
-                              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                              checked={isChecked}
-                              data-testid={`register-patient-${idx}-${optValue}`}
-                              onChange={(e) => {
-                                const next = e.target.checked
-                                  ? [...selectedValues, optValue]
-                                  : selectedValues.filter(
-                                      (v) => v !== optValue,
-                                    );
-                                setValue(
-                                  field.column,
-                                  joinCheckboxValues(next),
-                                  { shouldValidate: true },
-                                );
-                              }}
-                            />
-                            <label
-                              htmlFor={`${field.column}-${optValue}`}
-                              className="text-sm"
-                            >
-                              {upperFirst(optDisplay)}
-                            </label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <input
-                      type="hidden"
-                      {...register(field.column, {
-                        required: required && `${fieldLabel} is required`,
-                      })}
-                    />
-                    {fieldError && (
-                      <p className="text-sm text-destructive">
-                        {fieldError.message as string}
-                      </p>
-                    )}
-                    <FieldErrors errors={validatorErrors} />
-                  </div>
-                );
-              }
-              if (field.fieldType === "date") {
-                return (
-                  <div key={field.id} className="space-y-2">
-                    <Label
-                      htmlFor={field.column}
-                      className="text-muted-foreground"
-                    >
-                      {fieldLabel}
-                      {required && (
-                        <span className="text-destructive"> *</span>
-                      )}
-                    </Label>
-                    <DatePickerInput
-                      required={required}
-                      placeholder="Pick date"
-                      data-testid={"register-patient-" + idx}
-                      data-inputtype="date"
-                      value={watch(field.column)}
-                      onChange={(date) =>
-                        setValue(field.column, date, { shouldValidate: true })
-                      }
-                    />
-                    <input
-                      type="hidden"
-                      {...register(field.column, {
-                        required: required && `${fieldLabel} is required`,
-                      })}
-                    />
-                    {fieldError && (
-                      <p className="text-sm text-destructive">
-                        {fieldError.message as string}
-                      </p>
-                    )}
-                    <FieldErrors errors={validatorErrors} />
-                  </div>
-                );
-              }
-              return <div></div>;
+              const fieldLabel = Language.getTranslation(field.label, lang);
+              return (
+                <input
+                  key={field.id}
+                  type="hidden"
+                  {...register(field.column, {
+                    required: required && `${fieldLabel} is required`,
+                  })}
+                />
+              );
             })}
 
           <Button
@@ -667,23 +425,6 @@ function RouteComponent() {
           </Button>
         </div>
       </form>
-    </div>
-  );
-}
-
-function FieldErrors({
-  errors,
-}: {
-  errors: ReadonlyArray<validationError>;
-}) {
-  if (errors.length === 0) return null;
-  return (
-    <div className="space-y-0.5">
-      {errors.map((e) => (
-        <p key={e.validatorId} className="text-sm text-destructive">
-          {e.message}
-        </p>
-      ))}
     </div>
   );
 }
