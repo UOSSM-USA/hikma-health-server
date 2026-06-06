@@ -1,14 +1,16 @@
-import { useCallback, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { MedicineInput } from "@/components/form-builder/MedicineInput";
+import type { ICDEntry } from "@/components/form-builder/DiagnosisPicker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { LucideInfo } from "lucide-react";
 import { DatePickerInput } from "@/components/date-picker-input";
 import { RadioInput, type RadioOption } from "@/components/radio-input";
 import { SelectInput, type SelectOption } from "@/components/select-input";
-import { cn } from "@/lib/utils";
 
 import EventForm from "@/models/event-form";
 import {
@@ -23,6 +25,14 @@ import {
   type ruleEvaluation,
   type validationError,
 } from "@hikmahealth/forms/Rules";
+
+// Lazy: pulls in react-select/async + minisearch (the ICD-11 dataset
+// itself is already lazy-loaded inside the picker's loadOptions).
+const DiagnosisSelect = lazy(() =>
+  import("@/components/form-builder/DiagnosisPicker").then((m) => ({
+    default: m.DiagnosisSelect,
+  })),
+);
 
 type FieldData = EventForm.FieldData;
 
@@ -46,14 +56,17 @@ export interface FormPreviewPaneProps {
  * the author when their rules fire — eager error display is the
  * feature, not a bug.
  *
- * List-ish fields (medicine / diagnosis / file) render toggle
- * stubs — the author flips between "none / one / many" without us
- * dragging real ICD fetches or file pickers into authoring. The
- * writeback shapes match the rule scope's runtime contract: arrays
- * of entry-shaped objects for medicine / diagnosis, the file's
- * fileId string (or null) for file. Rules can reference `.length`,
- * indexed access, or truthy/null on the values just as they would
- * on device.
+ * List-ish fields:
+ * - Diagnosis renders the real searchable ICD-11 picker; selections
+ *   write `{code, desc}` entries straight into the rule scope, so
+ *   rules referencing the field fire from genuine selections.
+ * - Medicine renders the realistic input group for visual fidelity;
+ *   it's inert (no writeback), so rules referencing the field stay
+ *   at the seeded empty array in preview.
+ * - File renders an inert file input; the scope value stays at the
+ *   seeded null.
+ * Medicine and diagnosis carry a visible tip steering authors to
+ * the dedicated Prescriptions feature.
  */
 export function FormPreviewPane({
   name,
@@ -133,7 +146,8 @@ export function FormPreviewPane({
   // Mirror mobile's pattern: feed a getId callback because ReScript
   // can't express TS row-polymorphism. The TS-side `T` matches `FieldData`.
   const visibleFields = useMemo(
-    () => filterVisibleFields(fields as FieldData[], (f) => f.id, ruleEvaluation),
+    () =>
+      filterVisibleFields(fields as FieldData[], (f) => f.id, ruleEvaluation),
     [fields, ruleEvaluation],
   );
 
@@ -303,7 +317,11 @@ function renderEditable(field: FieldData, opts: EditableRenderOpts) {
         />
       );
     case "options": {
-      const data = (field.options ?? []) as (string | SelectOption | RadioOption)[];
+      const data = (field.options ?? []) as (
+        | string
+        | SelectOption
+        | RadioOption
+      )[];
       if (field.inputType === "radio") {
         return (
           <RadioInput
@@ -329,52 +347,47 @@ function renderEditable(field: FieldData, opts: EditableRenderOpts) {
       );
     }
     case "medicine": {
-      const arr = Array.isArray(value) ? (value as unknown[]) : [];
-      const selectedKey =
-        arr.length === 0 ? "off" : arr.length === 1 ? "one" : "many";
+      // Real input group for visual fidelity; inert — it doesn't write
+      // prescription entries into the rule scope.
       return (
-        <TogglePicker
-          label={field.name}
-          description={field.description}
-          required={required}
-          note="Preview stub — flip to drive rules referencing this field."
-          options={MEDICINE_OPTIONS}
-          selectedKey={selectedKey}
-          onSelect={(opt) => onChange(opt.value)}
-        />
+        <div className="space-y-2">
+          <MedicineInput name={field.name} description={field.description} />
+          <PrescriptionsTip />
+        </div>
       );
     }
     case "diagnosis": {
-      const arr = Array.isArray(value) ? (value as unknown[]) : [];
-      const selectedKey =
-        arr.length === 0 ? "off" : arr.length === 1 ? "one" : "many";
+      const entries = Array.isArray(value) ? (value as ICDEntry[]) : [];
+      // Real searchable ICD-11 picker; selections write runtime-shaped
+      // `{code, desc}` entries into the rule scope.
       return (
-        <TogglePicker
-          label={field.name}
-          description={field.description}
-          required={required}
-          note="Preview stub — flip to drive rules referencing this field."
-          options={DIAGNOSIS_OPTIONS}
-          selectedKey={selectedKey}
-          onSelect={(opt) => onChange(opt.value)}
-        />
+        <div className="space-y-2">
+          <Suspense fallback={<div>Loading diagnoses…</div>}>
+            <DiagnosisSelect
+              name={field.name}
+              description={field.description}
+              withAsterisk={required}
+              required={required}
+              multi={(field as { multi?: boolean }).multi}
+              value={entries}
+              onChange={onChange}
+            />
+          </Suspense>
+          <PrescriptionsTip />
+        </div>
       );
     }
-    case "file": {
-      const selectedKey =
-        typeof value === "string" && value.length > 0 ? "on" : "off";
+    case "file":
+      // Inert file input — selections don't write into the rule scope.
       return (
-        <TogglePicker
+        <Input
           label={field.name}
           description={field.description}
-          required={required}
-          note="Preview stub — flip to drive rules referencing this field."
-          options={FILE_OPTIONS}
-          selectedKey={selectedKey}
-          onSelect={(opt) => onChange(opt.value)}
+          type="file"
+          multiple={(field as { multiple?: boolean }).multiple}
+          withAsterisk={required}
         />
       );
-    }
     case "text":
       return (
         <p
@@ -382,12 +395,12 @@ function renderEditable(field: FieldData, opts: EditableRenderOpts) {
             field.size === "xxl"
               ? "text-3xl font-bold"
               : field.size === "xl"
-              ? "text-2xl font-semibold"
-              : field.size === "lg"
-              ? "text-xl font-medium"
-              : field.size === "sm"
-              ? "text-sm"
-              : "text-base"
+                ? "text-2xl font-semibold"
+                : field.size === "lg"
+                  ? "text-xl font-medium"
+                  : field.size === "sm"
+                    ? "text-sm"
+                    : "text-base"
           }
         >
           {field.content || "Text Block (empty)"}
@@ -410,121 +423,18 @@ function formatDateYMD(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// Stub entries shaped like the runtime objects mobile passes through
-// the rule scope (Prescription.MedicationEntry, ICDEntry.T). Authors
-// who write rules referencing nested fields (e.g. `form.<med>.0.name`)
-// see realistic data; rules that only check `.length` work equally
-// well. The ids are stable strings so React keys / equality checks
-// don't churn across renders.
-const STUB_MED_1 = {
-  id: "stub-med-1",
-  name: "Amoxicillin",
-  route: "oral",
-  form: "capsule",
-  frequency: 3,
-  intervals: 8,
-  dose: 500,
-  doseUnits: "mg",
-  duration: 7,
-  durationUnits: "days",
-};
-const STUB_MED_2 = {
-  ...STUB_MED_1,
-  id: "stub-med-2",
-  name: "Ibuprofen",
-  form: "tablet",
-  dose: 400,
-  duration: 5,
-};
-const STUB_MED_3 = {
-  ...STUB_MED_1,
-  id: "stub-med-3",
-  name: "Paracetamol",
-  form: "tablet",
-  dose: 1000,
-  frequency: 4,
-  intervals: 6,
-};
-
-const STUB_DIAG_1 = { code: "R69", desc: "Illness, unspecified" };
-const STUB_DIAG_2 = {
-  code: "J06.9",
-  desc: "Acute upper respiratory infection, unspecified",
-};
-
-// File scope value at runtime is `fileUploads[name]?.fileId ?? null`
-// — i.e. a bare string or null, not the wrapper object. Rules
-// written against the preview will match what they see on device.
-const STUB_FILE_ID = "stub-file-id";
-
-type ToggleOption = { key: string; label: string; value: unknown };
-
-const MEDICINE_OPTIONS: ReadonlyArray<ToggleOption> = [
-  { key: "off", label: "None", value: [] },
-  { key: "one", label: "1 selected", value: [STUB_MED_1] },
-  {
-    key: "many",
-    label: "3 selected",
-    value: [STUB_MED_1, STUB_MED_2, STUB_MED_3],
-  },
-];
-
-const DIAGNOSIS_OPTIONS: ReadonlyArray<ToggleOption> = [
-  { key: "off", label: "None", value: [] },
-  { key: "one", label: "1 selected", value: [STUB_DIAG_1] },
-  { key: "many", label: "2 selected", value: [STUB_DIAG_1, STUB_DIAG_2] },
-];
-
-const FILE_OPTIONS: ReadonlyArray<ToggleOption> = [
-  { key: "off", label: "No file", value: null },
-  { key: "on", label: "File attached", value: STUB_FILE_ID },
-];
-
-function TogglePicker({
-  label,
-  description,
-  required,
-  note,
-  options,
-  selectedKey,
-  onSelect,
-}: {
-  label: string;
-  description?: string;
-  required: boolean;
-  note: string;
-  options: ReadonlyArray<ToggleOption>;
-  selectedKey: string;
-  onSelect: (option: ToggleOption) => void;
-}) {
+/**
+ * Authoring guidance shown under the medicine / diagnosis previews —
+ * a visible alert rather than fine print.
+ */
+function PrescriptionsTip() {
   return (
-    <div className="space-y-1">
-      <Label>
-        {label}
-        {required && <span className="text-destructive">*</span>}
-      </Label>
-      {description && (
-        <p className="text-sm text-muted-foreground">{description}</p>
-      )}
-      <div className="flex flex-wrap gap-2" role="group" aria-label={label}>
-        {options.map((opt) => {
-          const active = opt.key === selectedKey;
-          return (
-            <Button
-              key={opt.key}
-              type="button"
-              size="sm"
-              variant={active ? "default" : "outline"}
-              aria-pressed={active}
-              onClick={() => onSelect(opt)}
-              className={cn(active && "pointer-events-none")}
-            >
-              {opt.label}
-            </Button>
-          );
-        })}
-      </div>
-      <p className="text-xs text-muted-foreground italic">{note}</p>
-    </div>
+    <Alert>
+      <LucideInfo className="h-4 w-4" />
+      <AlertDescription>
+        Consider using the dedicated Prescriptions feature for capturing this
+        data instead of a form field.
+      </AlertDescription>
+    </Alert>
   );
 }

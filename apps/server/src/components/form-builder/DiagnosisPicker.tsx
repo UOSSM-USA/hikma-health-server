@@ -1,7 +1,18 @@
-import { useEffect, useRef, useState } from "react";
 import { Label } from "../ui/label";
 import AsyncSelect from "react-select/async";
+import type { MultiValue, SingleValue } from "react-select";
 import MiniSearch from "minisearch";
+
+/** Runtime shape of a diagnosis entry as it appears in the rule scope
+ * (matches mobile's ICDEntry). */
+export type ICDEntry = { code: string; desc: string };
+
+type DiagnosisOption = {
+  value: string;
+  label: string;
+  code: string;
+  desc: string;
+};
 
 type Props = {
   name: string;
@@ -9,6 +20,13 @@ type Props = {
   withAsterisk: boolean;
   required?: boolean;
   multi?: boolean;
+  /**
+   * Controlled usage (e.g. the live preview pane): pass the selected
+   * entries and receive updates in the runtime rule-scope shape.
+   * Omit both to keep the original uncontrolled behavior.
+   */
+  value?: ReadonlyArray<ICDEntry>;
+  onChange?: (entries: ICDEntry[]) => void;
 };
 
 let miniSearch: MiniSearch | null = null;
@@ -30,31 +48,62 @@ async function getMiniSearch() {
   return miniSearch;
 }
 
+const toOption = (entry: ICDEntry): DiagnosisOption => ({
+  value: `${entry.desc} (${entry.code})`,
+  label: `${entry.desc} (${entry.code})`,
+  code: entry.code,
+  desc: entry.desc,
+});
+
+const toEntry = (option: DiagnosisOption): ICDEntry => ({
+  code: option.code,
+  desc: option.desc,
+});
+
 export function DiagnosisSelect({
   name,
   description,
   withAsterisk,
   required,
   multi,
+  value,
+  onChange,
 }: Props) {
-  // const [data, setData] = useState(
-  //   icd11.map((item) => ({
-  //     value: `${item.desc} (${item.code})`,
-  //     label: `${item.desc} (${item.code})`,
-  //   }))
-  // );
-
   const loadOptions = async (inputValue: string) => {
     const search = await getMiniSearch();
     return search
       .search(inputValue)
       .sort((a, b) => b.score - a.score)
       .slice(0, 25)
-      .map((item) => ({
-        value: `${item.desc} (${item.code})`,
-        label: `${item.desc} (${item.code})`,
-      }));
+      .map((item) =>
+        toOption({ code: item.code as string, desc: item.desc as string }),
+      );
   };
+
+  // Only controlled when the caller opts in; `undefined` keeps
+  // react-select uncontrolled for the legacy usages.
+  const controlledValue =
+    value === undefined
+      ? undefined
+      : multi
+        ? value.map(toOption)
+        : value.length > 0
+          ? toOption(value[0])
+          : null;
+
+  const handleChange = onChange
+    ? (
+        selected: MultiValue<DiagnosisOption> | SingleValue<DiagnosisOption>,
+      ) => {
+        if (Array.isArray(selected)) {
+          onChange(selected.map(toEntry));
+        } else if (selected) {
+          onChange([toEntry(selected as DiagnosisOption)]);
+        } else {
+          onChange([]);
+        }
+      }
+    : undefined;
 
   // FIXME: Need to replace the diagnosis picker with new select item from `react-select` with better creatable support
   return (
@@ -73,9 +122,12 @@ export function DiagnosisSelect({
         <AsyncSelect
           cacheOptions
           isMulti={multi}
+          isClearable
           loadOptions={loadOptions}
           defaultOptions
           placeholder="Search for a diagnosis..."
+          value={controlledValue}
+          onChange={handleChange}
         />
       </div>
     </>

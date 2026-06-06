@@ -115,6 +115,9 @@ export const Route = createFileRoute("/app/event-forms/edit/$")({
   },
 });
 
+// Only fields allowed to be added mupltiple times - these are exempt from the "findDuplicatesStrings" check
+const ALLOWED_MULTIPLE_FIELD_ENTRIES = ["separator", "text"];
+
 // form title, form language, form description, is editable checkbox, is snapshot checkbox, (inputs custom component)m add form input buttoms
 
 function RouteComponent() {
@@ -150,9 +153,10 @@ function RouteComponent() {
 
   const handleSaveForm = async (event: React.FormEvent) => {
     event.preventDefault();
-    const duplicateFieldNames = findDuplicatesStrings(
-      formState.form_fields.map((field) => field.name?.trim().toLowerCase()),
-    );
+    const fieldNames = formState.form_fields
+      .filter((f) => !ALLOWED_MULTIPLE_FIELD_ENTRIES.includes(f._tag))
+      .map((f) => f.name?.trim().toLowerCase());
+    const duplicateFieldNames = findDuplicatesStrings(fieldNames);
 
     if (duplicateFieldNames.length > 0) {
       toast.error(
@@ -185,7 +189,9 @@ function RouteComponent() {
         formState.form_fields.map((f) => [f.id, f.name ?? f.id]),
       );
       const cycleDescriptions = computedCycles
-        .map((c) => c.fieldIds.map((id) => fieldNamesById.get(id) ?? id).join(" → "))
+        .map((c) =>
+          c.fieldIds.map((id) => fieldNamesById.get(id) ?? id).join(" → "),
+        )
         .join("; ");
       toast.error(
         `Cyclic computedValue dependency detected: ${cycleDescriptions}. Remove the cycle before saving.`,

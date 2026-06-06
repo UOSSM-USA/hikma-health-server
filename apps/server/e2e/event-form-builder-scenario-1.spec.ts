@@ -17,9 +17,10 @@ import { scrollIntoView } from "./helpers/scroll";
 //     computedValue rule uses JsonLogic numeric coercion; we assert the
 //     displayed value is "6", which catches the case where coercion is
 //     accidentally string concat (would render "51").
-//   - Stub copy in item 5: actual preview copy is "Preview stub — flip to
-//     drive rules referencing this field." and toggle labels are
-//     None / 1 selected / 3 selected. We assert against the real copy.
+//   - Item 5: medicine renders the real (inert) input group plus a
+//     visible tip steering authors to the Prescriptions feature. There
+//     is no simulate affordance — rules referencing the medicine field
+//     stay at the seeded empty array in preview.
 // ----------------------------------------------------------------------------
 
 const FIELD_CARD = '[data-testid="field-card"]';
@@ -243,27 +244,22 @@ test.describe("Event-form builder — Scenario 1 rule round-trip", () => {
       previewField("E").getByTestId("preview-computed-display"),
     ).toHaveText("5001");
 
-    // Item 5 — Medicine list-ish stub. Preview renders TogglePicker (None /
-    // 1 selected / 3 selected) with the stub note, NOT a real medicine
-    // picker. Copy is intentionally asserted against the real preview text,
-    // not the user's checklist wording.
+    // Item 5 — Medicine preview. Renders the real (inert) input group —
+    // Medicine Name / Form / Concentration / Unit / Frequency / Route —
+    // for visual fidelity, plus a visible tip steering authors to the
+    // dedicated Prescriptions feature. No simulate toggles.
     const cardFPreview = await scrollIntoView(previewField("F"));
+    await expect(cardFPreview.getByLabel("Medicine Name")).toBeVisible();
+    await expect(cardFPreview.getByLabel("Concentration")).toBeVisible();
+    // The three SelectInputs of the input group: Form / Unit / Route.
+    await expect(cardFPreview.getByRole("combobox")).toHaveCount(3);
     await expect(
-      cardFPreview.locator("p.italic", {
-        hasText: "Preview stub — flip to drive rules referencing this field.",
-      }),
+      cardFPreview.getByText("dedicated Prescriptions feature"),
     ).toBeVisible();
+    // The old simulate stubs are gone.
     await expect(
-      cardFPreview.getByRole("button", { name: "None", exact: true }),
-    ).toBeVisible();
-    await expect(
-      cardFPreview.getByRole("button", { name: "1 selected", exact: true }),
-    ).toBeVisible();
-    await expect(
-      cardFPreview.getByRole("button", { name: "3 selected", exact: true }),
-    ).toBeVisible();
-    // No real medicine picker affordance.
-    await expect(cardFPreview.getByRole("combobox")).toHaveCount(0);
+      cardFPreview.getByRole("button", { name: "1 selected" }),
+    ).toHaveCount(0);
 
     // Item 6 — Display-only: G renders with the "lg" size class (text-xl
     // font-medium) and H renders as a separator. Address by data-field-tag
