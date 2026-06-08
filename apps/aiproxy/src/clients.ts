@@ -1,6 +1,3 @@
-import { readFileSync, existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Context, Next } from "hono";
 
 type client_status = "Active" | "Paused" | "Inactive" | "Blocked";
@@ -20,16 +17,29 @@ type client_json = Omit<client, "created_at" | "updated_at"> & {
 };
 
 function load_clients(): client[] {
-  // Resolve from project root (two levels up from src/)
-  const project_root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const file_path = resolve(project_root, "clients_list.json");
+  // The full registry is provided as a JSON array string in CLIENTS_LIST.
+  // This loads identically in dev (via .env) and prod (real env var) and
+  // keeps client API keys out of the repo.
+  const raw_json = process.env["CLIENTS_LIST"];
 
-  if (!existsSync(file_path)) {
-    console.warn(`[clients] WARNING: ${file_path} not found — no clients registered`);
+  if (!raw_json) {
+    console.warn("[clients] WARNING: CLIENTS_LIST env var not set — no clients registered");
     return [];
   }
 
-  const raw: client_json[] = JSON.parse(readFileSync(file_path, "utf-8"));
+  let raw: client_json[];
+  try {
+    raw = JSON.parse(raw_json);
+  } catch (err) {
+    console.warn(`[clients] WARNING: CLIENTS_LIST is not valid JSON — no clients registered (${err})`);
+    return [];
+  }
+
+  if (!Array.isArray(raw)) {
+    console.warn("[clients] WARNING: CLIENTS_LIST must be a JSON array — no clients registered");
+    return [];
+  }
+
   return raw.map((c) => ({
     ...c,
     created_at: new Date(c.created_at),
