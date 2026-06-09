@@ -25,6 +25,7 @@ services:
         - apps/mobile/**
         - apps/aiproxy/**
         - apps/local-hub/**
+        - crates/** # Igore any rust crates to avoid building them in render instances
     envVars:
       - key: DATABASE_URL
         fromDatabase:

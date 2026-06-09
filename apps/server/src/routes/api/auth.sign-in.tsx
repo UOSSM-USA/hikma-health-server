@@ -35,7 +35,11 @@ export const Route = createFileRoute("/api/auth/sign-in")({
           setCookie("token", token, {
             httpOnly: true,
             secure: import.meta.env.DEV ? false : true,
-            sameSite: "strict",
+            // "lax" (not "strict") so the cookie is sent on top-level
+            // navigations into the app (refresh, bookmarks, external links).
+            // Under "strict" the SSR auth guard sees no token on these loads
+            // and bounces the user to the login screen.
+            sameSite: "lax",
             path: "/",
             expires: new Date(Date.now() + 2 * 60 * 60 * 1000),
           });

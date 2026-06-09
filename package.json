@@ -11,7 +11,21 @@
     "aiproxy:build": "just build-aiproxy",
     "aiproxy:start": "just start-aiproxy",
     "mobile:start-android": "just start-mobile-android",
-    "mobile:start-ios": "just start-mobile-ios"
+    "mobile:start-ios": "just start-mobile-ios",
+    "mobile:adb": "just mobile-adb",
+    "mobile:build:ios:sim": "just build-mobile-ios sim",
+    "mobile:build:ios:dev": "just build-mobile-ios dev",
+    "mobile:build:ios:preview": "just build-mobile-ios preview",
+    "mobile:build:ios:prod": "just build-mobile-ios prod",
+    "mobile:build:android:sim": "just build-mobile-android sim",
+    "mobile:build:android:dev": "just build-mobile-android dev",
+    "mobile:build:android:preview": "just build-mobile-android preview",
+    "mobile:build:android:prod": "just build-mobile-android prod",
+    "mobile:eas:update:prod": "just update-mobile-prod",
+    "mobile:eas:submit:android": "just submit-mobile-android",
+    "mobile:eas:build:submit:android": "just build-submit-mobile-android",
+    "mobile:eas:submit:ios": "just submit-mobile-ios",
+    "mobile:eas:build:submit:ios": "just build-submit-mobile-ios"
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^1.61.1",
