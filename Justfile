@@ -1,157 +1,37 @@
 set export := true
 
-# migrate-server:
-#     #!/usr/bin/env bash
-#     set -euxo pipefail
-#     # Migrations resolve their folder via process.cwd() (see database/alembic/kysely-migrator.ts),
-#     # so we must run from inside the database package.
-#     echo "==> [migrate] running kysely migrate latest in ./$APP_FOLDER/database"
-#     cd $APP_FOLDER/database
-#     pnpm run migrate-latest
-#     echo "==> [migrate] complete"
-# Migrations run unconditionally before start. They are idempotent — if the
-# schema is already current, `kysely migrate latest` is a single no-op round
-# trip. This keeps "starting the server" the single entrypoint that guarantee a
-# current schema, regardless of deploy platform.
-
-prepare-project project:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    APP_FOLDER=".build/{{ project }}"
-    mkdir -p APP_FOLDER 2>/dev/null
-
-    export MOON_TOOLCHAIN_FORCE_GLOBALS=true
-    export MOON_DEBUG_PROCESS_ENV=true
-
-    echo "==> [build] scaffolding service workspace into ./$APP_FOLDER"
-    # prepare the server project
-    moon docker scaffold {{ project }}
-
-    # package the content needed to build the server in a single folder
-    rm -rf $APP_FOLDER;
-    mkdir -p "./$APP_FOLDER"/;
-    find ./.moon/docker/configs -maxdepth 1 -mindepth 1 \
-        -not -path "*/database" \
-        -not -path "*/apps" \
-        -not -path "*/packages" \
-        -exec mv {} "./$APP_FOLDER/" \;
-
-    mv ./.moon/docker/sources/* "./$APP_FOLDER"
-
-install-build-server: (prepare-project 'server')
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    cd .build/server
-    pnpm install --no-frozen-lockfile
-    moon run server:build
-
-install-build-aiproxy: (prepare-project 'aiproxy')
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    cd .build/aiproxy
-    pnpm install --no-frozen-lockfile
-    moon run aiproxy:build
-
-moon_start-server:
-    cd .build/server/database && pnpm run migrate-latest
-    cd .build/server/apps/server && pnpm run start-only
-
-moon_start-aiproxy:
-    cd .build/aiproxy/apps/aiproxy && pnpm run start
-
-
-# ========= Workspaces approach ======
-# pnpm workspaces + Just, to replace moon for js workloads.
+# ============================================================================
+# HikmaHealth monorepo task runner.
 #
-# .env loading: each recipe that needs env vars uses dotenvx (root devDep) to layer root .env + the relevant app .env.
-# Variables already in the shell env take preference over .env values (dotenvx default).
-# Leaf recipes (tsc/rescript only) skip env loading since they don't read env at build time.
-
-# ---- Install : targeted to each deploy app's dep closure ----
-# `--filter "<pkg>..."` installs the package + its workspace dependency closure +
-# their transitive deps. Skips unrelated apps (mobile/RN, local-hub/Tauri) so
-# deploys only pull what they need. Cheap when the lockfile already matches
-# (pnpm short-circuits). CI=true triggers --frozen-lockfile automatically.
-# Wired as deps of build-server / build-aiproxy so platforms only need to call
-# `pnpm run server:build` / `pnpm run aiproxy:build`.
+# Recipes are split by domain into ./just/*.just and imported below into one
+# flat namespace — `just --list` shows everything, and a recipe in one file may
+# depend on a recipe in another. This file holds shared settings, the
+# cross-cutting conventions, and the aggregators that fan out across domains.
 #
-# For full local setup, devs run `pnpm install` directly.
+# Conventions shared across the imported files:
+#   • pnpm workspaces + Just replace moon for JS workloads. The moon recipes
+#     that remain live in just/moon-legacy.just.
+#   • Env loading: recipes that need env vars use dotenvx (root devDep) to layer
+#     root .env + the relevant app .env. Shell env wins over .env (dotenvx
+#     default). Leaf builds (tsc/rescript only) skip env loading.
+#   • Install targeting: `pnpm install --filter "<pkg>..."` pulls a deploy app's
+#     dependency closure only, skipping unrelated apps. Wired as a dep of the
+#     app's build recipe so platforms only call `just build-server` / etc.
+#   • Leaf builds first: build-hh-forms / build-utils-js emit gitignored
+#     .gen.ts / .res.mjs that server + mobile resolve, so they precede those
+#     apps' build / test / typecheck recipes.
+# ============================================================================
 
-install-server:
-    pnpm install --filter "hikma-health-server..."
-
-install-aiproxy:
-    pnpm install --filter "hh-ai-proxy..."
-
-# ---- Leaf builds : small atoms that everything else uses ----
-
-build-utils-js:
-    pnpm --filter @hikmahealth/js-utils run build
-
-build-database:
-    pnpm --filter @hikmahealth/database run build
-
-build-ui:
-    pnpm --filter @hikmahealth/ui run build
-
-# ReScript outputs (`.res.mjs` + `.gen.ts`) are gitignored and consumed by
-# server + mobile at runtime/type-check time, so every recipe that builds
-# or tests those apps must run this first.
-build-hh-forms:
-    pnpm --filter @hikmahealth/forms run build
+import 'just/packages.just'
+import 'just/server.just'
+import 'just/aiproxy.just'
+import 'just/mobile.just'
+import 'just/local-hub.just'
+import 'just/vendor.just'
+import 'just/moon-legacy.just'
 
 
-# ---- App builds : deps drive ordering so `just build-server` is one command ----
-
-build-server: install-server build-utils-js build-database build-hh-forms
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ENV_ARGS="-f .env"
-    [ -f apps/server/.env ] && ENV_ARGS="$ENV_ARGS -f apps/server/.env"
-    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hikma-health-server run build
-
-build-aiproxy: install-aiproxy build-utils-js
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ENV_ARGS="-f .env"
-    [ -f apps/aiproxy/.env ] && ENV_ARGS="$ENV_ARGS -f apps/aiproxy/.env"
-    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hh-ai-proxy run build
-
-typecheck-mobile: build-utils-js build-hh-forms
-    pnpm --filter hikma-health-mobile run check-types
-
-
-# ---- Tests : same dep shape as the matching build recipes ----
-# Each app's `test` script handles its own framework setup (vitest/jest, rescript
-# prebuild, vitest workspaces). We only need to ensure cross-package workspace
-# builds (js-utils, database) exist so imports resolve.
-# Run after `pnpm install` — recipes assume node_modules is already populated.
-# Placeholder `test` scripts in packages/{data,common,client-native,hh-forms}
-# are intentionally not invoked here.
-
-test-server: build-utils-js build-database build-hh-forms
-    pnpm --filter hikma-health-server run test
-
-test-aiproxy: build-utils-js
-    pnpm --filter hh-ai-proxy run test
-
-# Frontend-only is fast and runs in `test-all`. Backend (Tauri/Rust) is
-# opt-in: it requires GTK/webkit system libs + cargo-nextest + a long
-# Rust compile, so CI gates it on `apps/local-hub/src-tauri/**` changes.
-# Run `just test-local-hub` locally to do both.
-test-local-hub-frontend:
-    pnpm --filter hh-local-hub run test:frontend
-
-test-local-hub-backend:
-    pnpm --filter hh-local-hub run test:backend
-
-test-local-hub: test-local-hub-frontend test-local-hub-backend
-
-test-mobile: build-utils-js build-hh-forms
-    pnpm --filter hikma-health-mobile run test
-
-
-# ---- Aggregator Scripts : Buy one get N free !! ----
+# ---- Aggregators : fan out across domains. Buy one get N free !! ----
 
 build-packages: build-utils-js build-database build-ui build-hh-forms
 
@@ -159,200 +39,7 @@ build-apps: build-server build-aiproxy typecheck-mobile
 
 build-all: build-packages build-apps
 
-# Excludes `test-local-hub-backend` — see note above.
+# Excludes `test-local-hub-backend` — see just/local-hub.just.
 test-all: test-server test-aiproxy test-local-hub-frontend test-mobile
 
-
-
-# ---- App runs ----
-# start-server runs three steps in order, every start, regardless of platform:
-#   1. migrate    — idempotent; brings schema to current
-#   2. recovery   — user_permissions_recovery script; antifragility for permissions/access
-#   3. start-only — boots the built server from .output/
-# Failure at any step aborts boot loudly (set -euo pipefail).
-# Build before starting (just build-server / just build-aiproxy).
-# Optional port arg: `just start-server 8080` overrides the listen port.
-# Omitted, the server keeps its default (PORT from .env, else Nitro's 3000).
-
-start-server port='':
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ENV_ARGS="-f .env"
-    [ -f apps/server/.env ] && ENV_ARGS="$ENV_ARGS -f apps/server/.env"
-    # An exported PORT wins over .env (dotenvx keeps existing shell env), so
-    # setting it only when an arg was passed leaves the default path untouched.
-    [ -n "{{ port }}" ] && export PORT="{{ port }}"
-    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter @hikmahealth/database run migrate-latest
-    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hikma-health-server run recovery-permissions
-    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hikma-health-server run start-only
-
-start-aiproxy:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ENV_ARGS="-f .env"
-    [ -f apps/aiproxy/.env ] && ENV_ARGS="$ENV_ARGS -f apps/aiproxy/.env"
-    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hh-ai-proxy run start
-
-# Server in dev mode — vite's dev server (HMR, source maps) instead of the
-# built .output/. Differences from start-server:
-#   - Skips recovery-permissions (prod hardening; nothing to gain in dev).
-#   - One-shot res:build inline so ReScript sources are importable. For
-#     ReScript HMR, run `pnpm --filter hikma-health-server run res:dev` in
-#     a second terminal alongside this.
-# Migrations still run (idempotent; schema must be current to start).
-# build-utils-js / build-database deps mirror test-server — vite needs the
-# workspace builds present to resolve imports.
-
-dev-server: build-utils-js build-database build-hh-forms
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ENV_ARGS="-f .env"
-    [ -f apps/server/.env ] && ENV_ARGS="$ENV_ARGS -f apps/server/.env"
-    pnpm --filter hikma-health-server run res:build
-    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter @hikmahealth/database run migrate-latest
-    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hikma-health-server run dev
-
-# Mobile dev runs — Expo's run:android / run:ios builds the native app, installs
-# on connected device/emulator, and starts Metro. Depends on build-utils-js so
-# .gen.ts files exist before Metro resolves @hikmahealth/js-utils.
-# Assumes pnpm install has been run for the workspace.
-#
-# start-mobile-android accepts an optional mode argument:
-#   `just start-mobile-android`        → debug variant (default, dev client + Metro)
-#   `just start-mobile-android prod`   → release variant (bundled JS, minified,
-#                                         no fast refresh) — for on-device perf
-#                                         testing in real-world conditions.
-
-start-mobile-android mode='dev': build-utils-js build-hh-forms
-    #!/usr/bin/env bash
-    set -euo pipefail
-    case "{{ mode }}" in
-      prod|production|release)
-        dotenv -f .env run pnpm --filter hikma-health-mobile run android -- --variant release ;;
-      dev|debug)
-        dotenv -f .env run pnpm --filter hikma-health-mobile run android ;;
-      *)
-        echo "start-mobile-android: unknown mode '{{ mode }}' (use 'dev' or 'prod')" >&2
-        exit 2 ;;
-    esac
-
-start-mobile-ios mode='dev': build-utils-js build-hh-forms
-    #!/usr/bin/env bash
-    set -euo pipefail
-    case "{{ mode }}" in
-      prod|production|release)
-        dotenv -f .env run pnpm --filter hikma-health-mobile run ios -- --configuration Release ;;
-      dev|debug)
-        dotenv -f .env run pnpm --filter hikma-health-mobile run ios ;;
-      *)
-        echo "start-mobile-ios: unknown mode '{{ mode }}' (use 'dev' or 'prod')" >&2
-        exit 2 ;;
-    esac
-
-
-# ---- Mobile EAS builds / store submissions ----
-# EAS commands must run from apps/mobile (eas.json / app.json live there), so we
-# use `pnpm --filter hikma-health-mobile exec` to set that CWD without a manual
-# cd. `eas` is expected on PATH (install once with `npm i -g eas-cli`).
-#
-# Build-time vars (EXPO_PUBLIC_*, SENTRY_AUTH_TOKEN) live in the repo-root .env,
-# so recipes that bundle JS (build, update) load it via dotenvx — bare eas would
-# only see apps/mobile/.env (absent today). submit / adb need no build-time env.
-#
-# build/update depend on build-utils-js + build-hh-forms (same as typecheck- and
-# start-mobile-*) so the .gen.ts / ReScript outputs Metro resolves exist first.
-#
-# The `profile` arg maps to an eas.json build profile:
-#   sim → development   dev → development:device   preview → preview   prod → production
-
-build-mobile-ios profile='prod': build-utils-js build-hh-forms (_eas-build 'ios' profile)
-
-build-mobile-android profile='prod': build-utils-js build-hh-forms (_eas-build 'android' profile)
-
-_eas-build platform profile:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    case "{{ profile }}" in
-      sim)     EAS_PROFILE="development" ;;
-      dev)     EAS_PROFILE="development:device" ;;
-      preview) EAS_PROFILE="preview" ;;
-      prod)    EAS_PROFILE="production" ;;
-      *)
-        echo "build-mobile-{{ platform }}: unknown profile '{{ profile }}' (sim|dev|preview|prod)" >&2
-        exit 2 ;;
-    esac
-    ENV_ARGS="-f .env"
-    [ -f apps/mobile/.env ] && ENV_ARGS="$ENV_ARGS -f apps/mobile/.env"
-    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hikma-health-mobile exec eas build --profile "$EAS_PROFILE" --platform "{{ platform }}" --local
-
-submit-mobile-ios:
-    pnpm --filter hikma-health-mobile exec eas submit --platform ios
-
-submit-mobile-android:
-    pnpm --filter hikma-health-mobile exec eas submit --platform android
-
-# Build the production binary, then submit it to the store.
-build-submit-mobile-ios: (build-mobile-ios 'prod') submit-mobile-ios
-
-build-submit-mobile-android: (build-mobile-android 'prod') submit-mobile-android
-
-# Publish an OTA JS update to the production channel.
-update-mobile-prod: build-utils-js build-hh-forms
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ENV_ARGS="-f .env"
-    [ -f apps/mobile/.env ] && ENV_ARGS="$ENV_ARGS -f apps/mobile/.env"
-    pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hikma-health-mobile exec eas update --channel production
-
-# Reverse Metro / dev-service ports over adb for a connected Android device.
-mobile-adb:
-    adb reverse tcp:9090 tcp:9090
-    adb reverse tcp:3000 tcp:3000
-    adb reverse tcp:9001 tcp:9001
-    adb reverse tcp:8081 tcp:8081
-
-
-# ---- Cleanup Scripts : remove artifacts, or just empty accumulating gunk ----
-
-clean-utils-js:
-    pnpm --filter @hikmahealth/js-utils run clean
-
-clean-database:
-    rm -rf database/dist
-
-clean-ui:
-    rm -rf packages/ui/dist
-
-clean-server:
-    rm -rf apps/server/.output
-    pnpm --filter hikma-health-server run res:clean
-
-clean-aiproxy:
-    rm -rf apps/aiproxy/dist
-    pnpm --filter hh-ai-proxy run res:clean
-
 clean-all: clean-utils-js clean-database clean-ui clean-server clean-aiproxy
-
-
-# ---- Vendor catalog ----
-# Manage third-party packages under vendor/. See vendor/README.md for the
-# policy (no local modifications on mode = "sync"; freeze if you must edit).
-# All recipes are thin wrappers over scripts/vendor/vendor.mjs, which is the
-# single source of truth for vendor.toml mutations.
-
-vendor-add NAME URL REF:
-    node scripts/vendor/vendor.mjs add {{quote(NAME)}} {{quote(URL)}} {{quote(REF)}}
-
-# vendor-update <name>          — re-pull the recorded ref (drift fix)
-# vendor-update <name> <new-ref> — sync to a new upstream ref
-vendor-update NAME REF='':
-    node scripts/vendor/vendor.mjs update {{quote(NAME)}} {{quote(REF)}}
-
-vendor-freeze NAME REASON:
-    node scripts/vendor/vendor.mjs freeze {{quote(NAME)}} {{quote(REASON)}}
-
-vendor-check:
-    node scripts/vendor/vendor.mjs check
-
-vendor-status:
-    node scripts/vendor/vendor.mjs status
