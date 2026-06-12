@@ -31,6 +31,7 @@ import { AppointmentNavigator } from "./AppointmentNavigator"
 import { PharmacyNavigator } from "./PharmacyNavigator"
 import { navigationRef, useBackButtonHandler } from "./navigationUtilities"
 import { PatientNavigator } from "./PatientNavigator"
+import { shouldSeedE2E } from "@/utils/e2e"
 import { Logger } from "@hikmahealth/js-utils"
 
 /**
@@ -160,6 +161,8 @@ const AppStack = () => {
 
   useEffect(() => {
     if (!isSignedIn) return
+    // Seeded e2e runs are hermetic and offline — never auto-sync.
+    if (shouldSeedE2E) return
 
     const run = async () => {
       // Determine which peer type is active — cloud re-auth only applies to cloud peers

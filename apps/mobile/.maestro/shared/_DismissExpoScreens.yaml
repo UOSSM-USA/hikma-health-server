@@ -1,0 +1,39 @@
+# flow: Shared _DismissExpoScreens
+# intent:
+# After launchApp, wait for animations to settle and click through the Expo
+# dev-client screens if present: connect to the Metro server when the dev
+# launcher is shown, then dismiss the platform "open with" bottom sheet.
+# Shared by _OnFlowStart.yaml and _OnFlowStartSeeded.yaml so the dismissal
+# logic lives in exactly one place.
+appId: ${MAESTRO_APP_ID}
+---
+- waitForAnimationToEnd
+
+# conditionally run the dev client flow if the words "Development servers" is present.
+# this uses the default maestro timeout and moves on if it doesn't see the text.
+- runFlow:
+    when:
+      visible: "Development servers"
+    commands:
+      # this regex allows for different hosts and ports
+      - tapOn: "http://.*:.*"
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      platform: Android
+      visible:
+        id: "${MAESTRO_APP_ID}:id/bottom_sheet" # id of the android bottom sheet we want to dismiss
+    commands:
+      - swipe:
+          direction: DOWN
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      platform: iOS
+      visible:
+        id: "SBSwitcherWindow:Main" # id of the iOS bottom sheet we want to dismiss
+    commands:
+      - swipe:
+          direction: DOWN
+      - waitForAnimationToEnd

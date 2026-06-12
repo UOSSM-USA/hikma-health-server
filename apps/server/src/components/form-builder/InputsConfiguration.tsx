@@ -91,6 +91,19 @@ type InputConfigProps = {
   onFieldRulesChange?: (fieldId: string, slots: FieldRuleSlots) => void;
 };
 
+/**
+ * Format the input config item label
+ * @param field
+ * @returns string
+ */
+function inputLabel(field: InputConfigProps["fields"][number]): string {
+  if (field.fieldType === "free-text") {
+    return field.inputType;
+  }
+
+  return field?.fieldType ?? field?.inputType ?? "Unknown Input";
+}
+
 export function InputsConfiguration({
   fields,
   onFieldChange,
@@ -278,7 +291,7 @@ export function InputsConfiguration({
                 >
                   <div className="w-full space-y-2">
                     <h3 className="text-lg font-bold">
-                      {upperFirst(field?.fieldType ?? field.inputType)} Input
+                      {upperFirst(inputLabel(field))} Input
                     </h3>
                     <Input
                       label={"Name"}
@@ -407,9 +420,7 @@ export function InputsConfiguration({
                         form={logicFields}
                         fieldId={field.id}
                         initial={EventForm.getRuleSlots(field)}
-                        onSave={(slots) =>
-                          onFieldRulesChange(field.id, slots)
-                        }
+                        onSave={(slots) => onFieldRulesChange(field.id, slots)}
                       />
                     )}
 

@@ -1,0 +1,51 @@
+# flow: Shared _OnFlowStartSeeded
+# intent:
+# Same as _OnFlowStart.yaml but launches with seedE2E="true", so the app
+# populates a fixed offline dataset and injects a provider session (see
+# app/db/seedE2E.ts). Use for hermetic, offline UI flows that should boot
+# signed-in with data and never touch the network.
+#
+# Note: the seed arg is hardcoded here, not parameterized — Maestro does not
+# interpolate ${vars} inside launchApp.arguments, so a dedicated launcher is
+# the reliable way to opt a flow into seeding.
+#
+# Include in a flow header as:
+#
+# appId: ${MAESTRO_APP_ID}
+# onFlowStart:
+#   - runFlow: ../shared/_OnFlowStartSeeded.yaml
+# ---
+# [your maestro flow]
+#
+appId: ${MAESTRO_APP_ID}
+---
+# launch the app with a clean slate and request the e2e seed
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    stopApp: true
+    arguments:
+      isE2E: "true"
+      seedE2E: "true"
+
+- runFlow: _DismissExpoScreens.yaml
+
+# A fresh dev-client launch can show two dimming overlays a few seconds AFTER
+# the bundle loads (after _DismissExpoScreens ran): the onboarding card
+# (dismissed with "Continue") and then the full dev menu (closed via its
+# "Close" X). Both are intermittent and appear late, so retry: dismiss each if
+# present, then assert the seeded patient list — re-running until it's visible.
+- retry:
+    maxRetries: 8
+    commands:
+      - runFlow:
+          when:
+            visible: "Continue"
+          commands:
+            - tapOn: "Continue"
+      - runFlow:
+          when:
+            visible: "Reload"
+          commands:
+            - tapOn: "Close"
+      - assertVisible: "Patients"

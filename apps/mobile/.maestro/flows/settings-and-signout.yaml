@@ -3,8 +3,7 @@
 
 appId: ${MAESTRO_APP_ID}
 onFlowStart:
-  - runFlow: ../shared/_OnFlowStart.yaml
-  - runFlow: ../shared/sign-in.yaml
+  - runFlow: ../shared/_OnFlowStartSeeded.yaml
 ---
 # Verify we're on the patients list screen
 - assertVisible: "Patients"
@@ -24,8 +23,11 @@ onFlowStart:
 # Verify we're on the settings screen
 - assertVisible: "User Account"
 
-# Verify key settings elements are visible
-- assertVisible: "Sync Settings"
+# Verify key settings elements are present (below the fold — scroll to it)
+- scrollUntilVisible:
+    element:
+      text: "Sync Settings"
+    direction: DOWN
 
 # Scroll down to find the Sign Out button
 - scrollUntilVisible:

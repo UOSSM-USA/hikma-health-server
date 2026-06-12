@@ -561,6 +561,23 @@ const ComponentRegistry = [
   ),
   createComponent(
     () =>
+      new EventForm.TextField2({
+        id: nanoid(),
+        name: "",
+        description: "",
+        required: false,
+        inputType: "number",
+        length: "short",
+        units: [],
+      }),
+    {
+      label: "Number",
+      icon: <LucideList />,
+      //   render: FreeTextInput,
+    },
+  ),
+  createComponent(
+    () =>
       new EventForm.DateField2({
         id: nanoid(),
         name: "",

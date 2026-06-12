@@ -44,6 +44,8 @@ import { useOperationModeInit } from "./hooks/useOperationModeInit"
 import { ThemeProvider, useAppTheme } from "./theme/context"
 import { customFontsToLoad } from "./theme/typography"
 import { loadDateFnsLocale } from "./utils/formatDate"
+import { shouldSeedE2E } from "./utils/e2e"
+import { seedE2EDatabase } from "./db/seedE2E"
 import { Logger } from "@hikmahealth/js-utils"
 import * as storage from "./utils/storage"
 
@@ -146,7 +148,16 @@ export function App() {
       }
     }
 
-    loadProviderStore().finally(() => setIsProviderStoreInitialized(true))
+    const boot = async () => {
+      // Seed before hydrating so the injected session lands in SecureStore
+      // ahead of loadProviderStore reading it.
+      if (shouldSeedE2E) {
+        await seedE2EDatabase()
+      }
+      await loadProviderStore()
+    }
+
+    boot().finally(() => setIsProviderStoreInitialized(true))
   }, [])
 
   // Before we show the app, we have to wait for our state to be ready.
