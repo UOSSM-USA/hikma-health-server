@@ -93,6 +93,10 @@ function RouteComponent() {
   };
 
   const handleDelete = (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this form?")) {
+      return;
+    }
+
     deleteForm({ data: { id } })
       .then(() => {
         toast.success("Form deleted successfully");

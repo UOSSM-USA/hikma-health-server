@@ -133,7 +133,15 @@ export const ReportComponentCard = ({
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50"
-                onClick={() => onDelete(component.id)}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Are you sure you want to delete this component?",
+                    )
+                  ) {
+                    onDelete(component.id);
+                  }
+                }}
                 title="Delete component"
               >
                 <Trash2 className="h-3.5 w-3.5" />
