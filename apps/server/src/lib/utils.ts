@@ -201,7 +201,6 @@ export function safeStringify(input: unknown, defaultValue: string): string {
 
 /**
  * Attempts to parse a date from various input types.
- *
  * @param {unknown} input - The input to parse as a date. Can be a Date object, string, or number.
  * @param {Date} [defaultDate] - An optional default date to return if parsing fails.
  * @returns {Date} The parsed date or the default date.
