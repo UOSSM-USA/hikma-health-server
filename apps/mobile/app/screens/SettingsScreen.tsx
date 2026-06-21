@@ -214,7 +214,7 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
   }, [])
 
   return (
-    <Screen style={$root} preset="scroll">
+    <Screen style={$root} safeAreaEdges={["top"]} preset="scroll">
       <View py={12} style={{ borderBottomColor: colors.border, borderBottomWidth: 1 }}>
         <Image source={launchIcon} style={{ height: 80, width: 80 }} resizeMode="contain" />
         <View style={{ flexShrink: 1 }}>
@@ -260,19 +260,15 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
           </View>
         </Pressable>
 
-        <Pressable onPress={() => navigation.navigate("Reports")}>
-          <View direction="row" justifyContent="space-between" style={$withBottomBorder} py={12}>
-            <Text tx="settingsScreen:reports" size="sm" />
-            <ChevronRight color={colors.palette.neutral600} size={16} />
-          </View>
-        </Pressable>
-
-        <Pressable onPress={() => navigation.navigate("Feedback")}>
-          <View direction="row" justifyContent="space-between" style={$withBottomBorder} py={12}>
-            <Text tx="settingsScreen:feedback" size="sm" />
-            <ChevronRight color={colors.palette.neutral600} size={16} />
-          </View>
-        </Pressable>
+        {/* Feedback disabled until centralized feedback mechanism is in place */}
+        <If condition={false}>
+          <Pressable onPress={() => navigation.navigate("Feedback")}>
+            <View direction="row" justifyContent="space-between" style={$withBottomBorder} py={12}>
+              <Text tx="settingsScreen:feedback" size="sm" />
+              <ChevronRight color={colors.palette.neutral600} size={16} />
+            </View>
+          </Pressable>
+        </If>
       </View>
       <View py={22} gap={10}>
         <Text tx="settingsScreen:settings" size="lg" />

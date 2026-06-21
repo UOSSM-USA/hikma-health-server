@@ -10,7 +10,16 @@
     "resolveJsonModule": true,
     "strict": false,
     "noImplicitAny": false,
-    "types": ["node"]
+    "types": ["node"],
+    // rootDir pins the emit layout so ts-node doesn't error with TS5011
+    // ("common source directory ... rootDir must be explicitly set") when it
+    // type-checks the config plugins during `expo config` in the EAS sandbox.
+    "rootDir": "."
+  },
+  // The plugins are only transpiled (not type-checked) to load Expo config;
+  // force transpile-only so ts-node never builds a Program that needs rootDir.
+  "ts-node": {
+    "transpileOnly": true
   },
   "include": ["**/*.ts"]
 }
