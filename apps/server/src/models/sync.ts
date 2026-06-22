@@ -404,7 +404,9 @@ namespace Sync {
     // Configuration entities that should always sync full history (exempt from MAX_HISTORY_DAYS_SYNC)
     const EXEMPT_FROM_HISTORY_LIMIT = [
       "clinics",
+      // Patient registration forms have different names on mobile and on server, thus both are listed in the exemption list
       "patient_registration_forms",
+      "registration_forms",
       "event_forms",
       "drug_catalogue",
       "clinic_departments",
