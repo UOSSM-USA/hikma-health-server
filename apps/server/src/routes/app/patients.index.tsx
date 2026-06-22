@@ -137,8 +137,7 @@ const getFilteredPatientsForExport = createServerFn({ method: "GET" })
 export const Route = createFileRoute("/app/patients/")({
   component: RouteComponent,
   validateSearch: (search: Record<string, unknown>) => ({
-    clinicId:
-      typeof search.clinicId === "string" ? search.clinicId : undefined,
+    clinicId: typeof search.clinicId === "string" ? search.clinicId : undefined,
   }),
   loaderDeps: ({ search: { clinicId } }) => ({ clinicId }),
   loader: async ({ deps }) => {
@@ -236,13 +235,10 @@ function RouteComponent() {
   const navigate = Route.useNavigate();
   const route = useRouter();
   const [currentPage, setCurrentPage] = React.useState(1);
-  const [searchState, dispatchSearchAction] = useImmerReducer(
-    searchReducer,
-    {
-      ...initialSearchState,
-      clinicIds: clinicIdFromUrl ? [clinicIdFromUrl] : [],
-    },
-  );
+  const [searchState, dispatchSearchAction] = useImmerReducer(searchReducer, {
+    ...initialSearchState,
+    clinicIds: clinicIdFromUrl ? [clinicIdFromUrl] : [],
+  });
   const [loading, setLoading] = React.useState(false);
 
   const [selectedPatients, actions] = useMap<string, string>(); // [patientId, patientName]
@@ -508,7 +504,12 @@ function RouteComponent() {
     worksheet: ExcelJS.Worksheet,
     exportPatients: (typeof Patient.PatientWithAttributesSchema.Encoded)[],
   ) => {
-    const headerRow = ["ID", ...headers];
+    const headerRow = [
+      "ID",
+      ...headers,
+      "Record Created At",
+      "Last Updated At",
+    ];
     worksheet.addRow(headerRow);
     worksheet.getRow(1).font = { bold: true };
     exportPatients.forEach((patient) => {
@@ -534,6 +535,8 @@ function RouteComponent() {
           );
         }
       });
+      rowData.push(format(patient.created_at, "yyyy MMM dd"));
+      rowData.push(format(patient.updated_at, "yyyy MMM dd"));
       worksheet.addRow(rowData);
     });
   };
