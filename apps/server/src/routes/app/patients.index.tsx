@@ -939,6 +939,12 @@ function RouteComponent() {
                   {header}
                 </TableHead>
               ))}
+              <TableHead className="px-6" key={"created_at"}>
+                Record Created At
+              </TableHead>
+              <TableHead className="px-6" key={"updated_at"}>
+                Last Updated At
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -963,8 +969,6 @@ function RouteComponent() {
                 <TableCell
                   className="px-6 space-x-4"
                   onClick={(evt) => {
-                    // Prevent propagation of click event to parent elements
-                    // evt.preventDefault();
                     evt.stopPropagation();
                   }}
                   key={"actions"}
@@ -1005,6 +1009,12 @@ function RouteComponent() {
                     </TableCell>
                   ),
                 )}
+                <TableCell className="px-6" key={"created_at"}>
+                  {format(patient.created_at, "yyyy MMM dd")}
+                </TableCell>
+                <TableCell className="px-6" key={"updated_at"}>
+                  {format(patient.created_at, "yyyy MMM dd")}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
