@@ -6,6 +6,30 @@ API documentation for the Hikma Health Local Hub RPC system.
 
 All endpoints are served by the Poem HTTP framework on port 4001. Commands and queries use end-to-end encryption — clients must complete a handshake before calling `/rpc/command` or `/rpc/query`.
 
+### Why plain HTTP and not TLS (deliberate decision)
+
+The hub binds **plain HTTP** on `0.0.0.0:4001` — there is intentionally **no transport-layer TLS**.
+
+- **Reason:** the hub has no public DNS name or CA-issued certificate (it's a LAN device on a
+  dynamic local IP). The only option would be a **self-signed certificate**, and iOS and Android
+  reject self-signed certs at the OS trust-store level — App Transport Security (iOS) and the
+  Network Security Config / system CA store (Android) refuse the connection, and shipping apps
+  cannot ask users to install a custom root CA. Self-signed TLS therefore **breaks the mobile
+  clients entirely**, so it was abandoned.
+- **Compensating control (HIPAA §164.312(e), an *addressable* safeguard):** confidentiality and
+  integrity of PHI in transit are provided at the **application layer** instead of the transport
+  layer — every data-bearing request goes through `/rpc/command` or `/rpc/query`, whose payloads
+  are encrypted with **ECDH-derived AES-256-GCM** (authenticated encryption; see *Encryption
+  Protocol* below). There is **no unauthenticated or unencrypted data endpoint** — the legacy
+  plaintext REST `/api/v2/sync` and `/api/login` routes were removed (see repo-root
+  `local-test-hub-review.local.md`, finding C1).
+- **Residual assumption:** this posture assumes a **trusted LAN**. It protects PHI payloads from a
+  passive eavesdropper on the same network, but the hub does not authenticate the *network path*
+  and pairing is trust-on-first-use (the handshake does not yet verify device identity). Do not
+  expose port 4001 to untrusted networks or the internet.
+- **Source of truth:** the same rationale is recorded inline at `src-tauri/src/lib.rs` (the
+  `start_server` doc comment). Keep the two in sync if the decision changes.
+
 ### Encryption Protocol
 
 1. Client calls `/rpc/handshake` with its public key

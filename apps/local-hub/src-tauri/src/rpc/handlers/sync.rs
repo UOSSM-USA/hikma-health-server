@@ -8,9 +8,50 @@ use serde::Deserialize;
 
 use super::HandlerResult;
 
-/// Tables that clients are NOT allowed to modify via sync push.
-/// These are server-authoritative: user accounts and form definitions.
-const SYNC_PUSH_IGNORED_TABLES: &[&str] = &["users", "registration_forms", "event_forms"];
+/// Tables a mobile client IS allowed to write via sync push (deny-by-default).
+///
+/// This is an **allowlist**: any table not listed here is silently ignored on
+/// push, because everything else is server-authoritative (reference data, user
+/// accounts, form definitions, clinic config). Mobile may only author its own
+/// patient-care records.
+///
+/// Source of truth — keep in sync with the server's `ENTITIES_TO_PULL_FROM_MOBILE`
+/// (`apps/server/src/models/sync.ts`), which defines the exact set the cloud
+/// accepts from mobile. Enforcing it here too means one mobile device can't
+/// poison reference data (clinics, drug_catalogue, …) for every other LAN peer
+/// in the window before cloud sync would have rejected it.
+const SYNC_PUSH_ALLOWED_TABLES: &[&str] = &[
+    "patients",
+    "patient_additional_attributes",
+    "visits",
+    "events",
+    "appointments",
+    "prescriptions",
+    "patient_vitals",
+    "patient_problems",
+    "dispensing_records",
+    "prescription_items",
+];
+
+/// Columns stripped from the pull changeset, per table.
+///
+/// These are secrets the hub must hold locally (e.g. `users.hashed_password`,
+/// needed by `handle_login` to authenticate devices offline) but must NEVER be
+/// shipped to mobile clients. Redacting here only affects the mobile-facing pull
+/// — the hub-local `users` row and offline login are untouched. Mirrors the
+/// authoritative server, which never sends `hashed_password` to clients
+/// (`apps/server/src/models/user.ts` `secureMask`). Mobile's `users` schema has
+/// no `hashed_password` column, so dropping it is invisible to mobile.
+const SYNC_PULL_REDACTED_COLUMNS: &[(&str, &[&str])] = &[("users", &["hashed_password"])];
+
+/// Returns the columns to strip from `table`'s pull changeset (empty if none).
+fn redacted_pull_columns(table: &str) -> &'static [&'static str] {
+    SYNC_PULL_REDACTED_COLUMNS
+        .iter()
+        .find(|(t, _)| *t == table)
+        .map(|(_, cols)| *cols)
+        .unwrap_or(&[])
+}
 
 // ============================================================================
 // Payloads
@@ -46,7 +87,13 @@ pub fn handle_sync_pull(params: &SyncPullParams, conn: &Connection) -> HandlerRe
     let mut changes = crate::SyncDatabaseChangeSet::new();
 
     for &table_name in crate::cloud_sync::SYNCABLE_TABLES {
-        let columns = crate::sync_utils::get_data_columns(conn, table_name)?;
+        let mut columns = crate::sync_utils::get_data_columns(conn, table_name)?;
+        // Strip secrets that must never leave the hub to mobile clients
+        // (e.g. users.hashed_password). See SYNC_PULL_REDACTED_COLUMNS.
+        let redacted = redacted_pull_columns(table_name);
+        if !redacted.is_empty() {
+            columns.retain(|c| !redacted.contains(&c.as_str()));
+        }
         if columns.is_empty() {
             continue;
         }
@@ -105,18 +152,22 @@ pub fn handle_sync_pull(params: &SyncPullParams, conn: &Connection) -> HandlerRe
 /// Applies client changes (upserts + soft-deletes) across all tables.
 ///
 /// Returns `{}` on success — WatermelonDB ignores the push response body.
-/// Skips writes to server-authoritative tables (see `SYNC_PUSH_IGNORED_TABLES`).
+/// Only writes to client-authored tables (see `SYNC_PUSH_ALLOWED_TABLES`);
+/// everything else (server-authoritative reference/config/account data) is
+/// silently ignored.
 pub fn handle_sync_push(payload: &SyncPushPayload, conn: &Connection) -> HandlerResult {
     let now = crate::timestamp();
 
-    let ignored: std::collections::HashSet<&str> =
-        SYNC_PUSH_IGNORED_TABLES.iter().copied().collect();
+    let allowed: std::collections::HashSet<&str> =
+        SYNC_PUSH_ALLOWED_TABLES.iter().copied().collect();
 
     let mut total_upserts = 0usize;
     let mut total_deletes = 0usize;
 
     for (table, changeset) in payload.changes.iter() {
-        if ignored.contains(table.as_str()) {
+        if !allowed.contains(table.as_str()) {
+            // Server-authoritative (or unknown) table — clients may not write it.
+            println!("[sync_push] ignoring non-client-writable table '{table}'");
             continue;
         }
 
@@ -194,6 +245,55 @@ mod tests {
     }
 
     #[test]
+    fn pull_redacts_hashed_password_from_users() {
+        let conn = setup_test_db();
+        // One user created after the cursor, one updated after the cursor —
+        // covers both the `created` and `updated` branches of the pull.
+        conn.execute(
+            "INSERT INTO users (id, clinic_id, name, role, email, hashed_password, \
+             created_at, updated_at, is_deleted, \
+             local_server_created_at, local_server_last_modified_at) \
+             VALUES ('u-new', 'c1', 'Dr New', 'provider', 'new@example.com', \
+             '$2b$12$secretbcrypthashvalueAAAAAAAAAAAAAAAAAAAAAAAAAAAA', \
+             1000, 2000, 0, 5000, 5000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO users (id, clinic_id, name, role, email, hashed_password, \
+             created_at, updated_at, is_deleted, \
+             local_server_created_at, local_server_last_modified_at) \
+             VALUES ('u-upd', 'c1', 'Dr Upd', 'provider', 'upd@example.com', \
+             '$2b$12$anothersecretbcrypthashBBBBBBBBBBBBBBBBBBBBBBBBBBBB', \
+             1000, 2000, 0, 1000, 5000)",
+            [],
+        )
+        .unwrap();
+
+        let params = SyncPullParams {
+            last_pulled_at: 3000,
+        };
+        let result = handle_sync_pull(&params, &conn).unwrap();
+
+        let created = result["changes"]["users"]["created"].as_array().unwrap();
+        let updated = result["changes"]["users"]["updated"].as_array().unwrap();
+        assert_eq!(created.len(), 1, "expected one created user");
+        assert_eq!(updated.len(), 1, "expected one updated user");
+
+        for (label, user) in [("created", &created[0]), ("updated", &updated[0])] {
+            // Secret must never reach the client...
+            assert!(
+                user.get("hashed_password").is_none(),
+                "hashed_password leaked to client in {label} record: {user}"
+            );
+            // ...but non-secret fields the mobile app needs are preserved.
+            assert!(user.get("email").is_some(), "email missing in {label} record");
+            assert!(user.get("name").is_some(), "name missing in {label} record");
+            assert!(user.get("role").is_some(), "role missing in {label} record");
+        }
+    }
+
+    #[test]
     fn pull_returns_updated_records_correctly() {
         let conn = setup_test_db();
         // created_at=1000 (before timestamp), but modified_at=5000 (after)
@@ -265,20 +365,19 @@ mod tests {
 
     #[test]
     fn push_upserts_records() {
+        // Positive case: a client-authored (allowlisted) table writes through.
         let conn = setup_test_db();
         let mut data = HashMap::new();
-        data.insert("name".to_string(), serde_json::json!("Pushed Clinic"));
+        data.insert("patient_id".to_string(), serde_json::json!("p1"));
+        data.insert("metadata".to_string(), serde_json::json!("{\"a\":1}"));
         data.insert("is_deleted".to_string(), serde_json::json!(0));
-        data.insert("is_archived".to_string(), serde_json::json!(0));
-        data.insert("attributes".to_string(), serde_json::json!("[]"));
-        data.insert("metadata".to_string(), serde_json::json!("{}"));
 
         let mut changes = crate::SyncDatabaseChangeSet::new();
         changes.add_table_changes(
-            "clinics",
+            "visits",
             crate::SyncTableChangeSet {
                 created: vec![crate::RawRecord {
-                    id: "push-c1".to_string(),
+                    id: "push-v1".to_string(),
                     created_at: 1000,
                     updated_at: 2000,
                     data,
@@ -295,63 +394,83 @@ mod tests {
         let result = handle_sync_push(&payload, &conn).unwrap();
         assert_eq!(result, serde_json::json!({}));
 
-        let name: String = conn
-            .query_row("SELECT name FROM clinics WHERE id = 'push-c1'", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(name, "Pushed Clinic");
-    }
-
-    #[test]
-    fn push_ignores_protected_tables() {
-        let conn = setup_test_db();
-        let mut changes = crate::SyncDatabaseChangeSet::new();
-        changes.add_table_changes(
-            "users",
-            crate::SyncTableChangeSet {
-                created: vec![crate::RawRecord {
-                    id: "hacker".to_string(),
-                    created_at: 1000,
-                    updated_at: 2000,
-                    data: HashMap::new(),
-                }],
-                updated: vec![],
-                deleted: vec![],
-            },
-        );
-
-        let payload = SyncPushPayload {
-            last_pulled_at: 0,
-            changes,
-        };
-        handle_sync_push(&payload, &conn).unwrap();
-
-        let count: i64 = conn
+        let patient_id: String = conn
             .query_row(
-                "SELECT COUNT(*) FROM users WHERE id = 'hacker'",
+                "SELECT patient_id FROM visits WHERE id = 'push-v1'",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 0);
+        assert_eq!(patient_id, "p1");
+    }
+
+    #[test]
+    fn push_ignores_protected_tables() {
+        // Every server-authoritative table mobile might push must be dropped.
+        // `clinic_departments` is the one the old narrow denylist let through.
+        const PROTECTED: &[&str] = &[
+            "users",
+            "clinics",
+            "drug_catalogue",
+            "clinic_inventory",
+            "clinic_departments",
+            "registration_forms",
+            "event_forms",
+        ];
+
+        for &table in PROTECTED {
+            assert!(
+                !SYNC_PUSH_ALLOWED_TABLES.contains(&table),
+                "{table} must not be in the push allowlist"
+            );
+
+            let conn = setup_test_db();
+            let mut changes = crate::SyncDatabaseChangeSet::new();
+            changes.add_table_changes(
+                table,
+                crate::SyncTableChangeSet {
+                    created: vec![crate::RawRecord {
+                        id: "should-not-exist".to_string(),
+                        created_at: 1000,
+                        updated_at: 2000,
+                        data: HashMap::new(),
+                    }],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+            );
+
+            let payload = SyncPushPayload {
+                last_pulled_at: 0,
+                changes,
+            };
+            handle_sync_push(&payload, &conn).unwrap();
+
+            let count: i64 = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM \"{table}\" WHERE id = 'should-not-exist'"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 0, "{table} push was not ignored");
+        }
     }
 
     #[test]
     fn push_soft_deletes_records() {
         let conn = setup_test_db();
         conn.execute(
-            "INSERT INTO clinics (id, name, created_at, updated_at, is_deleted, is_archived, \
-             attributes, metadata, \
+            "INSERT INTO visits (id, patient_id, metadata, created_at, updated_at, is_deleted, \
              local_server_created_at, local_server_last_modified_at) \
-             VALUES ('del-me', 'To Delete', 1000, 2000, 0, 0, '[]', '{}', 1000, 1000)",
+             VALUES ('del-me', 'p1', '{}', 1000, 2000, 0, 1000, 1000)",
             [],
         )
         .unwrap();
 
         let mut changes = crate::SyncDatabaseChangeSet::new();
         changes.add_table_changes(
-            "clinics",
+            "visits",
             crate::SyncTableChangeSet {
                 created: vec![],
                 updated: vec![],
@@ -367,7 +486,7 @@ mod tests {
 
         let deleted_at: Option<i64> = conn
             .query_row(
-                "SELECT local_server_deleted_at FROM clinics WHERE id = 'del-me'",
+                "SELECT local_server_deleted_at FROM visits WHERE id = 'del-me'",
                 [],
                 |row| row.get(0),
             )
@@ -514,7 +633,7 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 
-        /// Push N clinic records then pull — all should appear as created.
+        /// Push N client-authored records then pull — all should appear as created.
         #[test]
         fn push_then_pull_roundtrip(n_records in 1usize..=5) {
             let conn = setup_test_db();
@@ -523,11 +642,9 @@ mod tests {
             let records: Vec<crate::RawRecord> = (0..n_records)
                 .map(|i| {
                     let mut data = HashMap::new();
-                    data.insert("name".to_string(), serde_json::json!(format!("Clinic {i}")));
-                    data.insert("is_deleted".to_string(), serde_json::json!(0));
-                    data.insert("is_archived".to_string(), serde_json::json!(0));
-                    data.insert("attributes".to_string(), serde_json::json!("[]"));
+                    data.insert("patient_id".to_string(), serde_json::json!(format!("p{i}")));
                     data.insert("metadata".to_string(), serde_json::json!("{}"));
+                    data.insert("is_deleted".to_string(), serde_json::json!(0));
                     crate::RawRecord {
                         id: format!("roundtrip-{i}"),
                         created_at: 1000,
@@ -539,7 +656,7 @@ mod tests {
 
             let mut changes = crate::SyncDatabaseChangeSet::new();
             changes.add_table_changes(
-                "clinics",
+                "visits",
                 crate::SyncTableChangeSet {
                     created: records,
                     updated: vec![],
@@ -558,17 +675,31 @@ mod tests {
                 last_pulled_at: before_push - 1,
             };
             let result = handle_sync_pull(&pull_params, &conn).unwrap();
-            let created = result["changes"]["clinics"]["created"]
+            let created = result["changes"]["visits"]["created"]
                 .as_array()
                 .unwrap();
             prop_assert_eq!(created.len(), n_records);
         }
 
         /// Server-authoritative tables are never written by sync push.
+        /// Includes `clinic_departments`, `drug_catalogue`, `clinic_inventory`,
+        /// `clinics` — tables mobile pushes but must not be allowed to author
+        /// (the gap the old narrow denylist left open).
         #[test]
-        fn ignored_tables_never_written(table_idx in 0usize..3) {
-            let ignored = SYNC_PUSH_IGNORED_TABLES;
-            let table = ignored[table_idx];
+        fn ignored_tables_never_written(table_idx in 0usize..7) {
+            // Server-authoritative tables that exist in the test DB schema.
+            const SERVER_AUTHORITATIVE: &[&str] = &[
+                "users",
+                "clinics",
+                "drug_catalogue",
+                "clinic_inventory",
+                "clinic_departments",
+                "registration_forms",
+                "event_forms",
+            ];
+            let table = SERVER_AUTHORITATIVE[table_idx];
+            // None of these may be in the push allowlist.
+            prop_assert!(!SYNC_PUSH_ALLOWED_TABLES.contains(&table));
             let conn = setup_test_db();
 
             let mut changes = crate::SyncDatabaseChangeSet::new();

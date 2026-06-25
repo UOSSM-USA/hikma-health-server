@@ -139,20 +139,69 @@ jobs:
       - name: Run local-hub backend tests
         run: pnpm exec just test-local-hub-backend
 
+  # Linux-only bundle build (no upload) so packaging breakage surfaces on PRs
+  # instead of at release time. Bundler paths are largely shared across
+  # platforms; mac/win are covered by the release matrix.
+  build-tauri:
+    needs: changes
+    if: needs.changes.outputs.tauri == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libglib2.0-dev \
+            libgtk-3-dev
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/local-hub/src-tauri
+
+      # Disable updater-artifact signing: createUpdaterArtifacts=true would
+      # otherwise require TAURI_SIGNING_PRIVATE_KEY, which this check doesn't
+      # hold. The release workflow produces the signed bundle.
+      - name: Build local-hub bundle
+        run: pnpm --filter hh-local-hub exec tauri build -c '{"bundle":{"createUpdaterArtifacts":false}}'
+
   ff-v3:
     # Only on push (not PR). Fork PRs would have a read-only token anyway, but
     # this is the explicit, defense-in-depth gate.
-    needs: [test, test-tauri, vendor-check]
-    # `test-tauri` skips when no src-tauri/** changes — treat skip as green.
-    # `always()` is required so this job runs even when `test-tauri` is skipped
-    # (otherwise GitHub propagates the skip to dependents).
+    needs: [test, test-tauri, build-tauri, vendor-check]
+    # `test-tauri` / `build-tauri` skip when no src-tauri/** changes — treat skip
+    # as green. `always()` is required so this job runs even when those are
+    # skipped (otherwise GitHub propagates the skip to dependents).
     if: |
       always() &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/next' &&
       needs.test.result == 'success' &&
       needs.vendor-check.result == 'success' &&
-      (needs.test-tauri.result == 'success' || needs.test-tauri.result == 'skipped')
+      (needs.test-tauri.result == 'success' || needs.test-tauri.result == 'skipped') &&
+      (needs.build-tauri.result == 'success' || needs.build-tauri.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write

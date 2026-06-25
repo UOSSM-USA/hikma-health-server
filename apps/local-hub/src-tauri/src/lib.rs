@@ -5,7 +5,7 @@ use poem::{
     get, handler,
     listener::TcpListener,
     post,
-    web::{Json, Path, Query},
+    web::{Json, Path},
     IntoResponse, Result, Route, Server,
 };
 use rusqlite::Connection;
@@ -18,7 +18,6 @@ use std::{collections::HashMap, net::IpAddr};
 #[path = "util/db.rs"]
 mod db;
 
-mod api;
 mod cloud_sync;
 pub mod crypto;
 mod migrations;
@@ -232,48 +231,6 @@ impl SyncTableChangeSet {
     }
 }
 
-#[handler]
-fn get_sync(Query(params): Query<HashMap<String, String>>) -> Result<impl IntoResponse> {
-    let last_pulled_at = params
-        .get("lastPulledAt")
-        .and_then(|ts| ts.parse::<i64>().ok())
-        .unwrap_or(0);
-
-    println!("[REST] sync_pull: lastPulledAt={last_pulled_at}");
-
-    let conn = open_encrypted_connection().map_err(InternalServerError)?;
-
-    let pull_params = rpc::handlers::sync::SyncPullParams { last_pulled_at };
-    let result = rpc::handlers::sync::handle_sync_pull(&pull_params, &conn)
-        .map_err(|e| InternalServerError(DbError(e.to_string())))?;
-
-    Ok(Json(result))
-}
-
-#[handler]
-fn post_sync(
-    Json(body): Json<SyncDatabaseChangeSet>,
-    Query(params): Query<HashMap<String, String>>,
-) -> Result<impl IntoResponse> {
-    let last_pulled_at = params
-        .get("lastPulledAt")
-        .and_then(|ts| ts.parse::<i64>().ok())
-        .unwrap_or(0);
-
-    println!("[REST] sync_push: lastPulledAt={last_pulled_at}");
-
-    let conn = open_encrypted_connection().map_err(InternalServerError)?;
-
-    let push_payload = rpc::handlers::sync::SyncPushPayload {
-        last_pulled_at,
-        changes: body,
-    };
-    let result = rpc::handlers::sync::handle_sync_push(&push_payload, &conn)
-        .map_err(|e| InternalServerError(DbError(e.to_string())))?;
-
-    Ok(Json(result))
-}
-
 /// Upserts a record received from a client via REST sync.
 ///
 /// Uses `now` for both `local_server_created_at` (on INSERT) and
@@ -418,72 +375,6 @@ pub(crate) fn timestamp() -> i64 {
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or(0)
 }
-
-// #[tauri::command]
-// async fn generate_self_signed_cert<'a>(
-//     app_handle: tauri::AppHandle,
-// ) -> Result<String, String> {
-//     // Get app directory for certificate storage
-//     let app_dir = app_handle.path_resolver()
-//         .app_dir()
-//         .ok_or_else(|| "Failed to get app directory".to_string())?;
-
-//     // Create certs directory if it doesn't exist
-//     let cert_dir = app_dir.join("certs");
-//     if !cert_dir.exists() {
-//         tokio::fs::create_dir_all(&cert_dir)
-//             .await
-//             .map_err(|e| format!("Failed to create certs directory: {}", e))?;
-//     }
-
-//     let cert_path = cert_dir.join("server.crt");
-//     let key_path = cert_dir.join("server.key");
-
-//     // Check if certificates already exist
-//     if cert_path.exists() && key_path.exists() {
-//         return Ok("Certificates already exist".to_string());
-//     }
-
-//     // Generate self-signed certificate using openssl command
-//     // This is for development/testing purposes only
-//     let output = std::process::Command::new("openssl")
-//         .args([
-//             "req", "-x509", "-newkey", "rsa:4096",
-//             "-keyout", key_path.to_str().unwrap(),
-//             "-out", cert_path.to_str().unwrap(),
-//             "-days", "365", "-nodes", "-subj", "/CN=localhost"
-//         ])
-//         .output()
-//         .map_err(|e| format!("Failed to execute openssl command: {}", e))?;
-
-//     if !output.status.success() {
-//         let error = String::from_utf8_lossy(&output.stderr);
-//         return Err(format!("OpenSSL command failed: {}", error));
-//     }
-
-//     Ok(format!(
-//         "Generated self-signed certificates at:\n- Certificate: {:?}\n- Key: {:?}",
-//         cert_path, key_path
-//     ))
-// }
-
-// Function to load SSL certificates for HTTPS
-// async fn load_certificates(cert_path: &str, key_path: &str) -> std::result::Result<TlsConfig, String> {
-//     // Load TLS certificate and key files
-//     let cert_file = tokio::fs::read(cert_path)
-//         .await
-//         .map_err(|e| format!("Failed to read certificate file: {}", e))?;
-
-//     let key_file = tokio::fs::read(key_path)
-//         .await
-//         .map_err(|e| format!("Failed to read key file: {}", e))?;
-
-//     // Create TLS configuration
-//     TlsConfig::new()
-//         .cert(cert_file)
-//         .key(key_file)
-//         .map_err(|e| format!("Failed to create TLS config: {}", e))
-// }
 
 // ============================================================================
 // RPC Handlers (Poem)
@@ -694,9 +585,12 @@ fn handle_query(qry: &rpc::RpcQueryPayload) -> serde_json::Value {
 /// Port the local hub binds for mobile-app-facing RPC + sync traffic.
 const HUB_BIND_ADDRESS: &str = "0.0.0.0:4001";
 
-/// Plain HTTP for now — self-signed TLS broke iOS/Android trust stores.
-/// End-to-end encryption is provided by the RPC envelope (ECDH + AES-GCM),
-/// not by transport-layer TLS, so this is acceptable on a trusted LAN.
+/// Plain HTTP on a trusted LAN — **deliberately no transport-layer TLS**. The hub has no
+/// CA-issued cert, and self-signed certs are rejected by iOS App Transport Security and the
+/// Android system trust store, which breaks the mobile clients. PHI in transit is instead
+/// protected at the application layer: every data endpoint is `/rpc/command` / `/rpc/query`
+/// with an ECDH + AES-256-GCM encrypted payload (there is no plaintext data endpoint).
+/// Full rationale + HIPAA framing: `README.md` and `src/rpc/procedures-readme.md` — keep in sync.
 async fn start_server(
     ip_address: IpAddr,
     shutdown_token: Arc<tokio::sync::Notify>,
@@ -704,8 +598,6 @@ async fn start_server(
     let app = Route::new()
         .at("/", get(index_route))
         .at("/hello/:name", get(hello))
-        .at("/api/v2/sync", get(get_sync).post(post_sync))
-        .at("/api/login", post(api::login))
         .at("/rpc/heartbeat", get(rpc_heartbeat))
         .at("/rpc/handshake", post(rpc_handshake))
         .at("/rpc/command", post(rpc_command))
