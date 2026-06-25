@@ -75,11 +75,11 @@ export const navData = {
           url: "/app/patients",
         },
         {
-          title: "Register New Patient",
+          title: "Register Patient",
           url: "/app/patients/register",
         },
         {
-          title: "Registration Form",
+          title: "Customize Registration Form",
           url: "/app/patients/customize-registration-form",
         },
       ],
