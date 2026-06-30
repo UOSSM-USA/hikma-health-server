@@ -17,11 +17,11 @@ jest.mock("../../app/utils/storage", () => ({
   },
 }))
 
-describe("Sync.getChangesAndTimestamp", () => {
+describe("Sync.Server.getChangesAndTimestamp", () => {
   it("returns Some when result has both changes and timestamp", () => {
     const changes = { patients: { created: [], updated: [], deleted: [] } }
     const timestamp = 1700000000
-    const result = Sync.getChangesAndTimestamp({ changes, timestamp } as any)
+    const result = Sync.Server.getChangesAndTimestamp({ changes, timestamp } as any)
     expect(Option.isSome(result)).toBe(true)
     if (Option.isSome(result)) {
       expect(result.value.changes).toBe(changes)
@@ -30,7 +30,7 @@ describe("Sync.getChangesAndTimestamp", () => {
   })
 
   it("returns Some when changes is empty and timestamp is 0", () => {
-    const result = Sync.getChangesAndTimestamp({ changes: {}, timestamp: 0 } as any)
+    const result = Sync.Server.getChangesAndTimestamp({ changes: {}, timestamp: 0 } as any)
     expect(Option.isSome(result)).toBe(true)
     if (Option.isSome(result)) {
       expect(result.value.timestamp).toBe(0)
@@ -38,27 +38,27 @@ describe("Sync.getChangesAndTimestamp", () => {
   })
 
   it("returns None when result has only timestamp but no changes", () => {
-    const result = Sync.getChangesAndTimestamp({ timestamp: 123 } as any)
+    const result = Sync.Server.getChangesAndTimestamp({ timestamp: 123 } as any)
     expect(Option.isNone(result)).toBe(true)
   })
 
   it("returns None when result has only changes but no timestamp", () => {
-    const result = Sync.getChangesAndTimestamp({ changes: {} } as any)
+    const result = Sync.Server.getChangesAndTimestamp({ changes: {} } as any)
     expect(Option.isNone(result)).toBe(true)
   })
 
   it("returns None for an empty object", () => {
-    const result = Sync.getChangesAndTimestamp({} as any)
+    const result = Sync.Server.getChangesAndTimestamp({} as any)
     expect(Option.isNone(result)).toBe(true)
   })
 
   it("returns None for a turbo mode result with syncJson", () => {
-    const result = Sync.getChangesAndTimestamp({ syncJson: '{"changes":{}}' } as any)
+    const result = Sync.Server.getChangesAndTimestamp({ syncJson: '{"changes":{}}' } as any)
     expect(Option.isNone(result)).toBe(true)
   })
 
   it("returns Some when result has changes, timestamp, and extra keys", () => {
-    const result = Sync.getChangesAndTimestamp({
+    const result = Sync.Server.getChangesAndTimestamp({
       changes: { patients: { created: [], updated: [], deleted: [] } },
       timestamp: 999,
       experimentalRejectedIds: [],
@@ -70,7 +70,7 @@ describe("Sync.getChangesAndTimestamp", () => {
   })
 
   it("returns Some with large timestamp values", () => {
-    const result = Sync.getChangesAndTimestamp({
+    const result = Sync.Server.getChangesAndTimestamp({
       changes: {},
       timestamp: Number.MAX_SAFE_INTEGER,
     } as any)
@@ -81,7 +81,7 @@ describe("Sync.getChangesAndTimestamp", () => {
   })
 
   it("returns Some with negative timestamp (unusual but valid)", () => {
-    const result = Sync.getChangesAndTimestamp({ changes: {}, timestamp: -1 } as any)
+    const result = Sync.Server.getChangesAndTimestamp({ changes: {}, timestamp: -1 } as any)
     expect(Option.isSome(result)).toBe(true)
     if (Option.isSome(result)) {
       expect(result.value.timestamp).toBe(-1)

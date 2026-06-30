@@ -1,16 +1,10 @@
 import { Model } from "@nozbe/watermelondb"
+import PeerAppModel from "@/models/Peer"
 import { field, text, date, readonly, json } from "@nozbe/watermelondb/decorators"
 
-export type PeerType = "sync_hub" | "cloud_server" | "mobile_app"
-export type PeerStatus = "active" | "revoked" | "untrusted"
-
-export type PeerMetadata = {
-  [key: string]: unknown
-}
-
-const sanitizeMetadata = (raw: unknown): PeerMetadata => {
+const sanitizeMetadata = (raw: unknown): PeerAppModel.PeerMetadata => {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as PeerMetadata
+    return raw as PeerAppModel.PeerMetadata
   }
   return {}
 }
@@ -32,11 +26,11 @@ export default class Peer extends Model {
   @text("public_key") publicKey!: string
 
   @field("last_synced_at") lastSyncedAt!: number | null
-  @text("peer_type") peerType!: PeerType
+  @text("peer_type") peerType!: PeerAppModel.PeerType
   @field("is_leader") isLeader!: boolean
-  @text("status") status!: PeerStatus
+  @text("status") status!: PeerAppModel.PeerStatus
   @text("protocol_version") protocolVersion!: string
-  @json("metadata", sanitizeMetadata) metadata!: PeerMetadata
+  @json("metadata", sanitizeMetadata) metadata!: PeerAppModel.PeerMetadata
 
   @readonly @date("created_at") createdAt!: Date
   @readonly @date("updated_at") updatedAt!: Date

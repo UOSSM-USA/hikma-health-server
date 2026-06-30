@@ -346,7 +346,7 @@ ORDER BY updated_at DESC
 LIMIT page_size * page_number
 ```
 
-Search strings are sanitized with `extendedSanitizeLikeString()` which replaces non-alphanumeric chars (except Unicode letters/numbers) with underscores.
+Each search token is canonicalized with `normalizeForSearch()` (folds Arabic letter variants/diacritics, folds Latin accents, lowercases) and turned into an Arabic-aware `LIKE` pattern by `buildPrefilter()`. The prefilter emits only letters, digits, `%`, and `_`, so it is injection-safe without a separate sanitize step; ambiguous Arabic letters collapse to `_` and other Arabic letters are `%`-separated so stored diacritics still match. `searchRanked()` layers a second scoring/ranking pass on top for one-shot searches.
 
 ### 6.2 Advanced Search (Base Fields)
 

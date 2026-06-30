@@ -68,6 +68,7 @@ namespace PatientRegistrationForm {
     required: boolean
     baseField: boolean // whether or not this is part of the base inputs required of all registration forms
     visible: boolean // Whether or not it displays in the app
+    unique: boolean // whether or not the field is unique across patients
     isSearchField: boolean // Whether or not this field can be sea
     deleted: boolean
   }
@@ -101,6 +102,9 @@ namespace PatientRegistrationForm {
 
     /** Can be set by the administrator: determines whether or not the field is displayed during patient registration */
     visible: boolean
+
+    // Can be set by the admin to determine whether or not a field is unique across patients
+    unique: boolean
 
     /** Whether or not a field is marked as deleted - this is a soft-delete */
     deleted: boolean
@@ -323,9 +327,7 @@ namespace PatientRegistrationForm {
    * `previouslyHidden` and the new computation, so `newlyHidden` is
    * empty and the effect terminates.
    */
-  export function computeNewlyHidden(
-    input: ComputeNewlyHiddenInput,
-  ): ComputeNewlyHiddenResult {
+  export function computeNewlyHidden(input: ComputeNewlyHiddenInput): ComputeNewlyHiddenResult {
     const { fields, evaluation, previouslyHidden } = input
     const nowHidden = new Set<string>()
     const newlyHidden: RegistrationFormField[] = []

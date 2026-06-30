@@ -32,12 +32,10 @@ import User from "@/models/User"
 import type { AppStackScreenProps } from "@/navigators/AppNavigator"
 import type { HubSession } from "@/rpc/handshake"
 import { createEncryptedTransport } from "@/rpc/transport"
-import { appStateStore } from "@/store/appState"
 import { colors } from "@/theme/colors"
 
 import {
   peerToServerDisplay,
-  markSyncTarget,
   getServerDisplayName,
   type DisplayServerType,
   type ServerDisplay,
@@ -93,17 +91,15 @@ async function reauthWithHub(
   return { ok: true }
 }
 
-// ── Hook ──────────────────────────────────────────────────────────────
-
-function usePeerServers(activeSyncPeerId: string | null) {
+function usePeerServers() {
   const [servers, setServers] = useState<ServerDisplay[]>([])
 
   useEffect(() => {
     const { unsubscribe } = Peer.DB.subscribe((peers) => {
-      setServers(markSyncTarget(peers.map(peerToServerDisplay), activeSyncPeerId))
+      setServers(peers.map(peerToServerDisplay))
     })
     return unsubscribe
-  }, [activeSyncPeerId])
+  }, [])
 
   return { servers }
 }
@@ -161,14 +157,13 @@ export const SyncSettingsScreen: FC<SyncSettingsScreenProps> = () => {
   const [scanned, setScanned] = useState(false)
   const [processingServer, setProcessingServer] = useState(false)
 
-  const activeSyncPeerId = useSelector(appStateStore, (s) => s.context.activeSyncPeerId)
-  const { servers } = usePeerServers(activeSyncPeerId)
+  const { servers } = usePeerServers()
   const { registerFromQR } = usePeerRegistration()
   const isFocused = useIsFocused()
   const heartbeats = useHeartbeats(servers, isFocused)
 
   const handleSetActivePeer = (peerId: string) => {
-    appStateStore.send({ type: "SET_ACTIVE_SYNC_PEER", peerId })
+    Peer.DB.updateStatus(peerId, "active")
   }
 
   useEffect(() => {

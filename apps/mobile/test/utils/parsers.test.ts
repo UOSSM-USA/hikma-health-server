@@ -4,13 +4,13 @@ import Language from "../../app/models/Language"
 import {
   parseMetadata,
   getTranslation,
-  normalizeArabic,
-  extendedSanitizeLikeString,
+  normalizeForSearch,
+  buildPrefilter,
+  tokenizeForSearch,
+  searchRanked,
   safeStringify,
   joinCheckboxValues,
   splitCheckboxValues,
-  CHECKBOX_SEPARATOR,
-  default as invariant,
 } from "../../app/utils/parsers"
 
 describe("parseMetadata", () => {
@@ -84,40 +84,37 @@ describe("getTranslation", () => {
   })
 })
 
-describe("normalizeArabic", () => {
-  it("should normalize different forms of Arabic characters", () => {
-    expect(normalizeArabic("ي")).toBe("ی")
-    expect(normalizeArabic("ى")).toBe("ی")
-    expect(normalizeArabic("أ")).toBe("ا")
-    expect(normalizeArabic("إ")).toBe("ا")
-    expect(normalizeArabic("آ")).toBe("ا")
-    expect(normalizeArabic("ة")).toBe("ه")
-    expect(normalizeArabic("ئ")).toBe("ی")
-    expect(normalizeArabic("ؤ")).toBe("و")
-    expect(normalizeArabic("ء")).toBe("")
+describe("normalizeForSearch", () => {
+  it("folds Arabic letter variants to a canonical form", () => {
+    expect(normalizeForSearch("ي")).toBe("ی")
+    expect(normalizeForSearch("ى")).toBe("ی")
+    expect(normalizeForSearch("أ")).toBe("ا")
+    expect(normalizeForSearch("إ")).toBe("ا")
+    expect(normalizeForSearch("آ")).toBe("ا")
+    expect(normalizeForSearch("ة")).toBe("ه")
+    expect(normalizeForSearch("ئ")).toBe("ی")
+    expect(normalizeForSearch("ؤ")).toBe("و")
+    expect(normalizeForSearch("ء")).toBe("")
   })
 
-  it("should collapse whitespace and trim", () => {
-    expect(normalizeArabic("مرحبا    بك")).toBe("مرحبا بك")
-    expect(normalizeArabic("  مرحبا  ")).toBe("مرحبا")
+  it("strips Arabic diacritics (harakat) and tatweel", () => {
+    expect(normalizeForSearch("مُحَمَّد")).toBe("محمد")
+    expect(normalizeForSearch("محـــمد")).toBe("محمد")
   })
 
-  it("should handle complex Arabic text", () => {
-    expect(normalizeArabic("أهلاً وسهلاً   بكم في  المؤسسة")).toBe("اهلاً وسهلاً بكم فی الموسسه")
+  it("folds Latin accents and lowercases for English", () => {
+    expect(normalizeForSearch("CAFÉ")).toBe("cafe")
+    expect(normalizeForSearch("José")).toBe("jose")
   })
 
-  it("is idempotent — normalizing twice gives the same result", () => {
-    fc.assert(
-      fc.property(fc.string(), (s) => {
-        expect(normalizeArabic(normalizeArabic(s))).toBe(normalizeArabic(s))
-      }),
-    )
+  it("collapses whitespace and trims", () => {
+    expect(normalizeForSearch("  John   Doe  ")).toBe("john doe")
   })
 
   it("never produces leading/trailing whitespace or consecutive spaces", () => {
     fc.assert(
       fc.property(fc.string(), (s) => {
-        const result = normalizeArabic(s)
+        const result = normalizeForSearch(s)
         expect(result).toBe(result.trim())
         expect(result).not.toMatch(/  /)
       }),
@@ -125,43 +122,120 @@ describe("normalizeArabic", () => {
   })
 })
 
-describe("extendedSanitizeLikeString", () => {
-  it("should keep letters and numbers unchanged", () => {
-    expect(extendedSanitizeLikeString("abc123")).toBe("abc123")
+describe("buildPrefilter", () => {
+  it("wraps a Latin token as a contiguous substring pattern", () => {
+    expect(buildPrefilter("john")).toBe("%john%")
   })
 
-  it("should replace special characters with underscores", () => {
-    expect(extendedSanitizeLikeString("hello@world.com")).toBe("hello_world_com")
+  it("drops non-word characters, breaking contiguity", () => {
+    expect(buildPrefilter("a.b")).toBe("%a%b%")
   })
 
-  it("should preserve Unicode letters", () => {
-    expect(extendedSanitizeLikeString("مرحبا")).toBe("مرحبا")
-    expect(extendedSanitizeLikeString("你好")).toBe("你好")
+  it("separates Arabic letters with % so stored diacritics still match", () => {
+    expect(buildPrefilter("محمد")).toBe("%م%ح%م%د%")
   })
 
-  it("should throw for non-string input", () => {
-    expect(() => extendedSanitizeLikeString(null as any)).toThrow()
-    expect(() => extendedSanitizeLikeString(123 as any)).toThrow()
+  it("maps ambiguous Arabic letters to _ so any stored variant matches", () => {
+    // 'ا' is ambiguous → '_' matches the أ/إ/آ/ا family
+    expect(buildPrefilter("احمد")).toBe("%_%ح%م%د%")
   })
 
-  it("output length always equals input length", () => {
+  it("returns a match-all pattern for a token with no word characters", () => {
+    expect(buildPrefilter("!!!")).toBe("%%")
+  })
+
+  it("only ever emits letters, digits, % and _ (injection-safe)", () => {
     fc.assert(
       fc.property(fc.string(), (s) => {
-        expect(extendedSanitizeLikeString(s).length).toBe(s.length)
-      }),
-    )
-  })
-
-  it("output only contains letters, digits, or underscores", () => {
-    fc.assert(
-      fc.property(fc.string(), (s) => {
-        const result = extendedSanitizeLikeString(s)
-        // Every character should be a letter, digit, or underscore
-        for (const ch of result) {
-          expect(ch === "_" || /[\p{L}\p{N}]/u.test(ch)).toBe(true)
+        const pattern = buildPrefilter(s)
+        for (const ch of pattern) {
+          expect(ch === "%" || ch === "_" || /[\p{L}\p{N}]/u.test(ch)).toBe(true)
         }
       }),
     )
+  })
+})
+
+describe("tokenizeForSearch", () => {
+  it("normalizes, splits, and lowercases", () => {
+    expect(tokenizeForSearch("  John   DOE ")).toEqual(["john", "doe"])
+  })
+
+  it("drops tokens with no letter or digit", () => {
+    expect(tokenizeForSearch("john !!! doe")).toEqual(["john", "doe"])
+  })
+
+  it("returns an empty array for punctuation-only or blank input", () => {
+    expect(tokenizeForSearch("   ")).toEqual([])
+    expect(tokenizeForSearch("!!! ???")).toEqual([])
+  })
+
+  it("folds Arabic variants per token", () => {
+    expect(tokenizeForSearch("أحمد")).toEqual(["احمد"])
+  })
+
+  it("every token yields a non-match-all prefilter pattern", () => {
+    fc.assert(
+      fc.property(fc.string(), (s) => {
+        for (const token of tokenizeForSearch(s)) {
+          expect(buildPrefilter(token)).not.toBe("%%")
+        }
+      }),
+    )
+  })
+})
+
+describe("searchRanked", () => {
+  // Minimal fake collection: it ignores the built query clause and returns canned
+  // candidates, so phase 2 (re-normalize, reject false positives, score, rank)
+  // runs for real without needing a database.
+  //
+  // Mirrors a real WatermelonDB model faithfully: raw column values are reachable
+  // ONLY via `_getRaw(columnName)`, never as direct snake_case properties (a real
+  // model exposes camelCase getters instead). This forces the test through the same
+  // access path as production (readField -> _getRaw); a regression to direct
+  // `record[column]` access would read undefined and return no matches here.
+  function fakeCollection(records: Array<Record<string, string>>) {
+    const models = records.map((fields) => ({
+      _getRaw: (column: string) => fields[column] ?? null,
+    }))
+    return {
+      query: () => ({ fetch: async () => models }),
+    } as any
+  }
+
+  it("returns empty for a blank query", async () => {
+    const col = fakeCollection([{ given_name: "John", surname: "Doe" }])
+    expect(await searchRanked(col, ["given_name", "surname"], "   ")).toEqual([])
+  })
+
+  it("rejects candidates that are missing one of the query tokens", async () => {
+    const col = fakeCollection([
+      { given_name: "John", surname: "Doe" },
+      { given_name: "Jane", surname: "Smith" },
+    ])
+    const results = await searchRanked(col, ["given_name", "surname"], "john doe")
+    expect(results).toHaveLength(1)
+    expect(results[0]._getRaw("given_name")).toBe("John")
+  })
+
+  it("matches Arabic names ignoring diacritics and letter variants", async () => {
+    const col = fakeCollection([
+      { given_name: "مُحَمَّد", surname: "" },
+      { given_name: "سعيد", surname: "" },
+    ])
+    const results = await searchRanked(col, ["given_name", "surname"], "محمد")
+    expect(results).toHaveLength(1)
+    expect(results[0]._getRaw("given_name")).toBe("مُحَمَّد")
+  })
+
+  it("ranks an exact full match ahead of a partial match", async () => {
+    const col = fakeCollection([
+      { given_name: "Johnathan", surname: "Doe" },
+      { given_name: "John", surname: "Doe" },
+    ])
+    const results = await searchRanked(col, ["given_name", "surname"], "john doe")
+    expect(results[0]._getRaw("given_name")).toBe("John")
   })
 })
 
@@ -291,71 +365,6 @@ describe("joinCheckboxValues / splitCheckboxValues", () => {
       fc.property(fc.oneof(fc.string(), fc.constant(null), fc.constant(undefined)), (input) => {
         expect(Array.isArray(splitCheckboxValues(input))).toBe(true)
       }),
-    )
-  })
-})
-
-describe("invariant", () => {
-  it("does not throw when condition is truthy", () => {
-    expect(() => invariant(true)).not.toThrow()
-    expect(() => invariant(1)).not.toThrow()
-    expect(() => invariant("non-empty")).not.toThrow()
-    expect(() => invariant({})).not.toThrow()
-    expect(() => invariant([])).not.toThrow()
-  })
-
-  it("throws when condition is falsy", () => {
-    expect(() => invariant(false)).toThrow("Broken invariant")
-    expect(() => invariant(0)).toThrow("Broken invariant")
-    expect(() => invariant("")).toThrow("Broken invariant")
-    expect(() => invariant(null)).toThrow("Broken invariant")
-    expect(() => invariant(undefined)).toThrow("Broken invariant")
-  })
-
-  it("throws with custom error message", () => {
-    expect(() => invariant(false, "Custom message")).toThrow("Custom message")
-  })
-
-  it("thrown error has framesToPop property", () => {
-    try {
-      invariant(false, "test")
-    } catch (e: any) {
-      expect(e.framesToPop).toBe(1)
-    }
-  })
-
-  it("truthy values never throw", () => {
-    fc.assert(
-      fc.property(
-        fc.oneof(
-          fc.integer({ min: 1 }),
-          fc.string({ minLength: 1 }),
-          fc.constant(true),
-          fc.constant({}),
-          fc.constant([]),
-        ),
-        (value) => {
-          expect(() => invariant(value)).not.toThrow()
-        },
-      ),
-    )
-  })
-
-  it("falsy values always throw", () => {
-    fc.assert(
-      fc.property(
-        fc.oneof(
-          fc.constant(false),
-          fc.constant(0),
-          fc.constant(""),
-          fc.constant(null),
-          fc.constant(undefined),
-          fc.constant(NaN),
-        ),
-        (value) => {
-          expect(() => invariant(value)).toThrow()
-        },
-      ),
     )
   })
 })

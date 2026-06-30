@@ -178,6 +178,64 @@ namespace Patient {
   }
 
   /**
+  A value that is absent or whitespace-only is never treated as a uniqueness
+  collision — otherwise two patients both leaving an optional unique field
+  blank would appear to duplicate each other.
+  @param {unknown} value
+  @returns {boolean}
+  */
+  export function isBlankUniqueValue(value: unknown): boolean {
+    if (value === undefined || value === null) return true
+    if (typeof value === "string" && value.trim() === "") return true
+    return false
+  }
+
+  /**
+  Coerce an in-memory value to the representation stored in a base `patients`
+  column, so a uniqueness `Q.where` matches. All base columns are string
+  columns; date fields (e.g. date_of_birth) are stored as "yyyy-MM-dd",
+  mirroring `Patient.DB.register`.
+  @param {RegistrationFormField} field
+  @param {unknown} value
+  @returns {string}
+  */
+  export function coerceBaseUniqueQueryValue(field: RegistrationFormField, value: unknown): string {
+    if (field.fieldType === "date" && value instanceof Date) {
+      return format(value, "yyyy-MM-dd")
+    }
+    // Base columns are @text, which trims on write; trim here too so the query
+    // matches the stored value — otherwise a trailing space slips a duplicate
+    // past the uniqueness check.
+    return (typeof value === "string" ? value : String(value)).trim()
+  }
+
+  /**
+  Coerce an in-memory value to the representation stored in a
+  `patient_additional_attributes` value column, matching how
+  `Patient.DB.register` / `updateById` write each type.
+  @param {PatientValueColumn} valueColumn
+  @param {unknown} value
+  @returns {string | number | boolean}
+  */
+  export function coerceAttributeUniqueQueryValue(
+    valueColumn: PatientValueColumn,
+    value: unknown,
+  ): string | number | boolean {
+    switch (valueColumn) {
+      case "number_value":
+        return Number(value)
+      case "boolean_value":
+        return Boolean(value)
+      case "date_value":
+        return value instanceof Date ? value.getTime() : Number(value)
+      case "string_value":
+      default:
+        // string_value is @text (trims on write); trim to match the stored value.
+        return String(value || "").trim()
+    }
+  }
+
+  /**
   Create the default patient record object given a patient registration form
   @param {RegistrationFormModel} registrationForm
   @returns {PatientRecord}
@@ -446,22 +504,72 @@ namespace Patient {
     }
 
     /**
-    Check if a patient with this government id exists
-    @param {string} governmentId
-    @returns {boolean} whether or not the patient exists
-    */
-    export const checkGovtIdExists = async (governmentId: string): Promise<boolean> => {
-      try {
-        const patients = await database
-          .get<PatientModel>("patients")
-          .query(Q.where("government_id", governmentId))
-          .fetch()
+    Check whether a *different*, non-deleted patient already holds `value`
+    for a field marked `unique`. Covers both storage mechanisms:
+    base-column fields query the `patients` table; custom fields query
+    `patient_additional_attributes` on the typed value column.
 
-        if (patients.length > 0) {
-          return true
-        } else {
-          return false
+    Best-effort, local-DB only: it sees just the patients synced to this
+    device (see the offline caveat in the unique-fields design). Errors
+    fail open (return false) — matching the government_id check — so a
+    transient query failure never blocks a legitimate save; the on-submit
+    gate re-runs this check before writing.
+
+    @param field the field being validated
+    @param value the in-memory value for that field
+    @param fields the full form field list (resolves the attribute value column)
+    @param excludePatientId when editing, the patient being edited (excluded from the match)
+    @returns {Promise<boolean>} true when a duplicate exists on another patient
+    */
+    export const checkUniqueFieldValue = async (args: {
+      field: RegistrationFormField
+      value: unknown
+      fields: RegistrationFormField[]
+      excludePatientId?: string
+    }): Promise<boolean> => {
+      const { field, value, fields, excludePatientId } = args
+
+      // Empty / whitespace values never collide — two patients may both
+      // leave an optional unique field blank.
+      if (isBlankUniqueValue(value)) return false
+
+      try {
+        if (field.baseField) {
+          const conditions = [
+            Q.where(field.column, coerceBaseUniqueQueryValue(field, value)),
+            Q.where("is_deleted", false),
+          ]
+          if (excludePatientId) conditions.push(Q.where("id", Q.notEq(excludePatientId)))
+
+          const matches = await database
+            .get<PatientModel>("patients")
+            .query(...conditions)
+            .fetch()
+          return matches.length > 0
         }
+
+        const valueColumn = getAdditionalFieldColumnName(fields, field.id)
+        const attrConditions = [
+          Q.where("attribute_id", field.id),
+          Q.where(valueColumn, coerceAttributeUniqueQueryValue(valueColumn, value)),
+          Q.where("is_deleted", false),
+        ]
+        if (excludePatientId) attrConditions.push(Q.where("patient_id", Q.notEq(excludePatientId)))
+
+        const attrs = await database
+          .get<PatientAdditionalAttribute>("patient_additional_attributes")
+          .query(...attrConditions)
+          .fetch()
+        if (attrs.length === 0) return false
+
+        // Attribute rows can outlive a soft-deleted patient, so confirm at
+        // least one owning patient is itself still present.
+        const ownerIds = Array.from(new Set(attrs.map((attr) => attr.patientId)))
+        const livingOwners = await database
+          .get<PatientModel>("patients")
+          .query(Q.where("id", Q.oneOf(ownerIds)), Q.where("is_deleted", false))
+          .fetch()
+        return livingOwners.length > 0
       } catch (error) {
         Logger.error(error)
         return false

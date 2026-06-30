@@ -16,6 +16,7 @@ import Visit from "@/models/Visit"
 import EventNS from "@/models/Event"
 import PatientVitals from "@/models/PatientVitals"
 import PatientProblems from "@/models/PatientProblems"
+import { searchRanked } from "@/utils/parsers"
 
 import type { DataProvider, PaginatedResult } from "../../types/data"
 import { ok, err } from "../../types/data"
@@ -24,6 +25,9 @@ import type { CreateVisitInput } from "../../types/visit"
 import type { CreateEventInput, UpdateEventInput } from "../../types/event"
 import type { CreateVitalsInput } from "../../types/vitals"
 import type { CreateProblemInput, UpdateProblemInput } from "../../types/problem"
+
+/** Patient columns searched by the ranked patient lookup, in priority order. */
+const PATIENT_SEARCH_COLUMNS = ["given_name", "surname", "phone", "government_id"]
 
 /** Convert a VisitModel to Visit.T */
 function visitFromDB(v: VisitModel): Visit.T {
@@ -70,25 +74,32 @@ export function createOfflineProvider(db: Database): DataProvider {
       async getMany(params: GetPatientsParams) {
         try {
           const { search, offset = 0, limit = 50 } = params
+          const collection = db.get<PatientModel>("patients")
+          const trimmedSearch = search?.trim() ?? ""
 
-          const searchClause =
-            search && search.length > 0
-              ? Q.and(
-                  Q.where("is_deleted", false),
-                  Q.or(
-                    Q.where("given_name", Q.like(`%${Q.sanitizeLikeString(search)}%`)),
-                    Q.where("surname", Q.like(`%${Q.sanitizeLikeString(search)}%`)),
-                    Q.where("phone", Q.like(`%${Q.sanitizeLikeString(search)}%`)),
-                    Q.where("government_id", Q.like(`%${Q.sanitizeLikeString(search)}%`)),
-                  ),
-                )
-              : Q.where("is_deleted", false)
+          // With a query, use the Arabic-aware ranked search. It returns every match
+          // ordered by relevance and does not filter soft-deleted rows or paginate,
+          // so drop deleted patients and page the ranked set in memory.
+          if (trimmedSearch.length > 0) {
+            const ranked = await searchRanked(collection, PATIENT_SEARCH_COLUMNS, trimmedSearch)
+            const visible = ranked.filter((patient) => !patient.isDeleted)
+            const items = visible.slice(offset, offset + limit).map(Patient.DB.fromDB)
+            return ok({
+              items,
+              pagination: {
+                offset,
+                limit,
+                total: visible.length,
+                hasMore: offset + limit < visible.length,
+              },
+            })
+          }
 
-          const total = await db.get<PatientModel>("patients").query(searchClause).fetchCount()
-
-          const patients = await db
-            .get<PatientModel>("patients")
-            .query(searchClause, Q.sortBy("updated_at", "desc"), Q.skip(offset), Q.take(limit))
+          // No query: most-recent-first listing, paged in the database.
+          const activeClause = Q.where("is_deleted", false)
+          const total = await collection.query(activeClause).fetchCount()
+          const patients = await collection
+            .query(activeClause, Q.sortBy("updated_at", "desc"), Q.skip(offset), Q.take(limit))
             .fetch()
 
           const items = patients.map(Patient.DB.fromDB)

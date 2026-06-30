@@ -27,6 +27,7 @@ export type RegistrationFormField = {
   required: boolean
   baseField: boolean // whether or not this is part of the base inputs required of all registration forms
   visible: boolean // Whether or not it displays in the app
+  unique: boolean // Whether or not the field's value must be unique across patients
   isSearchField: boolean // Whether or not this field can be sea
   deleted: boolean
 }

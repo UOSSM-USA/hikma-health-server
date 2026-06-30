@@ -78,7 +78,10 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
   const createPatientMutation = useCreatePatient()
   const updatePatientMutation = useUpdatePatient()
 
-  const [existingGovtId, setExistingGovtId] = useState<boolean>(false)
+  // Field id → true when another patient already holds this field's value.
+  // Generalizes the former government_id-only duplicate check to every field
+  // the admin marked `unique`.
+  const [uniqueViolations, setUniqueViolations] = useState<Record<string, boolean>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const { paddingTop: safeAreaPaddingTop } = useSafeAreaInsetsStyle(["top"])
@@ -288,32 +291,59 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
     }
   }, [editPatientId])
 
-  const govtId: string | undefined = useDebounce(
-    (patientRecord.values[
-      patientRecord.fields.find((field) => field.column === "government_id")?.id || ""
-    ] as string) || "",
-    1000,
+  // Fields the admin flagged unique. government_id is always treated as
+  // unique so the duplicate guard still holds on deployments whose stored
+  // form predates the `unique` flag (where it decodes to `false`).
+  const uniqueFields = useMemo(
+    () =>
+      ruleFields.filter(
+        (f) => (f.unique || f.column === "government_id") && f.visible && !f.deleted,
+      ),
+    [ruleFields],
   )
 
-  /** on change of the government id, perform search to verify that the patient file does not exists */
-  useEffect(() => {
-    // get the government_id field id
-    if (!govtId) return
-    // if we are editing a patient, skip the check
-    if (editPatientId && editPatientId.length > 0) {
-      // TODO: check against incoming patientId
-      return setExistingGovtId(false)
-    }
+  const excludePatientId = typeof editPatientId === "string" ? editPatientId : undefined
 
-    Patient.DB.checkGovtIdExists(govtId)
-      .then((res) => {
-        setExistingGovtId(res)
+  // Query the local DB for values already held by another, non-deleted
+  // patient. Returns the ids of the violating fields. Used by both the
+  // debounced live check and the authoritative on-submit check.
+  const findUniqueViolations = async (): Promise<string[]> => {
+    const results = await Promise.all(
+      uniqueFields.map(async (field) => {
+        const exists = await Patient.DB.checkUniqueFieldValue({
+          field,
+          value: patientRecord.values[field.id],
+          fields: ruleFields,
+          excludePatientId,
+        })
+        return exists ? field.id : null
+      }),
+    )
+    return results.filter((id): id is string => id !== null)
+  }
+
+  // Re-check only when a unique field's value actually changes; debounced so
+  // we don't hit the DB on every keystroke.
+  const uniqueValuesSignature = useDebounce(
+    JSON.stringify(uniqueFields.map((f) => [f.id, patientRecord.values[f.id] ?? null])),
+    800,
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    findUniqueViolations()
+      .then((violatingIds) => {
+        if (cancelled) return
+        const next: Record<string, boolean> = {}
+        for (const id of violatingIds) next[id] = true
+        setUniqueViolations(next)
       })
-      .catch((error) => {
-        Logger.warn(error)
-        setExistingGovtId(false)
-      })
-  }, [govtId])
+      .catch((error) => Logger.warn(error))
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uniqueValuesSignature])
 
   /** Navigate to the patient file */
   const openPatientFile = (id: string) => () => {
@@ -327,10 +357,23 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
   }
 
   const onSubmit = async () => {
-    if (existingGovtId || isSubmitting) return
+    if (isSubmitting) return
+
+    // Authoritative uniqueness re-check. The debounced live check is UX
+    // sugar and can lag a fast typist, so re-run it here before writing.
+    const uniqueViolationIds = await findUniqueViolations()
+    if (uniqueViolationIds.length > 0) {
+      const next: Record<string, boolean> = {}
+      for (const id of uniqueViolationIds) next[id] = true
+      setUniqueViolations(next)
+    }
+    const uniqueViolationNames = uniqueViolationIds.map((id) => {
+      const field = uniqueFields.find((f) => f.id === id)
+      return field ? getTranslation(field.label, language) : id
+    })
 
     // Validate required fields + validator rules before submission.
-    // Both gates share one Alert — two sequential alerts would clobber
+    // All gates share one Alert — two sequential alerts would clobber
     // each other on most platforms. Validator dedup lives in
     // `summarizeSubmitBlockers`.
     const gate = summarizeSubmitBlockers({
@@ -341,7 +384,7 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
       }),
       validatorErrors: ruleEvaluation.validationErrors,
     })
-    if (gate.blocked) {
+    if (gate.blocked || uniqueViolationNames.length > 0) {
       const parts: string[] = []
       if (gate.missingRequired.length > 0) {
         parts.push(
@@ -352,6 +395,13 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
       }
       if (gate.validatorErrors.length > 0) {
         parts.push(gate.validatorErrors.map((e) => e.message).join("\n"))
+      }
+      if (uniqueViolationNames.length > 0) {
+        parts.push(
+          translate("newPatient:uniqueFieldsTaken", {
+            fields: uniqueViolationNames.join(", "),
+          }),
+        )
       }
       Alert.alert(translate("common:error"), parts.join("\n\n"))
       return
@@ -508,7 +558,7 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
                     required={field.required}
                     testID={`patient_form_input__${field.type}__${field.column}`}
                     inputWrapperStyle={
-                      field.column === "government_id" && existingGovtId
+                      uniqueViolations[field.id]
                         ? {
                             borderColor: colors.palette.angry500,
                           }
@@ -516,8 +566,8 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
                     }
                   />
                 )}
-                <If condition={field.column === "government_id" && existingGovtId}>
-                  <Text tx={"newPatient:govtIdExists"} />
+                <If condition={!!uniqueViolations[field.id]}>
+                  <Text tx={"newPatient:uniqueFieldTaken"} style={$validatorErrorText} />
                 </If>
 
                 <If condition={field.column === "primary_clinic_id"}>
@@ -682,7 +732,7 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
 
         <Button
           preset="default"
-          disabled={existingGovtId || isSubmitting}
+          disabled={Object.values(uniqueViolations).some(Boolean) || isSubmitting}
           onPress={() => onSubmit()}
           testID="submit"
         >

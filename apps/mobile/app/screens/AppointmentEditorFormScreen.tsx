@@ -84,7 +84,7 @@ export const AppointmentEditorFormScreen: FC<AppointmentEditorFormScreenProps> =
   const { clinics, isLoading } = useDBClinicsList()
   const { can } = usePermissionGuard()
 
-  const { visitId, patientId, visitDate } = route.params
+  const { visitId, patientId } = route.params
 
   const [openPicker, setOpenPicker] = useState<
     "clinic" | "duration" | "reason" | "department" | null

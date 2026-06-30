@@ -154,9 +154,9 @@ export function createPatientToServer(input: CreatePatientInput): ServerCreatePa
   return dto
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//////////////////////////////////////////////////////////////////////////////////
 // tRPC-specific types and transformers (for patients.create / patients.update)
-// ─────────────────────────────────────────────────────────────────────────────
+//////////////////////////////////////////////////////////////////////////////////
 
 /** tRPC additional attribute with typed value fields */
 export type TRPCPatientAttributeInput = {
@@ -259,9 +259,9 @@ export function updatePatientToTRPC(id: string, input: UpdatePatientInput): TRPC
   return { id, fields }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//////////////////////////////////////////////////////////////////////////////////
 // RPC register_patient transformers
-// ─────────────────────────────────────────────────────────────────────────────
+//////////////////////////////////////////////////////////////////////////////////
 
 /** Convert a single attribute value to typed value fields for register_patient */
 function typedAttributeValue(v: string | number | boolean | Date) {

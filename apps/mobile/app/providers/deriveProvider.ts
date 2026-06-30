@@ -5,7 +5,7 @@
  * Separates the WHAT (which provider kind) from the HOW (constructing it).
  */
 
-import type { PeerType } from "@/db/model/Peer"
+import Peer from "@/models/Peer"
 import type { OperationMode } from "@/store/operationMode"
 
 /**
@@ -21,7 +21,7 @@ export type ProviderKind = "offline" | "rpc_cloud" | "rpc_hub" | "unknown"
  * Minimal peer shape needed for provider derivation.
  * Keeps the function decoupled from the full Peer.T.
  */
-export type ActivePeerInfo = { readonly peerType: PeerType } | null
+export type ActivePeerInfo = { readonly peerType: Peer.PeerType } | null
 
 /**
  * Derive which provider kind to use given the current mode

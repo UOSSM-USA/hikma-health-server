@@ -9,10 +9,25 @@ import PatientAdditionalAttribute from "@/db/model/PatientAdditionalAttribute"
 import { RegistrationFormField } from "@/db/model/PatientRegistrationForm"
 import Patient from "@/models/Patient"
 import UserClinicPermissions from "@/models/UserClinicPermissions"
-import { extendedSanitizeLikeString } from "@/utils/parsers"
+import { buildPrefilter, normalizeForSearch, tokenizeForSearch } from "@/utils/parsers"
 
 import { useDebounce } from "./useDebounce"
 import { Logger } from "@hikmahealth/js-utils"
+
+/**
+ * Build a WatermelonDB LIKE clause for one searchable field.
+ *
+ * Select fields (dropdowns/checkboxes such as sex) match as an anchored prefix so
+ * "male" never matches "female". Free-text fields use the fuzzy, Arabic-aware
+ * prefilter so stored diacritics and letter variants still match.
+ */
+function fieldLikeClause(column: string, value: string | number, fieldType: string) {
+  const raw = String(value)
+  if (fieldType === "select") {
+    return Q.where(column, Q.like(`${Q.sanitizeLikeString(raw)}%`))
+  }
+  return Q.where(column, Q.like(buildPrefilter(normalizeForSearch(raw))))
+}
 
 export type SearchFilter = {
   query: string
@@ -80,8 +95,8 @@ export function usePatientsList(
     if (query.length > 1) {
       queryConditions.push(
         Q.or(
-          Q.where("given_name", Q.like(`%${extendedSanitizeLikeString(query)}%`)),
-          Q.where("surname", Q.like(`%${extendedSanitizeLikeString(query)}%`)),
+          Q.where("given_name", Q.like(buildPrefilter(normalizeForSearch(query)))),
+          Q.where("surname", Q.like(buildPrefilter(normalizeForSearch(query)))),
         ),
       )
     }
@@ -91,7 +106,7 @@ export function usePatientsList(
       )
     }
     if (sex.length > 0) {
-      queryConditions.push(Q.where("sex", Q.eq(`${extendedSanitizeLikeString(sex)}`)))
+      queryConditions.push(Q.where("sex", Q.eq(sex)))
     }
 
     // const refQuery =
@@ -261,71 +276,30 @@ export function usePatientsList(
     const patientAttrsRef = database.get<PatientAdditionalAttribute>(
       "patient_additional_attributes",
     )
-    const patientQueryConditions = baseFields.map((field) => {
-      let val = field.value
-      if (field.fieldType === "number") {
-        val = isNaN(+field.value) ? field.value : +field.value
-      } else if (field.fieldType === "date") {
-        // FIXME: how do we deal with dates?
-        val = field.value
-      } else {
-        // all else marked as strings
-        val = field.value
-      }
-
-      // fields that are `select` type are dropdowns and/or checkboxes
-      // such as `sex`
-      let likeQuery = `%${extendedSanitizeLikeString(val)}%`
-      if (field.fieldType === "select") {
-        // Select fields only search for matches at end of string not at begining
-        // solves the: "returns 'female' when 'male' is searched for"
-        likeQuery = `${extendedSanitizeLikeString(val)}%`
-      }
-
-      return Q.where(field.column, Q.like(likeQuery))
-    })
+    const patientQueryConditions = baseFields.map((field) =>
+      fieldLikeClause(field.column, field.value, field.fieldType),
+    )
 
     const patientAttrsQueryConditions = attrFields.map((field) => {
-      let val = field.value
       let col: Patient.PatientValueColumn = "string_value"
       if (field.fieldType === "number") {
-        val = isNaN(+field.value) ? field.value : +field.value
         col = "number_value"
       } else if (field.fieldType === "date") {
         // FIXME: how do we deal with dates?
-        val = field.value
         col = "date_value"
-      } else {
-        // all else marked as strings
-        val = field.value
-        col = "string_value"
       }
-      // fields that are `select` type are dropdowns and/or checkboxes
-      // such as `sex`
-      let likeQuery = `%${extendedSanitizeLikeString(val)}%`
-      if (field.fieldType === "select") {
-        // Select fields only search for matches at end of string not at begining
-        likeQuery = `${extendedSanitizeLikeString(val)}%`
-      }
-
-      return Q.where(col, Q.like(likeQuery))
+      return fieldLikeClause(col, field.value, field.fieldType)
     })
 
+    const nameTokens = tokenizeForSearch(searchFilter.query)
     let ptQueryConditionsWithStr = []
-    if (searchFilter.query.length > 1) {
-      const query = searchFilter.query
-      const terms = query.split(" ")
+    if (searchFilter.query.length > 1 && nameTokens.length > 0) {
       ptQueryConditionsWithStr = [
         Q.and(
-          // Q.or(
-          //   Q.where("given_name", Q.like(`%${extendedSanitizeLikeString(query)}%`)),
-          //   Q.where("surname", Q.like(`%${extendedSanitizeLikeString(query)}%`)),
-          // ),
-
           Q.or(
-            ...terms.flatMap((t) => [
-              Q.where("given_name", Q.like(`%${extendedSanitizeLikeString(t)}%`)),
-              Q.where("surname", Q.like(`%${extendedSanitizeLikeString(t)}%`)),
+            ...nameTokens.flatMap((token) => [
+              Q.where("given_name", Q.like(buildPrefilter(token))),
+              Q.where("surname", Q.like(buildPrefilter(token))),
             ]),
           ),
         ),

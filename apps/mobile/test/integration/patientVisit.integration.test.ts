@@ -260,8 +260,8 @@ describe("Patient.DB", () => {
     })
   })
 
-  describe("checkGovtIdExists", () => {
-    it("returns true when a patient with the government id exists", async () => {
+  describe("checkUniqueFieldValue (government_id)", () => {
+    it("returns true when another patient already has the value", async () => {
       const record = makePatientRecord({
         given_name: "Carol",
         surname: "White",
@@ -269,12 +269,23 @@ describe("Patient.DB", () => {
       })
       await Patient.DB.register(record, provider(), clinicRef())
 
-      const exists = await Patient.DB.checkGovtIdExists("GOV-999")
+      const govtField = record.fields.find((f) => f.column === "government_id")
+      const exists = await Patient.DB.checkUniqueFieldValue({
+        field: govtField,
+        value: "GOV-999",
+        fields: record.fields,
+      })
       expect(exists).toBe(true)
     })
 
-    it("returns false when no patient has that government id", async () => {
-      const exists = await Patient.DB.checkGovtIdExists("GOV-NONEXISTENT")
+    it("returns false when no patient has that value", async () => {
+      const record = makePatientRecord({ government_id: "GOV-1" })
+      const govtField = record.fields.find((f) => f.column === "government_id")
+      const exists = await Patient.DB.checkUniqueFieldValue({
+        field: govtField,
+        value: "GOV-NONEXISTENT",
+        fields: record.fields,
+      })
       expect(exists).toBe(false)
     })
   })

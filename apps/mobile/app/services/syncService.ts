@@ -23,28 +23,9 @@ import { syncDB } from "@/db/peerSync"
 import { translate } from "@/i18n/translate"
 import Peer from "@/models/Peer"
 import Sync from "@/models/Sync"
-import { appStateStore } from "@/store/appState"
 import { operationModeStore } from "@/store/operationMode"
 import { syncStore } from "@/store/sync"
 import { Logger } from "@hikmahealth/js-utils"
-
-/**
- * Find the active peer to sync with.
- * Uses the user-selected peer if set, otherwise falls back to
- * the default priority: active hub first, then active cloud.
- */
-const resolveActivePeer = async (): Promise<Peer.T | null> => {
-  const { activeSyncPeerId } = appStateStore.getSnapshot().context
-  if (activeSyncPeerId) {
-    try {
-      const peer = await Peer.DB.getById(activeSyncPeerId)
-      if (peer.status === "active" || peer.status === "untrusted") return peer
-    } catch {
-      // Peer no longer exists — fall through to default resolution
-    }
-  }
-  return Peer.DB.resolveActive()
-}
 
 /**
  * Starts a sync operation with the configured server.
@@ -101,7 +82,15 @@ export const startSync = async (providerEmail?: string): Promise<void> => {
 
   try {
     // Find the active peer to sync with — prefer hub if available, fall back to cloud
-    const activePeer = await resolveActivePeer()
+    // const activePeer = await resolveActivePeer()
+    const activePeers = await Peer.DB.getActive()
+    const activePeer = activePeers.pop()
+    if (activePeers.length > 1) {
+      // we dont care to await this, if it fails it should not impact the user
+      Peer.DB.deactivatePeersById(activePeers.map((it) => it.id)).catch((error) =>
+        Logger.log({ error }),
+      )
+    }
     if (!activePeer) {
       Alert.alert("No sync peer configured. Please pair with a hub or register a cloud server.")
       return Promise.reject(new Error("No active sync peer"))

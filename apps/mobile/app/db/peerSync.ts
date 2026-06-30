@@ -20,7 +20,6 @@ import * as Sentry from "@sentry/react-native"
 
 import { getResultData } from "../../types/data"
 
-import type { PeerType } from "@/db/model/Peer"
 import Peer from "@/models/Peer"
 import User from "@/models/User"
 import { toDateSafe } from "@/utils/date"
@@ -34,7 +33,9 @@ import { Logger } from "@hikmahealth/js-utils"
 
 global.Buffer = require("buffer").Buffer
 
-// ── Types ────────────────────────────────────────────────────────────
+//////////////////////////////////////////////////////////////////////////////////
+// TYPES
+//////////////////////////////////////////////////////////////////////////////////
 
 export type SyncCallbacks = {
   hasLocalChangesToPush: boolean
@@ -148,7 +149,7 @@ export const updateDates = (changes: SyncDatabaseChangeSet): void => {
 
         const recordId = record.id || "unknown"
 
-        // ── Timestamps ──────────────────────────────────────────────
+        ////// TIMESTAMPS ////////
         record.created_at = convertToTimestamp(
           record.created_at,
           defaultDate,
@@ -222,7 +223,7 @@ export const updateDates = (changes: SyncDatabaseChangeSet): void => {
         if (record.form_data) record.form_data = safeStringify(record.form_data, "[]")
         if (record.fields) record.fields = safeStringify(record.fields, "[]")
 
-        // ── date_of_birth (stored as "YYYY-MM-DD" string, not timestamp) ─
+        // date_of_birth (stored as "YYYY-MM-DD" string, not timestamp)
         if (record.date_of_birth !== undefined && record.date_of_birth !== null) {
           try {
             const dob = record.date_of_birth
@@ -273,7 +274,9 @@ const getSyncApiUrl = async (): Promise<string> => {
   return `${url}/api/v2/sync`
 }
 
-// ── Strategy: Cloud ──────────────────────────────────────────────────
+//////////////////////////////////////////////////////////////////////////////////
+/////////////////////// CLOUD STRATEGY ///////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////
 
 const syncCloud = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> => {
   const { email, password } = await getCredentials()
@@ -361,7 +364,7 @@ const syncHub = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> =>
   // }
   logger.log("[HUB SYNC]", { lastPulledAt, peer: JSON.stringify(peer, null, 2), token })
 
-  // ── Pull ─────────────────────────────────────────────────────────
+  // PULL
   const pullResult = await transport.sendQuery<SyncPullResponse>(
     "sync_pull",
     { lastPulledAt },
@@ -403,7 +406,7 @@ const syncHub = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> =>
 
 // ── Strategy dispatch ────────────────────────────────────────────────
 
-const strategies: Record<PeerType, (peer: Peer.T, cb: SyncCallbacks) => Promise<void>> = {
+const strategies: Record<Peer.PeerType, (peer: Peer.T, cb: SyncCallbacks) => Promise<void>> = {
   cloud_server: syncCloud,
   sync_hub: syncHub,
   mobile_app: () => {

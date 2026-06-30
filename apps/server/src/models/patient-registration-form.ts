@@ -70,6 +70,7 @@ namespace PatientRegistrationForm {
     required: boolean;
     baseField: boolean; // whether or not this is part of the base inputs required of all registration forms
     visible: boolean; // Whether or not it displays in the app
+    unique: boolean; // Whether or not the field's value must be unique across patients (enforced client-side at registration/edit time)
     deleted: boolean; // Whether or not this field has been marked as "deleted" - soft delete allows for field values to still be retrievable
     showsInSummary: boolean; // Whether or not this field is shown on the patient file
     isSearchField: boolean; // Whether or not this field can be sea

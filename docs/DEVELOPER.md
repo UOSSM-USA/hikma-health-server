@@ -12,3 +12,6 @@ We are building towards a technology stack that is;
 8. Extendable (over Forkable)
 9. Cost effective
 10. Low barrier to deployment
+
+
+Signed: Kevin & Ally

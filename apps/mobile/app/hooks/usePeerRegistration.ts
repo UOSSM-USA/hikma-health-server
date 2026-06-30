@@ -15,17 +15,21 @@ import type { HubSession } from "@/rpc/handshake"
 import { parseQRCode, isHubQR } from "@/rpc/qrParser"
 import { Logger } from "@hikmahealth/js-utils"
 
-export type PeerConnectionType = "sync_hub" | "cloud"
+// export type PeerConnectionType = "sync_hub" | "cloud"
 
 export type PeerRegistrationResult =
   | { ok: true; type: "sync_hub"; hubSession: HubSession }
-  | { ok: true; type: "cloud"; url: string }
+  | { ok: true; type: "cloud_server"; url: string }
   | { ok: false; error: string }
 
 export function usePeerRegistration() {
-  const [connectionType, setConnectionType] = useState<PeerConnectionType | null>(null)
+  const [connectionType, setConnectionType] = useState<Peer.PeerType | null>(null)
   const [hubSession, setHubSession] = useState<HubSession | null>(null)
   const [isRegistering, setIsRegistering] = useState(false)
+
+  /**
+   * If there is a change to the connectionType and we are not in the process of registration, then update
+   */
 
   /**
    * Register a peer from raw QR code data.
@@ -69,9 +73,10 @@ export function usePeerRegistration() {
       }
 
       // Register as a cloud peer (Peer table is the source of truth for URLs)
-      await Peer.DB.upsertCloud(url)
-      setConnectionType("cloud")
-      return { ok: true, type: "cloud", url }
+      const peerId = await Peer.DB.upsertCloud(url)
+      setConnectionType("cloud_server")
+
+      return { ok: true, type: "cloud_server", url }
     } finally {
       setIsRegistering(false)
     }
@@ -82,7 +87,7 @@ export function usePeerRegistration() {
    * Useful when the URL is already known (e.g., manual entry or existing server re-scan).
    */
   const registerFromUrl = useCallback(
-    async (url: string, type: PeerConnectionType): Promise<PeerRegistrationResult> => {
+    async (url: string, type: Peer.PeerType): Promise<PeerRegistrationResult> => {
       if (type === "sync_hub") {
         // Wrap in hub QR format and delegate
         return registerFromQR(JSON.stringify({ type: "sync_hub", url }))

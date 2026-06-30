@@ -6,6 +6,7 @@ import AppointmentModel from "@/db/model/Appointment"
 import ClinicDepartmentModel from "@/db/model/ClinicDepartment"
 import PatientModel from "@/db/model/Patient"
 import VisitModel from "@/db/model/Visit"
+import { buildPrefilter, tokenizeForSearch } from "@/utils/parsers"
 
 import User from "./User"
 import { Logger } from "@hikmahealth/js-utils"
@@ -445,15 +446,14 @@ namespace Appointment {
       }
 
       // Add patient name search if search query is provided
-      if (searchQuery.trim()) {
-        const searchTerm = searchQuery.trim()
-        const terms = searchTerm.split(" ")
+      const nameTokens = tokenizeForSearch(searchQuery)
+      if (nameTokens.length > 0) {
         conditions.push(
           Q.experimentalJoinTables(["patients"]),
           Q.or(
-            ...terms.flatMap((t) => [
-              Q.on("patients", "given_name", Q.like(`%${Q.sanitizeLikeString(t)}%`)),
-              Q.on("patients", "surname", Q.like(`%${Q.sanitizeLikeString(t)}%`)),
+            ...nameTokens.flatMap((token) => [
+              Q.on("patients", "given_name", Q.like(buildPrefilter(token))),
+              Q.on("patients", "surname", Q.like(buildPrefilter(token))),
             ]),
           ),
         )

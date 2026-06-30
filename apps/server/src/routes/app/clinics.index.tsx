@@ -66,7 +66,7 @@ function RouteComponent() {
     }
 
     deleteClinic({ data: { id } })
-      .catch((error) => {
+      .catch((error: any) => {
         Logger.error(error);
         toast.error(error.message);
       })
@@ -88,8 +88,8 @@ function RouteComponent() {
     }
 
     archiveClinic({ data: { id, isArchived: true } })
-      .catch((error) => {
-        Logger.error(error);
+      .catch((error: any) => {
+        Logger.error({ error });
         toast.error(error.message);
       })
       .then(() => {

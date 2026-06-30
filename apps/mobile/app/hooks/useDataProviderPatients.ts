@@ -20,10 +20,25 @@ import Patient from "@/models/Patient"
 import { useDataAccess } from "@/providers/DataAccessProvider"
 import { DataProviderError } from "../../types/data"
 import type { DataProvider } from "../../types/data"
-import { extendedSanitizeLikeString } from "@/utils/parsers"
+import { buildPrefilter, normalizeForSearch, tokenizeForSearch } from "@/utils/parsers"
 
 import { useClinicIdsWithPermission } from "./useClinicIdsWithPermission"
 import { useDebounce } from "./useDebounce"
+
+/**
+ * Build a WatermelonDB LIKE clause for one searchable field.
+ *
+ * Select fields (dropdowns/checkboxes such as sex) match as an anchored prefix so
+ * "male" never matches "female". Free-text fields use the fuzzy, Arabic-aware
+ * prefilter so stored diacritics and letter variants still match.
+ */
+function fieldLikeClause(column: string, value: string | number, fieldType: string) {
+  const raw = String(value)
+  if (fieldType === "select") {
+    return Q.where(column, Q.like(`${Q.sanitizeLikeString(raw)}%`))
+  }
+  return Q.where(column, Q.like(buildPrefilter(normalizeForSearch(raw))))
+}
 
 // Re-export SearchFilter so screens can reference it without importing the old hook
 export type SearchFilter = {
@@ -134,9 +149,9 @@ export function useDataProviderPatients(
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//////////////////////////////////////////////////////////////////////////////////
 // Internal: Offline (WatermelonDB observable with permission + attribute search)
-// ─────────────────────────────────────────────────────────────────────────────
+//////////////////////////////////////////////////////////////////////////////////
 
 type OfflineParams = {
   pageSize: number
@@ -212,57 +227,31 @@ function useOfflinePatients(params: OfflineParams | null) {
     )
 
     // Build base field query conditions
-    const patientQueryConditions = baseFields.map((field) => {
-      let val = field.value
-      if (field.fieldType === "number") {
-        val = isNaN(+field.value) ? field.value : +field.value
-      } else if (field.fieldType === "date") {
-        val = field.value
-      } else {
-        val = field.value
-      }
-
-      let likeQuery = `%${extendedSanitizeLikeString(val)}%`
-      if (field.fieldType === "select") {
-        likeQuery = `${extendedSanitizeLikeString(val)}%`
-      }
-
-      return Q.where(field.column, Q.like(likeQuery))
-    })
+    const patientQueryConditions = baseFields.map((field) =>
+      fieldLikeClause(field.column, field.value, field.fieldType),
+    )
 
     // Build attribute field query conditions
     const patientAttrsQueryConditions = attrFields.map((field) => {
-      let val = field.value
       let col: Patient.PatientValueColumn = "string_value"
       if (field.fieldType === "number") {
-        val = isNaN(+field.value) ? field.value : +field.value
         col = "number_value"
       } else if (field.fieldType === "date") {
-        val = field.value
         col = "date_value"
-      } else {
-        val = field.value
-        col = "string_value"
       }
-
-      let likeQuery = `%${extendedSanitizeLikeString(val)}%`
-      if (field.fieldType === "select") {
-        likeQuery = `${extendedSanitizeLikeString(val)}%`
-      }
-
-      return Q.where(col, Q.like(likeQuery))
+      return fieldLikeClause(col, field.value, field.fieldType)
     })
 
-    // Build name search conditions
+    // Build name search conditions: any token may match given_name OR surname.
+    const nameTokens = tokenizeForSearch(searchFilterQuery)
     let ptQueryConditionsWithStr: any[] = []
-    if (searchFilterQuery.length > 1) {
-      const terms = searchFilterQuery.split(" ")
+    if (searchFilterQuery.length > 1 && nameTokens.length > 0) {
       ptQueryConditionsWithStr = [
         Q.and(
           Q.or(
-            ...terms.flatMap((t) => [
-              Q.where("given_name", Q.like(`%${extendedSanitizeLikeString(t)}%`)),
-              Q.where("surname", Q.like(`%${extendedSanitizeLikeString(t)}%`)),
+            ...nameTokens.flatMap((token) => [
+              Q.where("given_name", Q.like(buildPrefilter(token))),
+              Q.where("surname", Q.like(buildPrefilter(token))),
             ]),
           ),
         ),
@@ -352,9 +341,9 @@ function useOfflinePatients(params: OfflineParams | null) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//////////////////////////////////////////////////////////////////////////////////
 // Internal: Online (React Query via DataProvider)
-// ─────────────────────────────────────────────────────────────────────────────
+//////////////////////////////////////////////////////////////////////////////////
 
 type OnlineParams = {
   provider: DataProvider

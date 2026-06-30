@@ -91,7 +91,8 @@ function RouteComponent() {
         toast.success("Appointment status updated successfully");
         router.invalidate({ sync: true });
       })
-      .catch((error) => {
+      .catch((error: any) => {
+        Logger.log({ error });
         toast.error("Failed to update appointment status");
       });
   };

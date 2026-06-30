@@ -160,7 +160,6 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
     navigation.navigate("AppointmentEditorForm", {
       patientId,
       visitId: null,
-      visitDate: Date.now(),
     })
   }
 
@@ -185,8 +184,6 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
       patientId: patient?.value.id,
     })
   }
-
-  const snapshotForms = useMemo(() => EventForm.filterSnapshots(eventForms), [eventForms])
 
   if (isLoading) {
     return (
@@ -414,24 +411,6 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
   )
 }
 
-const $actionCard: ViewStyle = {
-  flex: 1,
-  padding: 16,
-  borderRadius: 8,
-  gap: 5,
-  paddingTop: 28,
-  paddingBottom: 12,
-  alignItems: "center",
-  borderStyle: "solid",
-  borderWidth: 1,
-  borderColor: colors.border,
-  elevation: 1,
-  shadowColor: colors.palette.neutral300,
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.15,
-  shadowRadius: 0.84,
-}
-
 const $root: ViewStyle = {
   flex: 1,
 }
@@ -486,31 +465,6 @@ type SnapshotFormLinkProps = {
   onPress: () => void
   label: string
   description: string
-}
-
-function SnapshotFormLink({ onPress, label, description }: SnapshotFormLinkProps) {
-  return (
-    <Pressable
-      style={{
-        borderBottomWidth: 1,
-        paddingBottom: 8,
-        display: "flex",
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        borderBottomColor: colors.border,
-      }}
-      onPress={onPress}
-    >
-      <View style={{ flex: 5 }}>
-        <Text preset="formLabel" text={label} />
-        <Text size="xs" text={description} />
-      </View>
-      <View style={{ flex: 1 }} alignItems="flex-end">
-        <ChevronRight color={colors.palette.neutral500} />
-      </View>
-    </Pressable>
-  )
 }
 
 type PDFReportProps = {

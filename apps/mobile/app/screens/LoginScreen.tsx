@@ -204,7 +204,7 @@ export const LoginScreen: FC<LoginScreenProps> = ({ navigation }) => {
     setScannerVisible(false)
 
     const result = await registerFromQR(data)
-    Logger.log({ data })
+    Logger.log({ data, result })
 
     if (result.ok) {
       const messageKey =

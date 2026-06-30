@@ -82,6 +82,7 @@ const registrationFormFieldSchema = z.object({
   required: z.boolean(),
   baseField: z.boolean(),
   visible: z.boolean(),
+  unique: z.boolean(),
   deleted: z.boolean(),
   showsInSummary: z.boolean(),
   isSearchField: z.boolean(),
@@ -113,6 +114,7 @@ type Action =
       payload: { translation: string; label: string; id: string };
     }
   | { type: "toggle-field-required"; payload: { id: string } }
+  | { type: "toggle-field-unique"; payload: { id: string } }
   | { type: "toggle-field-searchable"; payload: { id: string } }
   | { type: "toggle-field-shows-in-summary"; payload: { id: string } }
   | {
@@ -206,6 +208,7 @@ function reducer(state: State, action: Action) {
         position: position,
         required: true,
         visible: true,
+        unique: false,
         deleted: false,
         showsInSummary: false,
       };
@@ -254,6 +257,14 @@ function reducer(state: State, action: Action) {
             });
         } else if (hadOptions && !needsOptions) {
           field.options = [];
+        }
+
+        // Uniqueness is only offered for scalar text/number fields (see
+        // FieldFlagsEditor). Clear a stale unique flag when the field is
+        // switched to a non-eligible type so it can't persist unseen.
+        const uniqueEligibleTypes = ["text", "number"];
+        if (!uniqueEligibleTypes.includes(type)) {
+          field.unique = false;
         }
       }
       break;
@@ -415,6 +426,15 @@ function reducer(state: State, action: Action) {
       }
       break;
     }
+    case "toggle-field-unique": {
+      const { id } = action.payload;
+      const field = state.fields.find((f) => f.id === id);
+
+      if (field) {
+        field.unique = !field.unique;
+      }
+      break;
+    }
     case "toggle-field-searchable": {
       const { id } = action.payload;
       const field = state.fields.find((f) => f.id === id);
@@ -467,9 +487,15 @@ function RouteComponent() {
   const { patientRegistrationForm } = Route.useLoaderData();
   // initial state is either loaded from the DB or on first deployment its loaded from a local state
 
-  const initialState =
+  const loadedForm =
     (patientRegistrationForm as PatientRegistrationForm.EncodedT) ??
     defaultEmptyForm;
+  // Legacy stored forms predate the `unique` flag. Default it so fields
+  // validate against the (required) field schema when the form is re-saved.
+  const initialState: PatientRegistrationForm.EncodedT = {
+    ...loadedForm,
+    fields: loadedForm.fields.map((f) => ({ unique: false, ...f })),
+  };
 
   const [formLanguage, setFormLanguage] = useState<Language.LanguageKey>("en");
   const [state, dispatch] = useImmerReducer(reducer, initialState);
@@ -977,7 +1003,15 @@ function FieldFlagsEditor({
   field: PatientRegistrationForm.Field;
   dispatch: FormDispatch;
 }) {
-  const { id, visible, required, isSearchField, showsInSummary } = field;
+  const { id, visible, required, unique, isSearchField, showsInSummary, fieldType } =
+    field;
+
+  // Uniqueness compares against a single stored value. It is only offered for
+  // scalar text/number fields: a unique `boolean` would cap the table at two
+  // patients, select/checkbox values are multi-value and fragile to compare,
+  // and date values round-trip through storage representations that make exact
+  // equality unreliable.
+  const uniqueEligible = fieldType === "text" || fieldType === "number";
 
   return (
     <div className="col-span-12 space-y-3">
@@ -997,6 +1031,16 @@ function FieldFlagsEditor({
         }
         label="This field is required"
       />
+      {uniqueEligible && (
+        <CheckboxRow
+          id={`unique-${id}`}
+          checked={unique}
+          onChange={() =>
+            dispatch({ type: "toggle-field-unique", payload: { id } })
+          }
+          label="This field is unique - do not allow duplicates across patients"
+        />
+      )}
       <CheckboxRow
         id={`searchable-${id}`}
         checked={isSearchField}

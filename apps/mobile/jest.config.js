@@ -40,7 +40,7 @@ module.exports = {
     "^@hikmahealth/forms$": "<rootDir>/node_modules/@hikmahealth/forms/src/HhForms.res.mjs",
     "^@hikmahealth/forms/(.+)$": "<rootDir>/node_modules/@hikmahealth/forms/src/$1.res.mjs",
   },
-  coveragePathIgnorePatterns: ["/node_modules/", "app/db/sync.ts"],
+  coveragePathIgnorePatterns: ["/node_modules/"],
   collectCoverage: false,
   coverageDirectory: "coverage",
   coverageReporters: ["text", "text-summary", "lcov", "json-summary"],

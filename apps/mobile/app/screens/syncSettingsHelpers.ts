@@ -3,7 +3,6 @@
  * Extracted for testability — no React Native imports.
  */
 import Peer from "@/models/Peer"
-import type { PeerType } from "@/db/model/Peer"
 
 /** UI display type for the server list */
 export type DisplayServerType = "local" | "cloud"
@@ -19,7 +18,7 @@ export type ServerDisplay = {
 /**
  * Maps PeerType to the display type used in the UI.
  */
-export const peerTypeToDisplayType = (peerType: PeerType): DisplayServerType => {
+export const peerTypeToDisplayType = (peerType: Peer.PeerType): DisplayServerType => {
   switch (peerType) {
     case "sync_hub":
       return "local"
@@ -66,28 +65,17 @@ export const peerToServerDisplay = (peer: Peer.T): ServerDisplay => ({
  * that peer is marked as the target. Otherwise falls back to the default
  * priority: active hub first, then active cloud.
  */
-export const markSyncTarget = (
-  servers: ServerDisplay[],
-  activeSyncPeerId?: string | null,
-): ServerDisplay[] => {
-  let targetId: string | undefined
+// export const markSyncTarget = (
+//   servers: ServerDisplay[],
+// ): ServerDisplay[] => {
+//     const activeHub = servers.find((s) => s.type === "local" && s.isActive)
+//     targetId = activeHub?.id ?? servers.find((s) => s.type === "cloud" && s.isActive)?.id
 
-  if (activeSyncPeerId) {
-    // User-selected peer takes precedence if it exists in the list
-    const selected = servers.find((s) => s.id === activeSyncPeerId)
-    if (selected) targetId = selected.id
-  }
-
-  if (!targetId) {
-    const activeHub = servers.find((s) => s.type === "local" && s.isActive)
-    targetId = activeHub?.id ?? servers.find((s) => s.type === "cloud" && s.isActive)?.id
-  }
-
-  return servers.map((s) => ({
-    ...s,
-    isActive: s.id === targetId,
-  }))
-}
+//   return servers.map((s) => ({
+//     ...s,
+//     isActive: s.id === targetId,
+//   }))
+// }
 
 export const getServerDisplayName = (type: DisplayServerType): string => {
   switch (type) {

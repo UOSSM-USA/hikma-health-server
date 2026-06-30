@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store"
 import { v4 as uuidv4 } from "uuid"
 
 import database from "@/db"
-import PeerModel, { PeerType, PeerStatus, PeerMetadata } from "@/db/model/Peer"
+import PeerModel from "@/db/model/Peer"
 import { encode, decode } from "@/crypto/encoding"
 import { performHandshake, type HubSession } from "@/rpc/handshake"
 import { createEncryptedTransport, type RpcTransport } from "@/rpc/transport"
@@ -11,6 +11,7 @@ import type { RpcResult } from "@/rpc/types"
 import { ok, err, type Result, type DataError } from "../../types/data"
 import { logger } from "@/utils/logger"
 import { checkUrl } from "@/utils/misc"
+import { Logger } from "@hikmahealth/js-utils"
 
 namespace Peer {
   export type T = {
@@ -42,6 +43,23 @@ namespace Peer {
 
   export type DBPeer = PeerModel
 
+  /** Peer types are either the sync hub, a cloud server, or (future) a "mobile_app" to support P2P directly */
+  export const peerTypes = ["sync_hub", "cloud_server"] as const
+  export type PeerType = (typeof peerTypes)[number]
+  /**
+   * PeerStatus
+   * active : This is the peer to that is ready to sync with
+   * inactive : This peer will not be synced with, but it is verified and a valid peer
+   * revoked : This peer is no longer permitted to be synced with, it may have been active in the past
+   * untrusted : This peer is not trusted and should not be synced with at all. this is similar to a blacklist
+   */
+  export const peerStatuses = ["active", "inactive", "revoked", "untrusted"] as const
+  export type PeerStatus = (typeof peerStatuses)[number]
+
+  export type PeerMetadata = {
+    [key: string]: unknown
+  }
+
   export const empty: T = {
     id: "",
     peerId: "",
@@ -50,7 +68,7 @@ namespace Peer {
     port: null,
     publicKey: "",
     lastSyncedAt: null,
-    peerType: "mobile_app",
+    peerType: "cloud_server",
     isLeader: false,
     status: "untrusted",
     protocolVersion: "",
@@ -138,6 +156,10 @@ namespace Peer {
       }
     }
 
+    /**
+     * Upsert a local sync hub to the list of peers
+     * @returns Promise<string> where the string is the peerId
+     */
     export const upsertHub = async (params: {
       hubId: string
       name: string
@@ -145,8 +167,8 @@ namespace Peer {
       ipAddress?: string
       port?: number
       url?: string
-    }): Promise<void> =>
-      upsert({
+    }): Promise<string> => {
+      await upsert({
         peerId: params.hubId,
         name: params.name,
         peerType: "sync_hub",
@@ -156,10 +178,18 @@ namespace Peer {
         url: params.url,
       })
 
+      return params.hubId
+    }
+
     // We currently do not allow 2 cloud peers to be registered at the same time.
     // If a cloud peer already exists, replace it with the new one.
     // HTTPS is required to prevent Basic Auth credentials from being sent in cleartext.
-    export const upsertCloud = async (url: string): Promise<void> => {
+    /**
+     *
+     * @param url string
+     * @returns Promise<string> where the string is the peerId
+     */
+    export const upsertCloud = async (url: string): Promise<string> => {
       if (!url.startsWith("https://")) {
         throw new Error("Cloud peer URL must use HTTPS")
       }
@@ -173,12 +203,14 @@ namespace Peer {
           )
         }
       }
+      const peerId = `cloud:${url}`
       await upsert({
-        peerId: `cloud:${url}`,
+        peerId,
         name: "Cloud Server",
         peerType: "cloud_server",
         url,
       })
+      return peerId
     }
 
     export const getById = async (id: string): Promise<Peer.T> => {
@@ -191,14 +223,31 @@ namespace Peer {
       return records.length > 0 ? fromDB(records[0]) : null
     }
 
+    /**
+     * Returns all peers with a matching id, or matching peer_id fields
+     * @param {string[]} peerIds
+     * @returns {Promise<Peer.DBPeer[]>}
+     */
+    export const getAllByIds = async (peerIds: string[]): Promise<Peer.DBPeer[]> => {
+      const peers = await collection()
+        .query(Q.or(Q.where("id", Q.oneOf(peerIds)), Q.where("peerId", Q.oneOf(peerIds))))
+        .fetch()
+
+      return peers
+    }
+
     export const getAll = async (): Promise<Peer.T[]> => {
       const records = await collection().query(Q.sortBy("created_at", Q.desc)).fetch()
       return records.map(fromDB)
     }
 
+    /**
+     * Gets the active peers in the peers database table.
+     * @returns Promise<Peer.T[]> all peers with status being active
+     */
     export const getActive = async (): Promise<Peer.T[]> => {
       const records = await collection()
-        .query(Q.where("status", "active"), Q.sortBy("created_at", Q.desc))
+        .query(Q.where("status", "active"), Q.sortBy("updated_at", Q.desc))
         .fetch()
       return records.map(fromDB)
     }
@@ -222,13 +271,81 @@ namespace Peer {
       return records.length > 0 ? fromDB(records[0]) : null
     }
 
-    export const updateStatus = async (id: string, status: PeerStatus): Promise<void> => {
-      const record = await collection().find(id)
-      await database.write(() =>
-        record.update((rec) => {
-          rec.status = status
-        }),
+    /**
+     * Given a list of peer ids, set all their statuses to "inactive"
+     * @param {string[]} peerIds
+     * @returns {Promise<void>}
+     */
+    export const deactivatePeersById = async (peerIds: string[]): Promise<void> => {
+      if (peerIds.length === 0) return
+      const peers = await getAllByIds(peerIds)
+      await database.write(async () =>
+        peers.map((it) =>
+          it.update((db_rec) => {
+            db_rec.status = "inactive"
+          }),
+        ),
       )
+    }
+
+    /**
+     * Sets the status of a sync peer.
+     * This also sets all other peers as inactive if they were active before
+     * @param {string} id
+     * @param {PeerStatus} status
+     * @returns
+     */
+    export const updateStatus = async (id: string, status: PeerStatus): Promise<void> => {
+      let valid_status: PeerStatus = status
+      const allPeers = await getAll()
+      const record = allPeers.find((it) => it.id === id || it.peerId === id)
+      const activePeers = allPeers.filter((it) => it.status === "active")
+
+      if (!record) {
+        throw new Error("This peer record does not exist")
+      }
+
+      if (activePeers.length > 1) {
+        Logger.log({ msg: "There are multiple peers registered at the same time in active status" })
+        const peers_to_deactivate = activePeers
+          .filter((it) => it.id !== record.id)
+          .map((it) => it.id)
+
+        // [SELF_HEALING] This operation should not block the rest of the work the user is doing. just log and move on.
+        deactivatePeersById(peers_to_deactivate).catch((error) => {
+          Logger.error({
+            error,
+            msg: "Failed to set a peer record to inactive that was active before",
+          })
+        })
+      }
+
+      if (record.status === status) {
+        return Promise.resolve()
+      }
+
+      if (!peerStatuses.includes(status)) {
+        Logger.error({
+          msg: "The status is not recognized, defaulting to toggling between active and inactive for the peer",
+          passedStatus: status,
+        })
+        switch (record.status) {
+          case "active":
+            valid_status = "inactive"
+            break
+          case "inactive":
+            valid_status = "active"
+            break
+          default:
+            valid_status = "untrusted"
+        }
+      }
+      await database.write(async () => {
+        const db_record = await collection().find(record.id)
+        db_record.update((rec) => {
+          rec.status = valid_status
+        })
+      })
     }
 
     export const revoke = async (peerId: string): Promise<void> => {
@@ -277,8 +394,6 @@ namespace Peer {
     }
   }
 
-  // ── Session persistence (SecureStore) ─────────────────────────────────
-
   export namespace Session {
     const SESSION_KEY = "hub_session"
     const CLIENT_ID_KEY = "hub_client_id"
@@ -311,6 +426,7 @@ namespace Peer {
           hubUrl: parsed.hubUrl,
           hubId: parsed.hubId,
           clientId: parsed.clientId,
+          hubName: `Peer: ${parsed.hubId}`,
           sharedKey: decode(parsed.sharedKey),
           token: parsed.token,
         }
@@ -345,8 +461,6 @@ namespace Peer {
     }
   }
 
-  // ── URL resolution ───────────────────────────────────────────────────
-
   /** Extract the URL from a peer, preferring metadata.url, falling back to ipAddress:port. */
   export const getUrl = (peer: T): string | null => {
     const metadataUrl = peer.metadata?.url as string | undefined
@@ -363,23 +477,61 @@ namespace Peer {
    * the default peer priority (hub > cloud).
    */
   export const getActiveUrl = async (): Promise<string | null> => {
-    const { appStateStore } = require("@/store/appState")
-    const { activeSyncPeerId } = appStateStore.getSnapshot().context
+    const activePeers = await DB.getActive()
 
-    if (activeSyncPeerId) {
-      try {
-        const peer = await DB.getById(activeSyncPeerId)
-        if (peer.status === "active" || peer.status === "untrusted") {
-          const url = getUrl(peer)
-          if (url) return url
-        }
-      } catch {
-        // Peer no longer exists — fall through to default resolution
-      }
+    if (activePeers.length === 0) {
+      // There are no active peers
+      return null
     }
 
-    const peer = await DB.resolveActive()
-    return peer ? getUrl(peer) : null
+    if (activePeers.length === 1) {
+      return getUrl(activePeers[0]) || null
+    }
+
+    // More than one active peer is an invalid state. Collapse to a single winner
+    // and deactivate the rest. Preference: local hub (the primary field sync
+    // target) over cloud server, then any active peer so we never return null
+    // while peers are active. Within a kind, the most-recently-updated wins.
+    const mostRecent = (peers: typeof activePeers): (typeof activePeers)[number] | undefined =>
+      peers.length === 0
+        ? undefined
+        : [...peers].sort(
+            (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+          )[0]
+
+    const localServers = activePeers.filter((p) => p.peerType === "sync_hub")
+    const cloudServers = activePeers.filter((p) => p.peerType === "cloud_server")
+
+    const winner = mostRecent(localServers) ?? mostRecent(cloudServers) ?? mostRecent(activePeers)
+    if (!winner) return null
+
+    // Self-heal the invalid state: deactivate every other active peer. Fire-and-
+    // forget — a failed deactivation must not block sync from proceeding.
+    activePeers
+      .filter((peer) => peer.id !== winner.id)
+      .forEach((peer) => {
+        DB.updateStatus(peer.id, "inactive").catch((error) => {
+          Logger.warn({ msg: `Failed to deactivate a peer status with id: ${peer.id}`, error })
+        })
+      })
+
+    return getUrl(winner) || null
+
+    // if (activeSyncPeerId) {
+    //   try {
+    //     const peer = await DB.getByPeerId(activeSyncPeerId)
+    //     Logger.log({ activeSyncPeerId, peer })
+    //     if (peer && (peer.status === "active" || peer.status === "untrusted")) {
+    //       const url = getUrl(peer)
+    //       if (url) return url
+    //     }
+    //   } catch {
+    //     // Peer no longer exists — fall through to default resolution
+    //   }
+    // }
+
+    // const peer = await DB.resolveActive()
+    // return peer ? getUrl(peer) : null
   }
 
   /**
@@ -404,8 +556,6 @@ namespace Peer {
 
     await DB.upsertCloud(legacyUrl)
   }
-
-  // ── Reachability ─────────────────────────────────────────────────────
 
   export const isCloudReachable = async (
     timeoutMs = 5000,
@@ -456,8 +606,6 @@ namespace Peer {
       return false
     }
   }
-
-  // ── Hub lifecycle ─────────────────────────────────────────────────────
 
   export namespace Hub {
     let rehandshaking: Promise<HubSession | null> | null = null

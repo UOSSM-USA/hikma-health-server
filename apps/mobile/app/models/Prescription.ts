@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/react-native"
 import database from "@/db"
 import PrescriptionModel from "@/db/model/Prescription"
 import VisitModel from "@/db/model/Visit"
+import { buildPrefilter, tokenizeForSearch } from "@/utils/parsers"
 
 import PrescriptionItem from "./PrescriptionItem"
 import User from "./User"
@@ -616,15 +617,14 @@ namespace Prescription {
       }
 
       // Add patient name search if search query is provided
-      if (searchQuery.trim()) {
-        const searchTerm = searchQuery.trim()
-        const terms = searchTerm.split(" ")
+      const nameTokens = tokenizeForSearch(searchQuery)
+      if (nameTokens.length > 0) {
         conditions.push(
           Q.experimentalJoinTables(["patients"]),
           Q.or(
-            ...terms.flatMap((t) => [
-              Q.on("patients", "given_name", Q.like(`%${Q.sanitizeLikeString(t)}%`)),
-              Q.on("patients", "surname", Q.like(`%${Q.sanitizeLikeString(t)}%`)),
+            ...nameTokens.flatMap((token) => [
+              Q.on("patients", "given_name", Q.like(buildPrefilter(token))),
+              Q.on("patients", "surname", Q.like(buildPrefilter(token))),
             ]),
           ),
         )

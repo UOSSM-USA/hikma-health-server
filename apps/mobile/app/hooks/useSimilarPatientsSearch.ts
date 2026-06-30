@@ -6,7 +6,7 @@ import { sortBy } from "es-toolkit/compat"
 import database from "@/db"
 import PatientModel from "@/db/model/Patient"
 import { levenshtein } from "@/utils/levenshtein"
-import { extendedSanitizeLikeString } from "@/utils/parsers"
+import { buildPrefilter, normalizeForSearch } from "@/utils/parsers"
 
 /**
 Hook fetches similar patients and returns them for display
@@ -22,29 +22,32 @@ export function useSimilarPatientsSearch(givenName: string, surname: string): Pa
       setPatients([])
       return
     }
+
+    // Normalize once so both the prefilter patterns and the Levenshtein distance
+    // fold Arabic letter variants/diacritics consistently on either side.
+    const normalizedGiven = normalizeForSearch(givenName)
+    const normalizedSurname = normalizeForSearch(surname)
+
     database
       .get<PatientModel>("patients")
       .query(
         Q.or(
-          Q.where("given_name", Q.like(`%${extendedSanitizeLikeString(givenName)}%`)),
-          Q.where("surname", Q.like(`%${extendedSanitizeLikeString(surname)}%`)),
+          Q.where("given_name", Q.like(buildPrefilter(normalizedGiven))),
+          Q.where("surname", Q.like(buildPrefilter(normalizedSurname))),
         ),
         Q.take(10),
       )
       .fetch()
       .then(
         (results) => {
-          // get the lev distance for each patient and sort
+          // rank candidates by combined edit distance on the normalized names
           const sorted = sortBy(
-            results.map((patient) => {
-              Logger.warn(levenshtein(patient.givenName.toLowerCase(), givenName.toLowerCase()))
-              return {
-                patient,
-                distance:
-                  levenshtein(patient.givenName.toLowerCase(), givenName.toLowerCase()) +
-                  levenshtein(patient.surname.toLowerCase(), surname.toLowerCase()),
-              }
-            }),
+            results.map((patient) => ({
+              patient,
+              distance:
+                levenshtein(normalizeForSearch(patient.givenName), normalizedGiven) +
+                levenshtein(normalizeForSearch(patient.surname), normalizedSurname),
+            })),
             ["distance"],
           ).map((a) => a.patient)
 

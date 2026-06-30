@@ -68,6 +68,8 @@ function RouteComponent() {
 
   const route = useRouter();
 
+  // FIXME: The breadcrumbs dont automatically update when navigated into a separate screen whithout a full screen reload.
+  // route.subscribe() should allow this subscription
   const breadcrumbs = getBreadcrumbs(
     route.latestLocation.pathname,
     navData.navMain,

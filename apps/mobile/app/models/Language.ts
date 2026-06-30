@@ -57,11 +57,7 @@ namespace Language {
     "ur", // urdu
   ]
 
-  export type DefaultLanguages = {
-    en: LanguageName
-    ar?: LanguageName
-    es?: LanguageName
-  }
+  export type DefaultLanguages = "en" | "es" | "ar"
 
   export const Language: Record<LanguageName, LanguageName> = {
     "en": "en",
@@ -87,8 +83,8 @@ namespace Language {
     "arc": "arc",
   }
 
-  export type TranslationObject = DefaultLanguages & {
-    [lang: string]: string
+  export type TranslationObject = {
+    [K in LanguageName]: string
   }
 
   export const isRTL = (language: LanguageName) => RTL_LANGUAGES.includes(language)

@@ -225,8 +225,8 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
           <Text size="xs" tx="settingsScreen:nonprofitDisclaimer" />
 
           {Option.match(HIKMA_URL, {
-            onSome: () => (
-              <Pressable onPress={() => openWebsite(HIKMA_URL)} style={{ marginTop: 8 }}>
+            onSome: (url) => (
+              <Pressable onPress={() => openWebsite(url)} style={{ marginTop: 8 }}>
                 <Text
                   textDecorationLine="underline"
                   color={colors.palette.primary600}
