@@ -85,7 +85,7 @@ export const startSync = async (providerEmail?: string): Promise<void> => {
     // const activePeer = await resolveActivePeer()
     const activePeers = await Peer.DB.getActive()
     const activePeer = activePeers.pop()
-    if (activePeers.length > 1) {
+    if (activePeers.length > 0) {
       // we dont care to await this, if it fails it should not impact the user
       Peer.DB.deactivatePeersById(activePeers.map((it) => it.id)).catch((error) =>
         Logger.log({ error }),
