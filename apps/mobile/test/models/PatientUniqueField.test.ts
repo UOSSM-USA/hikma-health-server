@@ -98,6 +98,46 @@ describe("coerceBaseUniqueQueryValue", () => {
   })
 })
 
+describe("getAdditionalFieldColumnName", () => {
+  const f = (id: string, fieldType: RegistrationFormField["fieldType"]): RegistrationFormField =>
+    ({ id, fieldType }) as RegistrationFormField
+
+  it("maps each fieldType to its typed value column", () => {
+    const fields = [
+      f("n", "number"),
+      f("t", "text"),
+      f("s", "select"),
+      f("c", "checkbox"),
+      f("d", "date"),
+      f("b", "boolean"),
+    ]
+    expect(Patient.getAdditionalFieldColumnName(fields, "n")).toBe("number_value")
+    expect(Patient.getAdditionalFieldColumnName(fields, "t")).toBe("string_value")
+    expect(Patient.getAdditionalFieldColumnName(fields, "s")).toBe("string_value")
+    expect(Patient.getAdditionalFieldColumnName(fields, "c")).toBe("string_value")
+    expect(Patient.getAdditionalFieldColumnName(fields, "d")).toBe("date_value")
+    expect(Patient.getAdditionalFieldColumnName(fields, "b")).toBe("boolean_value")
+  })
+
+  it("defaults to string_value when the attribute id is not in the form", () => {
+    expect(Patient.getAdditionalFieldColumnName([f("x", "number")], "missing")).toBe("string_value")
+  })
+
+  // Characterization of a known bug (INV-5/6), pinned so it can't drift silently.
+  // The value column is picked from the field's current fieldType, so once an
+  // admin changes a field's type after data was written, reads target a different
+  // column than the one the value went into — the value is stranded, because
+  // nothing migrates it between slots.
+  it("selects the column by CURRENT type — a post-write type change strands the value", () => {
+    // "forty" was written when "age" was `text` → it lives in string_value.
+    // Admin later changed "age" to `number`; the read now targets number_value.
+    expect(Patient.getAdditionalFieldColumnName([f("age", "number")], "age")).toBe("number_value")
+    // The pre-change form pointed at the string_value where "forty" actually is:
+    expect(Patient.getAdditionalFieldColumnName([f("age", "text")], "age")).toBe("string_value")
+    // → same attribute id, two different columns before/after the type change.
+  })
+})
+
 // ---------------------------------------------------------------------------
 // DB-backed checks
 // ---------------------------------------------------------------------------

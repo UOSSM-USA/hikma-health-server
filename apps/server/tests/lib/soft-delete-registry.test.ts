@@ -28,6 +28,7 @@ describe("SOFT_DELETE_DEPENDENCIES", () => {
       "patient_vitals",
       "patient_problems",
       "patient_observations",
+      "dispensing_records",
     ];
 
     for (const table of expected) {

@@ -34,6 +34,7 @@ import { Logger } from "@hikmahealth/js-utils";
 import {
   LucideChevronDown,
   LucideGripHorizontal,
+  LucideRefreshCcwDot,
   LucideSlidersHorizontal,
   LucideTrash2,
 } from "lucide-react";
@@ -1003,8 +1004,15 @@ function FieldFlagsEditor({
   field: PatientRegistrationForm.Field;
   dispatch: FormDispatch;
 }) {
-  const { id, visible, required, unique, isSearchField, showsInSummary, fieldType } =
-    field;
+  const {
+    id,
+    visible,
+    required,
+    unique,
+    isSearchField,
+    showsInSummary,
+    fieldType,
+  } = field;
 
   // Uniqueness compares against a single stored value. It is only offered for
   // scalar text/number fields: a unique `boolean` would cap the table at two
@@ -1195,35 +1203,64 @@ function DeletedFieldsList({
   language: Language.LanguageKey;
   dispatch: FormDispatch;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
   if (fields.length === 0) return null;
 
   return (
     <div className="py-4">
       <hr />
-      <h3 className="text-lg mt-4 font-semibold">Deleted fields</h3>
+      <Collapsible
+        open={isOpen}
+        onOpenChange={setIsOpen}
+        className="pt-2"
+        data-testid="field-logic-panel"
+      >
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            data-testid="field-logic-toggle"
+            className="flex w-full items-center justify-between rounded-md hover:bg-muted/40"
+          >
+            <div className="text-lg font-semibold">Deleted fields</div>
+            <LucideChevronDown
+              size="1rem"
+              className={`transition-transform ${isOpen ? "rotate-0" : "-rotate-90"} align-cen`}
+            />
+          </button>
+        </CollapsibleTrigger>
 
-      {fields.map((field) => {
-        return (
-          <div className="flex items-center gap-2" key={field.id}>
-            <div>
-              <label>{Language.getTranslation(field.label, language)}</label>
-            </div>
+        <CollapsibleContent>
+          {fields.map((field) => {
+            return (
+              <div
+                className="flex items-center justify-between gap-2"
+                key={field.id}
+              >
+                <div>
+                  <label>
+                    {Language.getTranslation(field.label, language)}
+                  </label>
+                </div>
 
-            <Button
-              variant="outline"
-              aria-label="Settings"
-              onClick={() =>
-                dispatch({
-                  type: "restore-field",
-                  payload: { id: field.id },
-                })
-              }
-            >
-              Restore
-            </Button>
-          </div>
-        );
-      })}
+                <Button
+                  variant="link"
+                  aria-label="Settings"
+                  className="gap-1 text-green-700 cursor-pointer"
+                  onClick={() =>
+                    dispatch({
+                      type: "restore-field",
+                      payload: { id: field.id },
+                    })
+                  }
+                >
+                  <LucideRefreshCcwDot />
+                  Restore
+                </Button>
+              </div>
+            );
+          })}
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

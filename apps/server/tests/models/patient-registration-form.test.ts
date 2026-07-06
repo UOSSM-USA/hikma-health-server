@@ -31,14 +31,13 @@ const baseField = (
 });
 
 describe("inputTypes constant", () => {
-  it("contains the six known input types in fixed order", () => {
+  it("contains the five known input types in fixed order", () => {
     expect(PatientRegistrationForm.inputTypes).toEqual([
       "number",
       "text",
       "select",
       "checkbox",
       "date",
-      "boolean",
     ]);
   });
 });

@@ -434,3 +434,71 @@ describe("Patient registration (integration)", () => {
     expect(row.additional_attributes[allergiesFieldId].attribute).toBe("allergies");
   });
 });
+
+describe("Field lifecycle — soft-delete preserves patient data (INV-9)", () => {
+  it("soft-deleting a custom field leaves its stored attribute values intact", async () => {
+    const clinicId = await insertTestClinic();
+    const { formId, bloodTypeFieldId } = await insertTestRegistrationForm(clinicId);
+
+    const patientId = await registerPatient(
+      {
+        given_name: "Katherine",
+        surname: "Johnson",
+        sex: "female",
+        primary_clinic_id: clinicId,
+      },
+      [{ attribute_id: bloodTypeFieldId, attribute: "blood_type", string_value: "O+" }],
+    );
+
+    // The value is present before the field is soft-deleted.
+    const before = await testDb
+      .selectFrom("patient_additional_attributes")
+      .select(["string_value", "is_deleted"])
+      .where("patient_id", "=", patientId)
+      .where("attribute_id", "=", bloodTypeFieldId)
+      .executeTakeFirst();
+    expect(before!.string_value).toBe("O+");
+
+    // Soft-delete the custom field in the form definition — exactly what the
+    // `remove-field` reducer does: flip `deleted: true` on the field.
+    const form = await testDb
+      .selectFrom("patient_registration_forms")
+      .select("fields")
+      .where("id", "=", formId)
+      .executeTakeFirst();
+    const updatedFields = (form!.fields as any[]).map((f: any) =>
+      f.id === bloodTypeFieldId ? { ...f, deleted: true } : f,
+    );
+    await testDb
+      .updateTable("patient_registration_forms")
+      .set({
+        fields: sql`${JSON.stringify(updatedFields)}::jsonb`,
+        last_modified: sql`now()`,
+      })
+      .where("id", "=", formId)
+      .execute();
+
+    // The patient's stored value must survive — soft-deleting a form field is a
+    // definition change, never a hard-delete of patient data.
+    const after = await testDb
+      .selectFrom("patient_additional_attributes")
+      .select(["string_value", "is_deleted"])
+      .where("patient_id", "=", patientId)
+      .where("attribute_id", "=", bloodTypeFieldId)
+      .executeTakeFirst();
+    expect(after).toBeDefined();
+    expect(after!.string_value).toBe("O+");
+    expect(after!.is_deleted).toBe(false);
+
+    // The field is now marked deleted in the form (recoverable), not removed.
+    const reloaded = await testDb
+      .selectFrom("patient_registration_forms")
+      .select("fields")
+      .where("id", "=", formId)
+      .executeTakeFirst();
+    const bloodField = (reloaded!.fields as any[]).find(
+      (f: any) => f.id === bloodTypeFieldId,
+    );
+    expect(bloodField.deleted).toBe(true);
+  });
+});

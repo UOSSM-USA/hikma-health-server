@@ -248,6 +248,124 @@ describe("fail-safe semantics", () => {
   });
 });
 
+// INV-15, evaluate arm. The tests above cover parse-phase failure; this covers
+// the other arm — a rule that compiles fine but throws while evaluating still
+// has to fail safe and tag the diagnostic phase:"evaluate". A Date isn't
+// coercible for `>=`, so JsonLogic's comparison raises NaNError — the same
+// reason buildRuleScope normalizes dates to "YYYY-MM-DD" before evaluation.
+describe("fail-safe semantics — evaluate phase (parses, throws at eval)", () => {
+  const throwingRule = { ">=": [{ var: "form.x" }, 0] };
+  const scopeWithDate = withForm({ x: new Date("2000-01-01") });
+
+  it("visibleIf throws at eval → field stays visible, phase:evaluate", () => {
+    const evaluate = compileRules([field("f", { visibleIf: throwingRule })]);
+    const result = evaluate(scopeWithDate);
+    expect(result.isVisible("f")).toBe(true);
+    expect(result.diagnostics[0]).toMatchObject({
+      fieldId: "f",
+      slot: "visibleIf",
+      phase: "evaluate",
+    });
+  });
+
+  it("requiredIf throws at eval → falls back to static required flag, phase:evaluate", () => {
+    const evaluate = compileRules([
+      field("f", { required: true, requiredIf: throwingRule }),
+    ]);
+    const result = evaluate(scopeWithDate);
+    expect(result.isRequired("f")).toBe(true);
+    expect(result.diagnostics[0]).toMatchObject({
+      slot: "requiredIf",
+      phase: "evaluate",
+    });
+  });
+
+  it("validator throws at eval → treated as pass (no error), phase:evaluate", () => {
+    const evaluate = compileRules([
+      field("f", {
+        validators: [{ id: "v1", rule: throwingRule, message: "should not fire" }],
+      }),
+    ]);
+    const result = evaluate(scopeWithDate);
+    expect(result.validationErrors).toEqual([]);
+    expect(result.diagnostics[0]).toMatchObject({
+      slot: "validators",
+      validatorId: "v1",
+      phase: "evaluate",
+    });
+  });
+
+  it("computedValue throws at eval → no computed entry, phase:evaluate", () => {
+    const evaluator = compileRules([field("f", { computedValue: throwingRule })]);
+    const result = stabilizeComputedValues(evaluator, scopeWithDate);
+    expect(hasComputed(result.evaluation, "f")).toBe(false);
+    expect(
+      result.evaluation.diagnostics.some(
+        (d) => d.slot === "computedValue" && d.phase === "evaluate",
+      ),
+    ).toBe(true);
+  });
+});
+
+// INV-17 — the computed-cycle iteration cap must stay at exactly 64. Existing
+// stabilization tests only assert `>= 32`; this pins the documented bound so
+// an accidental change to `maxStabilizeIterations` is caught.
+describe("INV-17 — computed-cycle iteration cap", () => {
+  it("maxStabilizeIterations is pinned at 64", () => {
+    expect(maxStabilizeIterations).toBe(64);
+  });
+});
+
+// INV-20 — cross-surface parity. Mobile and web both run registration rules
+// through this same engine (compileRules / stabilizeComputedValues from
+// @hikmahealth/forms), and each app's buildRuleScope normalizes inputs the same
+// way (dates → "YYYY-MM-DD"), covered in each app's own rule-scope suite. This
+// pins the expected output for the TC-11 scenario — one visibleIf, one
+// requiredIf, one validator, one computedValue together — so an engine change
+// that would desync the two surfaces trips here.
+describe("INV-20 — TC-11 integrated parity contract", () => {
+  const form: fieldWithRules[] = [
+    field("marital_status"),
+    field("spouse_name", {
+      visibleIf: { "==": [{ var: "form.marital_status" }, "married"] },
+      requiredIf: { "==": [{ var: "form.marital_status" }, "married"] },
+    }),
+    field("age", {
+      required: true,
+      validators: [
+        { id: "age-nonneg", rule: { ">=": [{ var: "form.age" }, 0] }, message: "Age must be ≥ 0" },
+      ],
+    }),
+    field("total", {
+      computedValue: { "+": [{ var: "form.a" }, { var: "form.b" }] },
+    }),
+  ];
+
+  it("single + valid age: spouse hidden/optional, no errors, total computed", () => {
+    const result = stabilizeComputedValues(
+      compileRules(form),
+      withForm({ marital_status: "single", age: 5, a: 2, b: 3 }),
+    );
+    expect(result.evaluation.isVisible("spouse_name")).toBe(false);
+    expect(result.evaluation.isRequired("spouse_name")).toBe(false);
+    expect(result.evaluation.validationErrors).toEqual([]);
+    expect(getComputed(result.evaluation, "total")).toBe(5);
+  });
+
+  it("married + negative age: spouse visible/required, validator fires, total still computed", () => {
+    const result = stabilizeComputedValues(
+      compileRules(form),
+      withForm({ marital_status: "married", age: -1, a: 2, b: 3 }),
+    );
+    expect(result.evaluation.isVisible("spouse_name")).toBe(true);
+    expect(result.evaluation.isRequired("spouse_name")).toBe(true);
+    expect(result.evaluation.validationErrors.map((e) => e.validatorId)).toContain(
+      "age-nonneg",
+    );
+    expect(getComputed(result.evaluation, "total")).toBe(5);
+  });
+});
+
 describe("evaluator closure — purity", () => {
   it("same scope yields equal output", () => {
     const evaluate = compileRules([

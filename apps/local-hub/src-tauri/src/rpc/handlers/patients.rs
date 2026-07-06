@@ -550,7 +550,9 @@ pub fn handle_get_patient(
 /// Cascading soft delete across patients and all related tables.
 ///
 /// Sets is_deleted = 1, deleted_at, and local_server_deleted_at on:
-/// patients, patient_additional_attributes, visits, events, appointments.
+/// patients, patient_additional_attributes, visits, events, appointments,
+/// prescriptions, prescription_items, patient_vitals, patient_problems,
+/// patient_observations, dispensing_records.
 pub fn handle_delete_patient(
     payload: &DeletePatientCommand,
     conn: &Connection,
@@ -592,6 +594,12 @@ pub fn handle_delete_patient(
             ("visits", "patient_id"),
             ("events", "patient_id"),
             ("appointments", "patient_id"),
+            ("prescriptions", "patient_id"),
+            ("prescription_items", "patient_id"),
+            ("patient_vitals", "patient_id"),
+            ("patient_problems", "patient_id"),
+            ("patient_observations", "patient_id"),
+            ("dispensing_records", "patient_id"),
         ];
 
         for (table, fk_column) in tables_and_fks {
@@ -1345,6 +1353,57 @@ mod tests {
         )
         .unwrap();
 
+        // Clinical child records across every cascade table.
+        conn.execute(
+            "INSERT INTO prescriptions (id, patient_id, provider_id, prescribed_at, status,
+                items, notes, metadata, created_at, updated_at, last_modified,
+                server_created_at, local_server_created_at, local_server_last_modified_at)
+             VALUES ('rx1', 'del1', 'u1', 1000, 'pending', '[]', '', '{}', 1000, 2000, 1000, 1000, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO prescription_items (id, prescription_id, patient_id, drug_id, clinic_id,
+                dosage_instructions, quantity_prescribed, created_at, updated_at, metadata,
+                last_modified, local_server_created_at, local_server_last_modified_at)
+             VALUES ('pi1', 'rx1', 'del1', 'd1', 'c1', 'take one', 1, 1000, 2000, '{}', 1000, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO patient_vitals (id, patient_id, timestamp, metadata, created_at,
+                updated_at, last_modified, server_created_at, local_server_created_at,
+                local_server_last_modified_at)
+             VALUES ('pv1', 'del1', 1000, '{}', 1000, 2000, 1000, 1000, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO patient_problems (id, patient_id, problem_code_system, problem_code,
+                problem_label, clinical_status, verification_status, metadata, created_at,
+                updated_at, last_modified, server_created_at, local_server_created_at,
+                local_server_last_modified_at)
+             VALUES ('pp1', 'del1', 'ICD10', 'A00', 'Cholera', 'active', 'confirmed', '{}', 1000, 2000, 1000, 1000, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO patient_observations (id, patient_id, timestamp, observation_code,
+                metadata, created_at, updated_at, last_modified, server_created_at,
+                local_server_created_at, local_server_last_modified_at)
+             VALUES ('po1', 'del1', 1000, 'OBS1', '{}', 1000, 2000, 1000, 1000, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO dispensing_records (id, clinic_id, drug_id, patient_id, quantity_dispensed,
+                dispensed_by, dispensed_at, metadata, last_modified, created_at, updated_at,
+                local_server_created_at, local_server_last_modified_at)
+             VALUES ('dr1', 'c1', 'd1', 'del1', 1, 'u1', 1000, '{}', 1000, 1000, 2000, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+
         let delete_cmd = DeletePatientCommand {
             patient_id: "del1".to_string(),
         };
@@ -1357,6 +1416,12 @@ mod tests {
             ("patient_additional_attributes", "patient_id"),
             ("visits", "patient_id"),
             ("events", "patient_id"),
+            ("prescriptions", "patient_id"),
+            ("prescription_items", "patient_id"),
+            ("patient_vitals", "patient_id"),
+            ("patient_problems", "patient_id"),
+            ("patient_observations", "patient_id"),
+            ("dispensing_records", "patient_id"),
         ] {
             let sql = format!("SELECT is_deleted FROM {} WHERE {} = 'del1'", table, col);
             let deleted: i64 = conn.query_row(&sql, [], |r| r.get(0)).unwrap();

@@ -235,3 +235,90 @@ describe("renderedValue type-level: TS sees a flat string | number | boolean uni
     expect(typeof r).toBe("string");
   });
 });
+
+// INV-7 — a select/checkbox value can point at an option the admin later
+// removed from `options`. The renderer never looks at `options`; it just
+// coerces the stored string, so an orphaned value shows as plain text instead
+// of crashing the list/detail view. Locks that in, in case someone later adds
+// validation against the option list.
+describe("renderFieldValue — INV-7: removed option renders gracefully", () => {
+  it("base select: value absent from options renders as the raw stored string", () => {
+    const f = baseField({ fieldType: "select", options: [{ en: "North" }] });
+    expect(renderFieldValue(f, "South")).toBe("South");
+  });
+
+  it("custom select: orphaned attribute value renders as the raw string", () => {
+    const f = baseField({
+      fieldType: "select",
+      baseField: false,
+      options: [{ en: "North" }],
+    });
+    expect(renderFieldValue(f, attr({ string_value: "South" }))).toBe("South");
+  });
+
+  it("custom checkbox: still round-trips both stored members when one option is removed", () => {
+    // Stored "fever\x1Fcough"; admin removes "cough" from options. The
+    // renderer ignores the option list, so both members still display.
+    const f = baseField({ fieldType: "checkbox", baseField: false });
+    expect(
+      renderFieldValue(f, attr({ string_value: `fever${US}cough` })),
+    ).toBe("fever, cough");
+  });
+});
+
+// Characterization of a known bug (INV-5/6), pinned so it can't drift silently.
+// When an admin changes a custom field's fieldType (say text → number), the
+// update-field-type reducer doesn't migrate the stored value between slots. The
+// old value stays put, but the renderer reads the slot for the field's new type,
+// so it silently drops out of view — still there in the raw DB, just unreachable.
+describe("renderFieldValue — INV-5/6: data-type change strands stored values", () => {
+  it("text→number: value stranded in string_value renders as 0, not the original text", () => {
+    // "forty" was written while the field was `text` (string_value); the
+    // field is now `number`, so the renderer reads number_value === null.
+    const f = baseField({ fieldType: "number", baseField: false });
+    expect(
+      renderFieldValue(f, attr({ string_value: "forty", number_value: null })),
+    ).toBe(0);
+  });
+
+  it("number→text: value stranded in number_value renders as 'null', not the original number", () => {
+    // 42 was written while the field was `number`; the field is now `text`,
+    // so the renderer reads string_value === null → String(null) === "null".
+    const f = baseField({ fieldType: "text", baseField: false });
+    expect(
+      renderFieldValue(f, attr({ string_value: null, number_value: 42 })),
+    ).toBe("null");
+  });
+});
+
+// Characterization of a real defect (INV-23): the date renderer formats in the
+// runtime's local timezone. A DOB stored as a bare "YYYY-MM-DD" is parsed as UTC
+// midnight, so in a negative-offset zone the local calendar date lands on the
+// previous day — the displayed DOB differs between a PST device and a UTC one.
+// The other date tests above dodge this (T10:00:00Z, or a format-only regex);
+// this one pins the day-flip.
+describe("renderFieldValue — INV-23: DOB shifts a day across timezones", () => {
+  const withTZ = <T>(tz: string, fn: () => T): T => {
+    const prev = process.env.TZ;
+    process.env.TZ = tz;
+    try {
+      return fn();
+    } finally {
+      process.env.TZ = prev;
+    }
+  };
+
+  const f = baseField({ fieldType: "date" });
+
+  it("bare date renders the same calendar day in UTC", () => {
+    withTZ("UTC", () => {
+      expect(renderFieldValue(f, "1990-01-15")).toBe("1990-01-15");
+    });
+  });
+
+  it("SAME bare date renders the PREVIOUS day in a negative-offset TZ", () => {
+    withTZ("America/Los_Angeles", () => {
+      expect(renderFieldValue(f, "1990-01-15")).toBe("1990-01-14");
+    });
+  });
+});

@@ -45,13 +45,12 @@ namespace PatientRegistrationForm {
     "select",
     "checkbox",
     "date",
-    "boolean",
   ] as const;
 
   export type InputType = (typeof inputTypes)[number];
 
-  // Registration fields collect simple primitive values across all six
-  // input types (number / text / select / checkbox / date / boolean), so
+  // Registration fields collect simple primitive values across all five
+  // input types (number / text / select / checkbox / date), so
   // every field carries the full input-rules slot — `visibleIf`,
   // `requiredIf`, `validators`, `computedValue`. Slots are optional;
   // legacy stored fields without rules decode unchanged.

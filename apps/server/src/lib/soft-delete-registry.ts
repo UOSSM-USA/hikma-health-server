@@ -25,6 +25,7 @@ export const SOFT_DELETE_DEPENDENCIES: Record<string, SoftDeleteDep[]> = {
     { table: "patient_vitals", foreignKey: "patient_id" },
     { table: "patient_problems", foreignKey: "patient_id" },
     { table: "patient_observations", foreignKey: "patient_id" },
+    { table: "dispensing_records", foreignKey: "patient_id" },
   ],
   visits: [
     { table: "prescriptions", foreignKey: "visit_id" },
@@ -57,6 +58,7 @@ export const cascadeSoftDelete = async (
       // @ts-ignore — dynamic column name
       .set({
         is_deleted: true,
+        deleted_at: sql`now()::timestamp with time zone`,
         updated_at: sql`now()::timestamp with time zone`,
         last_modified: sql`now()::timestamp with time zone`,
       })

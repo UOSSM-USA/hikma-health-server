@@ -415,9 +415,11 @@ namespace Patient {
 
   /**
    * Build the base SQL query for retrieving patients with their additional attributes
+   * Exported so the clinic-scoping clause can be tested directly with an explicit
+   * clinicIds list, without the cookie-bound token resolution used at the API layer.
    * @returns SQL query template
    */
-  const buildPatientAttributesBaseQuery = (clinicIds: string[]) => sql`
+  export const buildPatientAttributesBaseQuery = (clinicIds: string[]) => sql`
     SELECT
       p.*,
       COALESCE(json_object_agg(
@@ -529,15 +531,15 @@ namespace Patient {
    * @param query The SQL query to execute
    * @returns Formatted patient records
    */
-  const executePatientQuery = async <T extends { rows: any[] }>(
-    query: CompiledQuery<unknown>,
-  ) => {
-    const result = await db.executeQuery<
-      Table.Patients & { additional_attributes: Record<string, any> }
-    >(query);
+  export const executePatientQuery = createServerOnlyFn(
+    async <T extends { rows: any[] }>(query: CompiledQuery<unknown>) => {
+      const result = await db.executeQuery<
+        Table.Patients & { additional_attributes: Record<string, any> }
+      >(query);
 
-    return result.rows.map(formatPatientDates);
-  };
+      return result.rows.map(formatPatientDates);
+    },
+  );
 
   type PatientsQueryResult = {
     patients: Patient.EncodedT[];
