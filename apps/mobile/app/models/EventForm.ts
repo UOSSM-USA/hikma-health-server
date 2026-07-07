@@ -5,6 +5,7 @@ import database from "@/db"
 import EventFormModel from "@/db/model/EventForm"
 import { type RuleEvaluation, type RuleScope } from "@/lib/form-rules"
 import { sanitizeFieldName } from "@/utils/fieldNameSanitizer"
+import { splitMultiValues } from "@/utils/parsers"
 
 import { type WithInputRules } from "./form-rules"
 import Language from "./Language"
@@ -277,6 +278,16 @@ namespace EventForm {
     ctx: RuleScope["ctx"]
   }
 
+  // Whether a field is a multi-select (its value is a *set* of option
+  // values, not a scalar). `multi` is an Effect `Option<boolean>` on
+  // FieldItem in production; tests build fields with a plain boolean, so
+  // accept both shapes.
+  function isMultiSelectField(field: FieldItem): boolean {
+    const m: unknown = field.multi
+    if (Option.isOption(m)) return Option.getOrElse(m, () => false) === true
+    return m === true
+  }
+
   /**
    * Build the `RuleScope` consumed by the compiled evaluator.
    *
@@ -293,6 +304,9 @@ namespace EventForm {
    * - File fields → `fileUploads[field.name]?.fileId ?? null`. Other
    *   metadata (fileName, isComplete) isn't surfaced — rules don't have
    *   a stable contract for it yet.
+   * - Multi-select fields → the chosen option values as a `string[]`
+   *   (split from the persisted joined string) so membership rules see a
+   *   real array.
    * - All other fields → `watchedValues[sanitizeFieldName(field.name)]`.
    *   Missing keys map to `undefined` (matches the evaluator's
    *   conservative defaults).
@@ -318,6 +332,21 @@ namespace EventForm {
       }
 
       const value = watchedValues[sanitizeFieldName(field.name)]
+      // Multi-select fields persist their chosen option values as a
+      // `EVENT_MULTI_SEPARATOR`-joined string (see the picker's `setValue`).
+      // The evaluator needs a real array so membership operators (`in`) test
+      // exact option values instead of substring-matching the joined string
+      // (`"cat"` in `"catalog; dog"`), and so `some`/`all` stop collapsing a
+      // string to `[]`. Split at the scope boundary only — persisted storage
+      // stays the joined string.
+      if (isMultiSelectField(field)) {
+        form[field.id] = Array.isArray(value)
+          ? value
+          : typeof value === "string"
+            ? splitMultiValues(value)
+            : []
+        continue
+      }
       // JsonLogic's comparison coercer (`vendor/@nd/jsonlogic/.../Coerce.res`)
       // treats `Date` instances as non-coercible `Object`s — comparisons error
       // with NaNError and the evaluator's fail-safe semantics silently skip

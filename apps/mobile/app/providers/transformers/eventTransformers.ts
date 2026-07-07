@@ -17,6 +17,7 @@ export type ServerEvent = {
   metadata: Record<string, any>
   is_deleted: boolean
   deleted_at: string | null
+  recorded_by_user_id: string | null
   created_at: string
   updated_at: string
 }
@@ -33,6 +34,7 @@ export function eventFromServer(s: ServerEvent): EventNS.T {
     metadata: s.metadata ?? {},
     isDeleted: s.is_deleted,
     deletedAt: Option.fromNullable(s.deleted_at ? new Date(s.deleted_at) : null),
+    recordedByUserId: s.recorded_by_user_id || null,
     createdAt: new Date(s.created_at),
     updatedAt: new Date(s.updated_at),
   }
@@ -50,6 +52,7 @@ export function eventToServer(e: EventNS.T): ServerEvent {
     metadata: e.metadata,
     is_deleted: e.isDeleted,
     deleted_at: Option.getOrNull(e.deletedAt)?.toISOString() ?? null,
+    recorded_by_user_id: e.recordedByUserId,
     created_at: e.createdAt.toISOString(),
     updated_at: e.updatedAt.toISOString(),
   }

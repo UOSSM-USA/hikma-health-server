@@ -16,6 +16,7 @@ const serverEventArb: fc.Arbitrary<ServerEvent> = fc.record({
   metadata: fc.constant({}),
   is_deleted: fc.constant(false),
   deleted_at: fc.constant(null),
+  recorded_by_user_id: fc.oneof(fc.uuid(), fc.constant(null), fc.constant("")),
   created_at: fc
     .date({ min: new Date("2000-01-01"), max: new Date("2030-01-01") })
     .filter((d) => !isNaN(d.getTime()))
@@ -38,6 +39,22 @@ describe("eventFromServer / eventToServer round-trip", () => {
         expect(back.visit_id).toBe(server.visit_id)
         expect(back.event_type).toBe(server.event_type)
         expect(back.form_id).toBe(server.form_id)
+      }),
+      { numRuns: 50 },
+    )
+  })
+
+  it("never round-trips recorded_by_user_id back as an empty string", () => {
+    fc.assert(
+      fc.property(serverEventArb, (server) => {
+        const back = eventToServer(eventFromServer(server))
+
+        expect(back.recorded_by_user_id).not.toBe("")
+        if (server.recorded_by_user_id) {
+          expect(back.recorded_by_user_id).toBe(server.recorded_by_user_id)
+        } else {
+          expect(back.recorded_by_user_id).toBeNull()
+        }
       }),
       { numRuns: 50 },
     )

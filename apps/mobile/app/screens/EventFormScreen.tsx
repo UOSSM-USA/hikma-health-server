@@ -69,6 +69,7 @@ import {
   type ResolvedFormTranslations,
 } from "@/utils/eventFormTranslations"
 import { sanitizeFieldName, unsanitizeFormData } from "@/utils/fieldNameSanitizer"
+import { EVENT_MULTI_SEPARATOR, joinMultiValues } from "@/utils/parsers"
 import { useSafeAreaInsetsStyle } from "@/utils/useSafeAreaInsetsStyle"
 import { Logger } from "@hikmahealth/js-utils"
 
@@ -987,7 +988,7 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                               )
                               const data = callback(pickerValue || "")
                               const newValue =
-                                field.multi && Array.isArray(data) ? data.join("; ") : data
+                                field.multi && Array.isArray(data) ? joinMultiValues(data) : data
                               setValue(sanitizeFieldName(field.name) as never, newValue as never)
                             }}
                           />
@@ -1390,7 +1391,7 @@ Given a form value and whether or not it supports multiple inputs, return the pr
 function multiPickerValue(
   formValue: string | string[],
   isMulti: boolean,
-  delim = "; ",
+  delim = EVENT_MULTI_SEPARATOR,
 ): string | string[] {
   if (isMulti === false) {
     return String(formValue)

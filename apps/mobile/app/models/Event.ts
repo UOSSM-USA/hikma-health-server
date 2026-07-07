@@ -9,6 +9,7 @@ import VisitModel from "@/db/model/Visit"
 import ICDEntry from "./ICDEntry"
 import { isValid } from "date-fns"
 import { Logger } from "@hikmahealth/js-utils"
+import { isValidUUID } from "@/utils/misc"
 
 namespace Event {
   export type FormDataItem =
@@ -36,7 +37,7 @@ namespace Event {
     metadata: Record<string, any>
     isDeleted: boolean
     deletedAt: Option.Option<Date>
-    recordedByUserId: string
+    recordedByUserId: string | null
     createdAt: Date
     updatedAt: Date
   }
@@ -54,7 +55,7 @@ namespace Event {
     metadata: {},
     isDeleted: false,
     deletedAt: Option.none(),
-    recordedByUserId: "",
+    recordedByUserId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   }
@@ -117,6 +118,7 @@ namespace Event {
      * @param {number} checkInTimestamp
      * @param {string | null | undefined} eventId - if defined we are going to update that event
      * @returns {Promise<{eventId: string, visitId: string}>}
+     * @throws if clinicId is not a valid UUID
      */
     export const create = async (
       event: Omit<EventModel, "id" | "createdAt" | "updatedAt">,
@@ -127,6 +129,12 @@ namespace Event {
       checkInTimestamp: number,
       eventId?: string | null | undefined,
     ): Promise<{ eventId: string; visitId: string }> => {
+      // Rejected before any write: an event with no clinic cannot be attributed
+      // to a facility, and an empty clinicId used to reach PostgreSQL as "",
+      // failing the whole sync push rather than this one record.
+      if (!isValidUUID(clinicId)) {
+        throw new Error(`Cannot create an event without a valid clinic_id (got "${clinicId}")`)
+      }
       // Logger.log({
       //   event: JSON.stringify(event, null, 2),
       //   visitId,
@@ -146,8 +154,8 @@ namespace Event {
               newEvent.formId = event.formId
               newEvent.formData = event.formData
               newEvent.metadata = event.metadata
-              if (!event.recordedByUserId || event.recordedByUserId === "") {
-                newEvent.recordedByUserId = providerId
+              if (!event.recordedByUserId) {
+                newEvent.recordedByUserId = providerId || null
               }
             })
           } else {
@@ -206,7 +214,7 @@ namespace Event {
             providerName,
           }
           newEvent.isDeleted = event.isDeleted
-          newEvent.recordedByUserId = providerId
+          newEvent.recordedByUserId = providerId || null
         })
 
         // batch create both of them

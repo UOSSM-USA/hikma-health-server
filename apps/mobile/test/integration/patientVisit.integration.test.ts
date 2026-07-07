@@ -880,6 +880,55 @@ describe("Event.DB", () => {
     expect(visits).toHaveLength(1)
   })
 
+  it.each([
+    ["an empty clinicId", ""],
+    ["a non-uuid clinicId", "clinic-1"],
+  ])("refuses to create an event with %s", async (_label, badClinicId) => {
+    const eventInput = {
+      patientId,
+      formId: "form-vitals",
+      visitId: "",
+      eventType: "vitals",
+      formData: [],
+      metadata: {},
+      isDeleted: false,
+      recordedByUserId: userId,
+    } as unknown as Omit<EventModel, "id" | "createdAt" | "updatedAt">
+
+    await expect(
+      Event.DB.create(eventInput, null, badClinicId, userId, userName, Date.now()),
+    ).rejects.toThrow(/valid clinic_id/)
+
+    const events = await testDb
+      .get<EventModel>("events")
+      .query(Q.where("patient_id", patientId))
+      .fetch()
+    expect(events).toHaveLength(0)
+
+    const visits = await testDb
+      .get<VisitModel>("visits")
+      .query(Q.where("patient_id", patientId))
+      .fetch()
+    expect(visits).toHaveLength(0)
+  })
+
+  it("records a null recordedByUserId when there is no provider", async () => {
+    const eventInput = {
+      patientId,
+      formId: "form-vitals",
+      visitId: "",
+      eventType: "vitals",
+      formData: [],
+      metadata: {},
+      isDeleted: false,
+    } as unknown as Omit<EventModel, "id" | "createdAt" | "updatedAt">
+
+    const result = await Event.DB.create(eventInput, null, clinicId, "", "", Date.now())
+
+    const event = await testDb.get<EventModel>("events").find(result.eventId)
+    expect(event.recordedByUserId).toBeNull()
+  })
+
   it("adds an event to an existing visit", async () => {
     // Create visit first
     const visit = await testDb.write(() =>

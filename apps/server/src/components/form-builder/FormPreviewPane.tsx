@@ -11,6 +11,8 @@ import { LucideInfo } from "lucide-react";
 import { DatePickerInput } from "@/components/date-picker-input";
 import { RadioInput, type RadioOption } from "@/components/radio-input";
 import { SelectInput, type SelectOption } from "@/components/select-input";
+import { MultiSelect } from "@/components/multi-select";
+import { joinCheckboxValues, splitCheckboxValues } from "@/lib/utils";
 
 import EventForm from "@/models/event-form";
 import {
@@ -113,6 +115,21 @@ export function FormPreviewPane({
       if (field._tag === "date") {
         const v = seededForm[field.id];
         if (v instanceof Date) seededForm[field.id] = formatDateYMD(v);
+      }
+      // Multi-selects reach rules as an array of option values, matching the
+      // device (EventForm.buildRuleScope). The joined string each platform
+      // persists is an internal storage detail — splitting here with the
+      // separator this pane writes keeps the two in agreement at the rule
+      // boundary even though the delimiters themselves differ. Without it,
+      // `in` substring-matches the joined blob and `some`/`all` collapse it.
+      if (field._tag === "options" && field.multi) {
+        const v = seededForm[field.id];
+        seededForm[field.id] = Array.isArray(v)
+          ? v
+          : typeof v === "string"
+            ? splitCheckboxValues(v)
+            : [];
+        continue;
       }
       if (seededForm[field.id] !== undefined) continue;
       if (field._tag === "diagnosis" || field._tag === "medicine") {
@@ -332,6 +349,40 @@ function renderEditable(field: FieldData, opts: EditableRenderOpts) {
             value={typeof value === "string" ? value : undefined}
             onChange={(v) => onChange(v)}
           />
+        );
+      }
+      if (field.multi) {
+        // Stored joined so the widget round-trips through the same string-typed
+        // `value` every other field uses; the rule scope splits it back into an
+        // array before evaluation (see `seededForm` above).
+        const multiOptions = data.map((opt) =>
+          typeof opt === "string"
+            ? { label: opt, value: opt }
+            : { label: opt.label, value: opt.value },
+        );
+        const selected =
+          typeof value === "string" ? splitCheckboxValues(value) : [];
+        return (
+          <div className="space-y-1">
+            <Label>
+              {field.name}
+              {required && <span className="text-destructive">*</span>}
+            </Label>
+            {field.description && (
+              <p className="text-sm text-muted-foreground">
+                {field.description}
+              </p>
+            )}
+            <MultiSelect
+              options={multiOptions}
+              defaultValue={selected}
+              onValueChange={(values) =>
+                onChange(values.length ? joinCheckboxValues(values) : undefined)
+              }
+              placeholder="Select options"
+              className="w-full"
+            />
+          </div>
         );
       }
       return (

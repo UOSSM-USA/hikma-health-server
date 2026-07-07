@@ -1,64 +1,39 @@
-/**
- * If you're using Sentry
- *   Expo https://docs.expo.dev/guides/using-sentry/
- */
-// import * as Sentry from "@sentry/react-native"
-
 import { Logger } from "@hikmahealth/js-utils"
+import * as Sentry from "@sentry/react-native"
 
 /**
- * If you're using Crashlytics: https://rnfirebase.io/crashlytics/usage
- */
-// import crashlytics from "@react-native-firebase/crashlytics"
-
-/**
- * If you're using Bugsnag:
- *   RN   https://docs.bugsnag.com/platforms/react-native/)
- *   Expo https://docs.bugsnag.com/platforms/react-native/expo/
- */
-// import Bugsnag from "@bugsnag/react-native"
-// import Bugsnag from "@bugsnag/expo"
-
-/**
- *  This is where you put your crash reporting service initialization code to call in `./app/app.tsx`
- */
-export const initCrashReporting = () => {
-  // Sentry.init({
-  //   dsn: "YOUR DSN HERE",
-  //   debug: true, // If `true`, Sentry will try to print out useful debugging information if something goes wrong with sending the event. Set it to `false` in production
-  // })
-  // Bugsnag.start("YOUR API KEY")
-}
-
-/**
- * Error classifications used to sort errors on error reporting services.
+ * How bad an error was, used to sort and filter it in Sentry.
  */
 export enum ErrorType {
-  /**
-   * An error that would normally cause a red screen in dev
-   * and force the user to sign out and restart.
-   */
+  /** Left the app unusable - a crashed render, or anything the user can only escape by restarting. */
   FATAL = "Fatal",
-  /**
-   * An error caught by try/catch where defined using Reactotron.tron.error.
-   */
+  /** Caught and recovered from, but still worth knowing about. */
   HANDLED = "Handled",
 }
 
 /**
- * Manually report a handled error.
+ * Send an error to Sentry, and to the console in development.
+ *
+ * Pass `componentStack` from an error boundary's `ErrorInfo` to see the React tree next to
+ * the stack trace in Sentry. Render errors reach Sentry only this way, because React catches
+ * them before the global handler ever sees them.
+ *
+ * Calling this before `Sentry.init` is harmless - the event is dropped.
  */
-export const reportCrash = (error: Error, type: ErrorType = ErrorType.FATAL) => {
+export const reportCrash = (
+  error: Error,
+  type: ErrorType = ErrorType.FATAL,
+  componentStack?: string | null,
+) => {
   if (__DEV__) {
-    // Log to console and Reactotron in development
     const message = error.message || "Unknown"
     Logger.error(error)
     Logger.log({ message, type })
-  } else {
-    // In production, utilize crash reporting service of choice below:
-    // RN
-    // Sentry.captureException(error)
-    // crashlytics().recordError(error)
-    // Bugsnag.notify(error)
   }
+
+  Sentry.captureException(error, {
+    level: type === ErrorType.FATAL ? "fatal" : "error",
+    tags: { errorType: type },
+    contexts: componentStack ? { react: { componentStack } } : undefined,
+  })
 }

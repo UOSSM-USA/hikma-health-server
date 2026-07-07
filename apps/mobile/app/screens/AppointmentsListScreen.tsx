@@ -357,23 +357,28 @@ const $text: ThemedStyle<TextStyle> = ({ colors, typography }) => ({
   color: colors.palette.primary500,
 })
 
-// Add patient, clinic, and provider to the appointment
+// Resolve the appointment, then its patient and clinic, onto the item's props
 const enhance = compose(
   withObservables(["appointment"], ({ appointment }: { appointment: Appointment.T }) => ({
     appointment: db
       .get("appointments")
       .findAndObserve(appointment.id)
       .pipe(catchError(() => of$(null))),
-    // patient: appointment.patient?.observe(),
-    // patient: appointment.patient?.observe().pipe(catchError(() => of$(null))),
-    // clinic: appointment.clinic?.observe().pipe(catchError(() => of$(null))),
-    // provider: item.provider?.observe(),
   })),
+  // `appointment.patient` is a Relation object, which exists even when the patient doesn't - so
+  // test the foreign key instead. observe() then still errors if the key points at a row that
+  // hasn't synced yet, and an unhandled error here takes down the whole list.
   withObservables(
     ["appointment"],
     ({ appointment }: { appointment: Appointment.DBAppointment }) => ({
-      patient: appointment?.patient ? appointment.patient.observe() : of$(null),
-      clinic: appointment?.clinic ? appointment.clinic.observe() : of$(null),
+      patient:
+        appointment?.patientId && appointment.patient
+          ? appointment.patient.observe().pipe(catchError(() => of$(null)))
+          : of$(null),
+      clinic:
+        appointment?.clinicId && appointment.clinic
+          ? appointment.clinic.observe().pipe(catchError(() => of$(null)))
+          : of$(null),
     }),
   ),
 )

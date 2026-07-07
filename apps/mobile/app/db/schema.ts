@@ -78,9 +78,15 @@ const eventSchema = tableSchema({
     { name: "updated_at", type: "number" },
 
     // V9
+    // Optional because the server column is nullable — events predating it, and
+    // providers removed via ON DELETE SET NULL. Without this, WatermelonDB
+    // rewrites those nulls to "" and PostgreSQL rejects the push as a bad uuid.
+    // No version bump needed: WatermelonDB emits no NOT NULL constraints, so
+    // this changes only the JS-side sanitizer, not the SQLite table.
     {
       name: "recorded_by_user_id",
       type: "string",
+      isOptional: true,
     },
   ],
 })

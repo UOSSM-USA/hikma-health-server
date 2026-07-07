@@ -11,9 +11,16 @@
 import { Database } from "@nozbe/watermelondb"
 import LokiJSAdapter from "@nozbe/watermelondb/adapters/lokijs"
 import logger from "@nozbe/watermelondb/utils/common/logger"
+import { setGenerator } from "@nozbe/watermelondb/utils/common/randomId"
+import { uuidv7 } from "uuidv7"
 
 // Silence WatermelonDB's chatty Loki logs during tests
 logger.silence()
+
+// Mirror app/db/index.ts: production record ids are UUIDs, not WatermelonDB's
+// default random ids. Code that validates an id would otherwise pass in
+// production and fail here for reasons unrelated to what is under test.
+setGenerator(() => uuidv7())
 
 import AppConfig from "../../app/db/model/AppConfig"
 import Appointment from "../../app/db/model/Appointment"

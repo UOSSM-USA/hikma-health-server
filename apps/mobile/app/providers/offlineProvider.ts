@@ -58,7 +58,7 @@ function eventFromDB(e: EventModel): EventNS.T {
     metadata: e.metadata,
     isDeleted: e.isDeleted,
     deletedAt: Option.fromNullable(e.deletedAt),
-    recordedByUserId: e.recordedByUserId ?? "",
+    recordedByUserId: e.recordedByUserId || null,
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
   }

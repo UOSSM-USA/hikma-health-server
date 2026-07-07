@@ -282,6 +282,20 @@ export const joinCheckboxValues = (values: string[]): string => values.join(CHEC
 export const splitCheckboxValues = (raw: string | null | undefined): string[] =>
   raw ? raw.split(CHECKBOX_SEPARATOR).filter(Boolean) : []
 
+/**
+ * Separator for joining an event-form multi-select's chosen option values
+ * into the single string the dropdown widget persists. Kept here as the one
+ * source of truth so the storage site (the picker's `setValue`) and the
+ * read sites (`multiPickerValue`, `EventForm.buildRuleScope`) can't drift on
+ * the delimiter.
+ */
+export const EVENT_MULTI_SEPARATOR = "; "
+
+export const joinMultiValues = (values: string[]): string => values.join(EVENT_MULTI_SEPARATOR)
+
+export const splitMultiValues = (raw: string | null | undefined): string[] =>
+  raw ? raw.split(EVENT_MULTI_SEPARATOR).filter(Boolean) : []
+
 export function safeStringify(input: unknown, defaultValue: string): string {
   if (input === undefined || input === null || input === "") {
     return defaultValue

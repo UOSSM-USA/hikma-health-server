@@ -202,6 +202,138 @@ describe("EventForm.buildRuleScope", () => {
 })
 
 // ---------------------------------------------------------------------------
+// buildRuleScope — multi-select normalization
+// ---------------------------------------------------------------------------
+
+// `multi` is an Effect Option<boolean> on FieldItem; construct it as a plain
+// boolean and cast (the scope builder unwraps either shape). Keeps Effect out
+// of the test per project convention.
+function multiSelectField(
+  overrides: Partial<EventForm.FieldItem> & Pick<EventForm.FieldItem, "name">,
+): EventForm.FieldItem {
+  return {
+    id: overrides.id ?? overrides.name,
+    name: overrides.name,
+    fieldType: "options",
+    inputType: "select",
+    required: false,
+    multi: true,
+    ...overrides,
+  } as unknown as EventForm.FieldItem
+}
+
+describe("EventForm.buildRuleScope — multi-select normalization", () => {
+  it("splits a separator-joined multi-select value into an array of option values", () => {
+    const field = multiSelectField({ id: "sx", name: "symptoms" })
+    const scope = EventForm.buildRuleScope({
+      ...emptyScopeInput(),
+      formFields: [field],
+      watchedValues: { [sanitizeFieldName(field.name)]: "cough; fever; chills" },
+    })
+    expect(scope.form["sx"]).toEqual(["cough", "fever", "chills"])
+  })
+
+  it("normalizes a single selection to a one-element array", () => {
+    const field = multiSelectField({ id: "sx", name: "symptoms" })
+    const scope = EventForm.buildRuleScope({
+      ...emptyScopeInput(),
+      formFields: [field],
+      watchedValues: { [sanitizeFieldName(field.name)]: "fever" },
+    })
+    expect(scope.form["sx"]).toEqual(["fever"])
+  })
+
+  it("maps an empty or missing multi-select value to an empty array", () => {
+    const field = multiSelectField({ id: "sx", name: "symptoms" })
+    const emptyStr = EventForm.buildRuleScope({
+      ...emptyScopeInput(),
+      formFields: [field],
+      watchedValues: { [sanitizeFieldName(field.name)]: "" },
+    })
+    expect(emptyStr.form["sx"]).toEqual([])
+
+    const missing = EventForm.buildRuleScope({
+      ...emptyScopeInput(),
+      formFields: [field],
+      watchedValues: {},
+    })
+    expect(missing.form["sx"]).toEqual([])
+  })
+
+  it("passes an already-array value through unchanged", () => {
+    const field = multiSelectField({ id: "sx", name: "symptoms" })
+    const scope = EventForm.buildRuleScope({
+      ...emptyScopeInput(),
+      formFields: [field],
+      watchedValues: { [sanitizeFieldName(field.name)]: ["a", "b"] },
+    })
+    expect(scope.form["sx"]).toEqual(["a", "b"])
+  })
+
+  it("does NOT split a non-multi field — a scalar value passes through untouched", () => {
+    // A single-select options field (no `multi`) keeps its scalar string so
+    // existing `==` rules against it are unaffected.
+    const field = makeField({ id: "sex", name: "sex", fieldType: "options", inputType: "select" })
+    const scope = EventForm.buildRuleScope({
+      ...emptyScopeInput(),
+      formFields: [field],
+      watchedValues: { [sanitizeFieldName(field.name)]: "male" },
+    })
+    expect(scope.form["sex"]).toBe("male")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// End-to-end: an `includes` (in) visibility rule fires by exact membership,
+// independent of how many options are selected.
+// ---------------------------------------------------------------------------
+
+describe("buildRuleScope feeding an `includes` (in) visibility rule", () => {
+  // "Show the follow-up field when the symptoms multi-select includes 'fever'."
+  const trigger = multiSelectField({ id: "sx", name: "symptoms" })
+  const dependent = makeField({
+    id: "fu",
+    name: "fever_followup",
+    visibleIf: { in: ["fever", { var: "form.sx" }] },
+  })
+  const evaluator = compileRules([trigger, dependent])
+
+  const scopeWith = (selection: string) =>
+    EventForm.buildRuleScope({
+      ...emptyScopeInput(),
+      formFields: [trigger, dependent],
+      watchedValues: { [sanitizeFieldName(trigger.name)]: selection },
+    })
+
+  it("is visible when 'fever' is the only selection", () => {
+    expect(evaluator(scopeWith("fever")).isVisible("fu")).toBe(true)
+  })
+
+  it("is visible when 'fever' is among several selections, regardless of count/position", () => {
+    expect(evaluator(scopeWith("cough; fever; chills")).isVisible("fu")).toBe(true)
+    expect(evaluator(scopeWith("chills; fever")).isVisible("fu")).toBe(true)
+  })
+
+  it("is hidden when 'fever' is not among the selections", () => {
+    expect(evaluator(scopeWith("cough; chills")).isVisible("fu")).toBe(false)
+  })
+
+  it("does not false-positive on a substring of an option value", () => {
+    // The whole point of arraying: exact membership means 'cat' must NOT
+    // match the option 'category' (a joined-string `in` would substring-match).
+    const t2 = multiSelectField({ id: "c", name: "cats" })
+    const d2 = makeField({ id: "d", name: "d", visibleIf: { in: ["cat", { var: "form.c" }] } })
+    const ev = compileRules([t2, d2])
+    const scope = EventForm.buildRuleScope({
+      ...emptyScopeInput(),
+      formFields: [t2, d2],
+      watchedValues: { [sanitizeFieldName(t2.name)]: "category; dog" },
+    })
+    expect(ev(scope).isVisible("d")).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // End-to-end: date validators actually fire after normalization
 // ---------------------------------------------------------------------------
 

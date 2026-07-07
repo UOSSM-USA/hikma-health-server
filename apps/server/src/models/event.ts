@@ -142,6 +142,11 @@ namespace Event {
               Logger.error("User not found");
               return;
             }
+            if (!user.clinic_id) {
+              throw new Error(
+                `Cannot create a fallback visit for event ${event.id}: user ${user.id} has no clinic_id`,
+              );
+            }
             const insertVisitId =
               typeof visitId === "string" && isValidUUID(visitId)
                 ? visitId
@@ -151,7 +156,7 @@ namespace Event {
               .values({
                 id: insertVisitId,
                 patient_id: event.patient_id,
-                clinic_id: user.clinic_id || "",
+                clinic_id: user.clinic_id,
                 provider_id: user.id,
                 provider_name: user.name,
                 check_in_timestamp: event.created_at
@@ -198,7 +203,10 @@ namespace Event {
               last_modified: sql`now()::timestamp with time zone`,
               server_created_at: sql`now()::timestamp with time zone`,
               deleted_at: null,
-              recorded_by_user_id: event.recorded_by_user_id ?? null,
+              // `||` not `??`: fielded clients send "" for an unattributed event
+              // (WatermelonDB backfills non-optional string columns with ""), and
+              // "" is not a valid uuid literal.
+              recorded_by_user_id: event.recorded_by_user_id || null,
             })
             .onConflict((oc) => {
               return (

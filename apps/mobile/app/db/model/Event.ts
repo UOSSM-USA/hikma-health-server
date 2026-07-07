@@ -34,7 +34,7 @@ export default class EventModel extends Model {
   @date("deleted_at") deletedAt!: Date
 
   // V9
-  @text("recorded_by_user_id") recordedByUserId!: string
+  @text("recorded_by_user_id") recordedByUserId!: string | null
 
   // --- Timestamps (Read-only) ---
   @readonly @date("created_at") createdAt!: Date
