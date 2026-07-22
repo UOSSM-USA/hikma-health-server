@@ -8,7 +8,7 @@ import {
   type JSONColumnType,
   sql,
 } from "kysely";
-import { type Language } from "./language";
+import { Language } from "./language";
 import { v1 as uuidv1 } from "uuid";
 import db from "@/db";
 import { createServerOnlyFn } from "@tanstack/react-start";
@@ -346,6 +346,18 @@ namespace PatientRegistrationForm {
     boolean: "boolean",
   };
 
+  // Registration options carry no explicit value token; the stable identity is
+  // the English label (`en`), which mobile's buildRuleScope resolves selections
+  // back to. Emit `en` as the option value so authored rules match at eval time.
+  // `multiValue` is set only for checkbox, gating the includes/excludes kinds.
+  const optionFields = (
+    field: Field,
+  ): Partial<Pick<LogicField, "multiValue" | "options">> => {
+    if (field.fieldType !== "select" && field.fieldType !== "checkbox") return {};
+    const options = field.options.map((o) => ({ value: o.en, label: o.en }));
+    return field.fieldType === "checkbox" ? { multiValue: true, options } : { options };
+  };
+
   /**
    * Convert a registration form's field list into the abstracted
    * `LogicField[]` consumed by `FieldLogicPanel`. Deleted fields are
@@ -361,6 +373,8 @@ namespace PatientRegistrationForm {
         displayName: f.label.en?.trim() || f.column || f.id,
         kind: "primitive" as const,
         primitiveKind: inputTypeToPrimitive[f.fieldType],
+        ...(f.fieldType === "text" ? { freeText: true } : {}),
+        ...optionFields(f),
       }));
 
   // Rule-scope assembly (web register form).
@@ -391,12 +405,24 @@ namespace PatientRegistrationForm {
     const { fields, values, ctx } = input;
     const form: Record<string, unknown> = {};
     for (const field of fields) {
-      form[field.id] = coerceForRules(field, values[field.id]);
+      form[field.id] = coerceForRules(field, values[field.id], ctx.language);
     }
     return { form, ctx };
   }
 
-  function coerceForRules(field: Field, value: unknown): unknown {
+  // Resolve a stored option label to its canonical `en`. Mirrors the mobile
+  // PatientRegistrationForm.buildRuleScope so authored rules key on the same
+  // token across surfaces. Unmatched labels keep the raw token.
+  function canonicalizeOptionLabel(
+    label: string,
+    options: ReadonlyArray<Language.TranslationObject>,
+    language: string,
+  ): string {
+    const match = options.find((o) => Language.getTranslation(o, language) === label);
+    return match?.en || label;
+  }
+
+  function coerceForRules(field: Field, value: unknown, language: string): unknown {
     if (value === undefined || value === null) return value;
     switch (field.fieldType) {
       case "number": {
@@ -408,10 +434,20 @@ namespace PatientRegistrationForm {
         // match if that's what the author wrote.
         return Number.isNaN(n) ? value : n;
       }
-      case "checkbox":
-        if (typeof value === "string") return splitCheckboxValues(value);
-        if (Array.isArray(value)) return value;
-        return value;
+      case "checkbox": {
+        // Split to an array and resolve each label to `en` so `in`/`some`/`all`
+        // test canonical tokens regardless of the entry language.
+        const labels = Array.isArray(value)
+          ? (value as string[])
+          : typeof value === "string"
+            ? splitCheckboxValues(value)
+            : [];
+        return labels.map((l) => canonicalizeOptionLabel(l, field.options, language));
+      }
+      case "select":
+        return typeof value === "string" && value !== ""
+          ? canonicalizeOptionLabel(value, field.options, language)
+          : value;
       case "date":
         if (value instanceof Date) return formatDateYMD(value);
         return value;

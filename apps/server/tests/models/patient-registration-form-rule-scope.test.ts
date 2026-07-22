@@ -115,6 +115,38 @@ describe("PatientRegistrationForm.buildRuleScope", () => {
     expect(scope.form.langs).toEqual(["en", "sw"]);
   });
 
+  const sexOptions = [
+    { en: "male", ar: "ذكر" },
+    { en: "female", ar: "أنثى" },
+  ];
+
+  it("checkbox: resolves current-language labels back to en", () => {
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields: [baseField({ id: "sex", fieldType: "checkbox", options: sexOptions })],
+      values: { sex: joinCheckboxValues(["ذكر", "أنثى"]) },
+      ctx: { now: ctx.now, language: "ar" },
+    });
+    expect(scope.form.sex).toEqual(["male", "female"]);
+  });
+
+  it("select: resolves a current-language label back to en", () => {
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields: [baseField({ id: "sex", fieldType: "select", options: sexOptions })],
+      values: { sex: "ذكر" },
+      ctx: { now: ctx.now, language: "ar" },
+    });
+    expect(scope.form.sex).toBe("male");
+  });
+
+  it("select/checkbox: an unmatched label keeps the raw token", () => {
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields: [baseField({ id: "sex", fieldType: "select", options: sexOptions })],
+      values: { sex: "unknown-option" },
+      ctx,
+    });
+    expect(scope.form.sex).toBe("unknown-option");
+  });
+
   it("date: Date object normalizes to local YYYY-MM-DD", () => {
     const d = new Date(2025, 0, 15); // 2025-01-15 local time
     const scope = PatientRegistrationForm.buildRuleScope({
@@ -248,10 +280,6 @@ describe("PatientRegistrationForm.buildRuleScope", () => {
     );
   });
 });
-
-// ---------------------------------------------------------------------------
-// getMissingRequiredFields
-// ---------------------------------------------------------------------------
 
 describe("PatientRegistrationForm.getMissingRequiredFields", () => {
   it("no evaluation: enforces static `required` flag", () => {
@@ -388,10 +416,6 @@ describe("PatientRegistrationForm.getMissingRequiredFields", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// computeNewlyHidden
-// ---------------------------------------------------------------------------
-
 describe("PatientRegistrationForm.computeNewlyHidden", () => {
   const evalWithHidden = (hiddenIds: ReadonlyArray<string>, fields: Field[]) => {
     const evaluator = compileRules(
@@ -469,5 +493,47 @@ describe("PatientRegistrationForm.computeNewlyHidden", () => {
       previouslyHidden: first.nowHidden,
     });
     expect(second.newlyHidden).toEqual([]);
+  });
+});
+
+describe("PatientRegistrationForm — length validator pipeline", () => {
+  const bioMinLen: fieldWithRules = {
+    id: "bio",
+    validators: [
+      {
+        id: "min-len",
+        rule: { ">": [{ length: { var: ["form.bio", ""] } }, 10] },
+        message: "Bio must be longer than 10 characters",
+      },
+    ],
+  };
+
+  const evalBio = (values: Record<string, unknown>) =>
+    compileRules([bioMinLen])(
+      PatientRegistrationForm.buildRuleScope({
+        fields: [baseField({ id: "bio", fieldType: "text" })],
+        values,
+        ctx,
+      }),
+    );
+
+  it("passes a long-enough text value through the real scope builder", () => {
+    const result = evalBio({ bio: "this is well past ten" });
+    expect(result.validationErrors).toEqual([]);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("flags a too-short text value", () => {
+    const result = evalBio({ bio: "short" });
+    expect(result.validationErrors.map((e) => e.validatorId)).toContain("min-len");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("flags an untouched field as length 0 without an eval error", () => {
+    // buildRuleScope leaves an untouched field with no value; the defaulted var
+    // must still coerce it to length 0 (not error-then-pass) end to end.
+    const result = evalBio({});
+    expect(result.validationErrors.map((e) => e.validatorId)).toContain("min-len");
+    expect(result.diagnostics).toEqual([]);
   });
 });

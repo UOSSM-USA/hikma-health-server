@@ -6,13 +6,11 @@ import { subYears, format, addDays } from "date-fns"
 import { render } from "../helpers/renderWithProviders"
 import { DateOfBirthInput, DateOfBirthInputProps } from "../../app/components/DateOfBirthInput"
 
-// Mock the DatePickerButton component
 jest.mock("../../app/components/DatePicker", () => ({
   DatePickerButton: ({ onConfirm, date }: any) => {
     const { Text } = require("../../app/components/Text")
     const { View } = require("../../app/components/View")
     const { Pressable } = require("react-native")
-    // Format date without external dependency
     const formatDate = (d: Date) => {
       const year = d.getFullYear()
       const month = String(d.getMonth() + 1).padStart(2, "0")
@@ -30,7 +28,6 @@ jest.mock("../../app/components/DatePicker", () => ({
   },
 }))
 
-// Mock the TextField component
 jest.mock("../../app/components/TextField", () => ({
   ...jest.requireActual("../../app/components/TextField"),
   TextField: ({ value, onChangeText, ...props }: any) => {
@@ -44,7 +41,6 @@ jest.mock("../../app/components/TextField", () => ({
   },
 }))
 
-// Mock Alert
 const mockAlert = jest.spyOn(Alert, "alert")
 
 describe("DateOfBirthInput Component", () => {
@@ -63,7 +59,6 @@ describe("DateOfBirthInput Component", () => {
     it("should render with all three mode buttons", () => {
       const { getByText } = render(<DateOfBirthInput {...defaultProps} />)
 
-      // Check for mode button texts (using translation keys as they appear in the component)
       expect(getByText(/component:dateOfBirthInput.datePicker/)).toBeTruthy()
       expect(getByText(/component:dateOfBirthInput.ageInput/)).toBeTruthy()
       expect(getByText(/component:dateOfBirthInput.unknown/)).toBeTruthy()
@@ -120,15 +115,12 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} />,
       )
 
-      // Initially, date picker should be visible
       expect(queryByTestId("date-picker-button")).toBeTruthy()
       expect(queryByTestId("text-field")).toBeNull()
 
-      // Press age input button
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
-      // Age input should be visible, date picker should be hidden
       expect(queryByTestId("text-field")).toBeTruthy()
       expect(queryByTestId("date-picker-button")).toBeNull()
     })
@@ -139,15 +131,12 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} onChangeDate={onChangeDate} />,
       )
 
-      // Press unknown button
       const unknownButton = getByText(/component:dateOfBirthInput.unknown/).parent?.parent as any
       fireEvent.press(unknownButton)
 
-      // Neither date picker nor age input should be visible
       expect(queryByTestId("date-picker-button")).toBeNull()
       expect(queryByTestId("text-field")).toBeNull()
 
-      // Should call onChangeDate with null
       expect(onChangeDate).toHaveBeenCalledWith(null)
     })
 
@@ -156,12 +145,10 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} />,
       )
 
-      // Switch to age input
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
       expect(queryByTestId("text-field")).toBeTruthy()
 
-      // Switch back to date picker
       const datePickerButton = getByText(/component:dateOfBirthInput.datePicker/).parent
         ?.parent as any
       fireEvent.press(datePickerButton)
@@ -185,7 +172,6 @@ describe("DateOfBirthInput Component", () => {
       const { getByTestId } = render(<DateOfBirthInput {...defaultProps} date="2000-01-15" />)
 
       const dateDisplay = getByTestId("date-display")
-      // The component should parse the string date
       expect(dateDisplay).toBeTruthy()
     })
 
@@ -218,7 +204,6 @@ describe("DateOfBirthInput Component", () => {
     it("should handle undefined date", () => {
       const { getByTestId } = render(<DateOfBirthInput {...defaultProps} date={undefined} />)
 
-      // Should default to 18 years ago
       const dateDisplay = getByTestId("date-display")
       expect(dateDisplay).toBeTruthy()
     })
@@ -231,14 +216,12 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} onChangeDate={onChangeDate} />,
       )
 
-      // Switch to age input mode
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
       const ageInput = getByTestId("age-input")
       fireEvent.changeText(ageInput, "25")
 
-      // Should calculate date as 25 years ago
       expect(onChangeDate).toHaveBeenCalled()
     })
 
@@ -248,7 +231,6 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} onChangeDate={onChangeDate} />,
       )
 
-      // Switch to age input mode
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
@@ -264,21 +246,18 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} onChangeDate={onChangeDate} />,
       )
 
-      // Switch to age input mode
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
       const ageInput = getByTestId("age-input")
       fireEvent.changeText(ageInput, "abc")
 
-      // Should clear the input for non-numeric values
       expect(ageInput.props.value).toBe("")
     })
 
     it("should handle empty age input", () => {
       const { getByText, getByTestId } = render(<DateOfBirthInput {...defaultProps} />)
 
-      // Switch to age input mode
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
@@ -294,12 +273,10 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} date={infantDate} />,
       )
 
-      // Switch to age input mode
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
       const ageInput = getByTestId("age-input")
-      // For infants, it should show decimal age
       expect(ageInput.props.value).toMatch(/^0\.\d+$/)
     })
   })
@@ -335,7 +312,6 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} date={date25YearsAgo} />,
       )
 
-      // Switch to age input to see calculated age
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
@@ -349,12 +325,10 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} date={date6MonthsAgo} />,
       )
 
-      // Switch to age input
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
       const ageInput = getByTestId("age-input")
-      // Should show decimal age for infants
       expect(parseFloat(ageInput.props.value)).toBeCloseTo(0.5, 1)
     })
   })
@@ -366,18 +340,15 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} onChangeDate={onChangeDate} />,
       )
 
-      // Switch to unknown
       const unknownButton = getByText(/component:dateOfBirthInput.unknown/).parent?.parent as any
       fireEvent.press(unknownButton)
 
       onChangeDate.mockClear()
 
-      // Switch back to date picker
       const datePickerButton = getByText(/component:dateOfBirthInput.datePicker/).parent
         ?.parent as any
       fireEvent.press(datePickerButton)
 
-      // Should be called with the date
       expect(onChangeDate).toHaveBeenCalled()
       expect(onChangeDate.mock.calls[0][0]).toBeInstanceOf(Date)
     })
@@ -388,7 +359,6 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} onChangeDate={onChangeDate} />,
       )
 
-      // Switch to age input
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
@@ -407,20 +377,16 @@ describe("DateOfBirthInput Component", () => {
     it("should apply active style to selected mode button", () => {
       const { getByText } = render(<DateOfBirthInput {...defaultProps} />)
 
-      // Date picker should be active by default
       const datePickerText = getByText(/component:dateOfBirthInput.datePicker/)
 
-      // The component uses getInputStyle which returns $activeBtn for active mode
       expect(datePickerText.parent).toBeTruthy()
     })
 
     it("should apply inactive style to non-selected mode buttons", () => {
       const { getByText } = render(<DateOfBirthInput {...defaultProps} />)
 
-      // Age input should be inactive by default
       const ageInputText = getByText(/component:dateOfBirthInput.ageInput/)
 
-      // The component uses getInputStyle which returns $inactiveBtn for inactive mode
       expect(ageInputText.parent).toBeTruthy()
     })
   })
@@ -437,14 +403,12 @@ describe("DateOfBirthInput Component", () => {
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       const unknownButton = getByText(/component:dateOfBirthInput.unknown/).parent?.parent as any
 
-      // Rapid switching
       fireEvent.press(ageInputButton)
       fireEvent.press(unknownButton)
       fireEvent.press(datePickerButton)
       fireEvent.press(ageInputButton)
       fireEvent.press(unknownButton)
 
-      // Should end in unknown mode with null date
       expect(onChangeDate).toHaveBeenLastCalledWith(null)
     })
 
@@ -454,7 +418,6 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} date={veryOldDate} />,
       )
 
-      // Switch to age input to see calculated age
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
@@ -469,7 +432,6 @@ describe("DateOfBirthInput Component", () => {
         <DateOfBirthInput {...defaultProps} onChangeDate={onChangeDate} />,
       )
 
-      // Switch to age input
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 
@@ -479,12 +441,10 @@ describe("DateOfBirthInput Component", () => {
       expect(onChangeDate).toHaveBeenCalled()
       // When age is 0, the date should be today
       const calls = onChangeDate.mock.calls
-      // Find the call that was made after changing to "0"
       const relevantCall = calls[calls.length - 1]
       if (relevantCall && relevantCall[0]) {
         const calledDate = relevantCall[0]
         const today = new Date()
-        // Check year is the same
         expect(calledDate.getFullYear()).toBe(today.getFullYear())
         // Check month is within 1 (to handle edge cases)
         expect(Math.abs(calledDate.getMonth() - today.getMonth())).toBeLessThanOrEqual(1)
@@ -494,7 +454,6 @@ describe("DateOfBirthInput Component", () => {
     it("should handle negative age input by clearing", () => {
       const { getByText, getByTestId } = render(<DateOfBirthInput {...defaultProps} />)
 
-      // Switch to age input
       const ageInputButton = getByText(/component:dateOfBirthInput.ageInput/).parent?.parent as any
       fireEvent.press(ageInputButton)
 

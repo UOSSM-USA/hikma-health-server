@@ -12,7 +12,9 @@
 import fc from "fast-check"
 
 import PatientRegistrationForm from "../../app/models/PatientRegistrationForm"
+import Language from "../../app/models/Language"
 import { compileRules, type RuleEvaluation } from "../../app/lib/form-rules"
+import { joinCheckboxValues } from "../../app/utils/parsers"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -146,6 +148,85 @@ describe("PatientRegistrationForm.buildRuleScope", () => {
       ctx: defaultCtx,
     })
     expect(scope.form["raw"]).toBe(stamp)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Option fields resolve stored labels to canonical option.en
+// ---------------------------------------------------------------------------
+
+const sexOptions = [
+  { en: "male", ar: "ذكر" },
+  { en: "female", ar: "أنثى" },
+] as unknown as Language.TranslationObject[]
+
+describe("buildRuleScope — option-field canonicalization", () => {
+  it("splits a checkbox into an array of canonical en tokens", () => {
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields: [makeField({ id: "sex", fieldType: "checkbox", options: sexOptions })],
+      values: { sex: joinCheckboxValues(["male", "female"]) },
+      ctx: defaultCtx,
+    })
+    expect(scope.form["sex"]).toEqual(["male", "female"])
+  })
+
+  it("resolves current-language checkbox labels back to en", () => {
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields: [makeField({ id: "sex", fieldType: "checkbox", options: sexOptions })],
+      values: { sex: joinCheckboxValues(["ذكر", "أنثى"]) },
+      ctx: { now: defaultCtx.now, language: "ar" },
+    })
+    expect(scope.form["sex"]).toEqual(["male", "female"])
+  })
+
+  it("resolves a select label back to en", () => {
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields: [makeField({ id: "sex", fieldType: "select", options: sexOptions })],
+      values: { sex: "ذكر" },
+      ctx: { now: defaultCtx.now, language: "ar" },
+    })
+    expect(scope.form["sex"]).toBe("male")
+  })
+
+  it("keeps an unmatched label as the raw token", () => {
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields: [makeField({ id: "sex", fieldType: "select", options: sexOptions })],
+      values: { sex: "unknown-option" },
+      ctx: defaultCtx,
+    })
+    expect(scope.form["sex"]).toBe("unknown-option")
+  })
+
+  it("maps an empty checkbox to an empty array and undefined through", () => {
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields: [
+        makeField({ id: "a", fieldType: "checkbox", options: sexOptions }),
+        makeField({ id: "b", fieldType: "checkbox", options: sexOptions }),
+      ],
+      values: { a: "" },
+      ctx: defaultCtx,
+    })
+    expect(scope.form["a"]).toEqual([])
+    expect(scope.form["b"]).toBeUndefined()
+  })
+
+  it("feeds an `in` visibility rule that matches on a non-en device", () => {
+    const evaluate = compileRules([
+      makeField({ id: "sex", fieldType: "checkbox", options: sexOptions }),
+      makeField({
+        id: "pregnant",
+        visibleIf: { in: ["female", { var: "form.sex" }] },
+      }),
+    ])
+    const scope = PatientRegistrationForm.buildRuleScope({
+      fields: [
+        makeField({ id: "sex", fieldType: "checkbox", options: sexOptions }),
+        makeField({ id: "pregnant" }),
+      ],
+      values: { sex: joinCheckboxValues(["أنثى"]) },
+      ctx: { now: defaultCtx.now, language: "ar" },
+    })
+    expect(evaluate(scope).isVisible("pregnant")).toBe(true)
   })
 })
 

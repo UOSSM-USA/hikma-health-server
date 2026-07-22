@@ -65,8 +65,6 @@ function createAdapter() {
       useIncrementalIndexedDB: true,
       dbName: "test_hikmahealthdb", // optional db name
 
-      // --- Optional, but recommended event handlers:
-
       onQuotaExceededError: (error) => {
         // Browser ran out of disk space -- offer the user to reload the app or log out
         Sentry.captureException(error)

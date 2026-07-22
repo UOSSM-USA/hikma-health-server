@@ -32,6 +32,12 @@ type logicFieldKind = [#primitive | #list | #displayOnly]
 @genType
 type logicPrimitiveKind = [#string | #number | #boolean | #date]
 
+// A selectable option on a multi-value field, surfaced to the panel's value
+// picker. `value` is the token that lands in rule scope (event: option value;
+// registration: option `en`); `label` is what the author sees.
+@genType
+type logicOption = {value: string, label: string}
+
 @genType
 type logicField = {
   id: string,
@@ -39,6 +45,14 @@ type logicField = {
   kind: logicFieldKind,
   // Set when kind === #primitive. Drives value-input rendering.
   primitiveKind?: logicPrimitiveKind,
+  // Set when the field holds multiple values (multi-select / checkbox); gates
+  // the includes/excludes condition kinds and the option picker.
+  multiValue?: bool,
+  // Selectable options, present for option-backed fields.
+  options?: array<logicOption>,
+  // Set for free-text fields. Gates the length-comparison condition kind,
+  // which is meaningless on option-backed, numeric, or multi-value fields.
+  freeText?: bool,
 }
 
 // Comparison operators the simple template exposes. Mirrors the legacy
@@ -82,6 +96,18 @@ type visibilityCondition =
   | Comparison({fieldId: string, op: comparisonOp, value: JSON.t})
   | Truthy({fieldId: string})
   | Falsy({fieldId: string})
+  // Multi-value membership over a field's array. `IncludesOption`/`ExcludesOption`
+  // compile to `in` / `!in`; `IncludesAny`/`IncludesAll` to `or`/`and`-of-`in`.
+  | IncludesOption({fieldId: string, value: string})
+  | ExcludesOption({fieldId: string, value: string})
+  | IncludesAny({fieldId: string, values: array<string>})
+  | IncludesAll({fieldId: string, values: array<string>})
+  // Character-length comparison over a free-text field. Compiles to
+  // `{<op>: [{length: [{var: [form.<id>, ""]}]}, <n>]}`. The var default ("")
+  // coerces a missing/empty value to length 0 instead of an eval error, so an
+  // absent field correctly fails a min-length rule — a broken `length` would
+  // otherwise pass silently (see Rules.computeValidatorErrors).
+  | LengthCompare({fieldId: string, op: comparisonOp, value: float})
 
 // How a list of conditions combines. Only `#and` is surfaced in the UI
 // today; `#or` is defined now so the type and serializer are ready for a
@@ -142,11 +168,39 @@ let isLiteral = (v: JSON.t): bool =>
 let compileCondition = (c: visibilityCondition): JSON.t => {
   let varRef = fieldId =>
     JSON.Object(Dict.fromArray([("var", JSON.String(formVarPrefix ++ fieldId))]))
+  // `{in: [<option>, {var: form.<id>}]}` — membership on the field's array.
+  let inRule = (fieldId, value) =>
+    JSON.Object(Dict.fromArray([("in", JSON.Array([JSON.String(value), varRef(fieldId)]))]))
+  let inGroup = (op, fieldId, values) =>
+    JSON.Object(Dict.fromArray([(op, JSON.Array(values->Array.map(v => inRule(fieldId, v))))]))
+  // `{length: {var: [form.<id>, ""]}}` — the field's value length. The `length`
+  // operand is a single rule (not array-wrapped, else it measures the wrapper);
+  // the var default coerces a missing value to "" so length is 0, never an error.
+  let lengthOfField = fieldId =>
+    JSON.Object(
+      Dict.fromArray([
+        (
+          "length",
+          JSON.Object(
+            Dict.fromArray([
+              ("var", JSON.Array([JSON.String(formVarPrefix ++ fieldId), JSON.String("")])),
+            ]),
+          ),
+        ),
+      ]),
+    )
   switch c {
   | Comparison({fieldId, op, value}) =>
     JSON.Object(Dict.fromArray([((op :> string), JSON.Array([varRef(fieldId), value]))]))
   | Truthy({fieldId}) => JSON.Object(Dict.fromArray([("!!", varRef(fieldId))]))
   | Falsy({fieldId}) => JSON.Object(Dict.fromArray([("!", varRef(fieldId))]))
+  | IncludesOption({fieldId, value}) => inRule(fieldId, value)
+  | ExcludesOption({fieldId, value}) =>
+    JSON.Object(Dict.fromArray([("!", inRule(fieldId, value))]))
+  | IncludesAny({fieldId, values}) => inGroup("or", fieldId, values)
+  | IncludesAll({fieldId, values}) => inGroup("and", fieldId, values)
+  | LengthCompare({fieldId, op, value}) =>
+    JSON.Object(Dict.fromArray([((op :> string), JSON.Array([lengthOfField(fieldId), JSON.Number(value)]))]))
   }
 }
 
@@ -194,32 +248,145 @@ let unaryFieldId = (arg: JSON.t): option<string> =>
     }
   }
 
-// Decompile a single bare leaf rule into a condition, or None if it
-// doesn't match a leaf shape (comparison / truthy / falsy).
+// Read a membership leaf `{in: [<option>, {var: "form.<id>"}]}` — the
+// option-first / var-second order compileCondition emits. The reverse order
+// (`{in: [{var}, <str>]}`) is substring containment, a different rule that
+// stays in advanced mode. Returns (fieldId, value).
+let decompileInLeaf = (rule: JSON.t): option<(string, string)> =>
+  switch rule {
+  | Object(obj) =>
+    switch Dict.keysToArray(obj) {
+    | ["in"] =>
+      switch obj->Dict.get("in")->Option.getUnsafe {
+      | Array(args) if Array.length(args) === 2 =>
+        switch (args->Array.getUnsafe(0), isFormVar(args->Array.getUnsafe(1))) {
+        | (String(value), Some(fieldId)) => Some((fieldId, value))
+        | _ => None
+        }
+      | _ => None
+      }
+    | _ => None
+    }
+  | _ => None
+  }
+
+// Collapse `{or|and: [in, in, …]}` into an IncludesAny / IncludesAll leaf, iff
+// every member is a membership leaf over the SAME field and there are ≥2 of
+// them. Any other member (mixed fields, a non-`in` leaf) returns None so the
+// group falls back to the multi-condition editor.
+let decompileInGroup = (op: string, items: array<JSON.t>): option<visibilityCondition> =>
+  if Array.length(items) < 2 {
+    None
+  } else {
+    let fieldId = ref(None)
+    let values = []
+    let ok = ref(true)
+    let i = ref(0)
+    while ok.contents && i.contents < Array.length(items) {
+      switch decompileInLeaf(items->Array.getUnsafe(i.contents)) {
+      | Some((f, v)) =>
+        switch fieldId.contents {
+        | None => fieldId := Some(f)
+        | Some(existing) => if !String.equal(existing, f) { ok := false }
+        }
+        Array.push(values, v)
+      | None => ok := false
+      }
+      i := i.contents + 1
+    }
+    switch (ok.contents, fieldId.contents) {
+    | (true, Some(f)) if op == "or" => Some(IncludesAny({fieldId: f, values}))
+    | (true, Some(f)) if op == "and" => Some(IncludesAll({fieldId: f, values}))
+    | _ => None
+    }
+  }
+
+// Read a form field id from either `{var: "form.<id>"}` or the defaulted
+// `{var: ["form.<id>", <default>]}` form (the latter is what LengthCompare
+// emits). Rebuilds a bare-var object from the array head and reuses isFormVar.
+let formVarIdWithDefault = (rule: JSON.t): option<string> =>
+  switch rule {
+  | Object(obj) =>
+    switch obj->Dict.get("var") {
+    | Some(String(_)) => isFormVar(rule)
+    | Some(Array(a)) if Array.length(a) > 0 =>
+      isFormVar(JSON.Object(Dict.fromArray([("var", Array.getUnsafe(a, 0))])))
+    | _ => None
+    }
+  | _ => None
+  }
+
+// Read `{length: <form var>}` — the length-wrapped comparison LHS that a
+// LengthCompare leaf carries. Returns the referenced field id.
+let decompileLengthOperand = (rule: JSON.t): option<string> =>
+  switch rule {
+  | Object(obj) =>
+    switch (Dict.keysToArray(obj), obj->Dict.get("length")) {
+    | (["length"], Some(operand)) => formVarIdWithDefault(operand)
+    | _ => None
+    }
+  | _ => None
+  }
+
+// Decompile a single bare leaf rule into a condition, or None if it doesn't
+// match a leaf shape (comparison / length-comparison / truthy / falsy /
+// includes / excludes / same-field includes-any/all group).
 let decompileCondition = (rule: JSON.t): option<visibilityCondition> =>
   switch rule {
   | Object(obj) =>
     switch Dict.keysToArray(obj) {
     | [op] =>
       let arg = obj->Dict.get(op)->Option.getUnsafe
-      // Comparison: { "<op>": [{var: "form.<id>"}, <literal>] }
+      // Comparison:    { "<op>": [{var: "form.<id>"}, <literal>] }
+      // LengthCompare: { "<op>": [{length: [{var}]}, <non-negative int>] }
       switch comparisonOpFromString(op) {
       | Some(cop) =>
         switch arg {
         | Array(args) if Array.length(args) === 2 =>
           let lhs = args->Array.getUnsafe(0)
           let rhs = args->Array.getUnsafe(1)
-          switch isFormVar(lhs) {
-          | Some(fieldId) if isLiteral(rhs) => Some(Comparison({fieldId, op: cop, value: rhs}))
-          | _ => None
+          switch decompileLengthOperand(lhs) {
+          | Some(fieldId) =>
+            switch rhs {
+            // Only non-negative integer bounds round-trip to the simple editor;
+            // a fractional or negative bound stays in advanced mode.
+            | Number(n) if n >= 0.0 && Int.toFloat(Float.toInt(n)) === n =>
+              Some(LengthCompare({fieldId, op: cop, value: n}))
+            | _ => None
+            }
+          | None =>
+            switch isFormVar(lhs) {
+            | Some(fieldId) if isLiteral(rhs) => Some(Comparison({fieldId, op: cop, value: rhs}))
+            | _ => None
+            }
           }
         | _ => None
         }
-      // Truthy / Falsy: { "!!" | "!": {var: "form.<id>"} }
       | None =>
         switch op {
+        // Truthy: { "!!": {var: "form.<id>"} }
         | "!!" => unaryFieldId(arg)->Option.map(id => Truthy({fieldId: id}))
-        | "!" => unaryFieldId(arg)->Option.map(id => Falsy({fieldId: id}))
+        // Falsy: { "!": {var} }; ExcludesOption: { "!": {in: [...]} }
+        | "!" =>
+          switch decompileInLeaf(arg) {
+          | Some((fieldId, value)) => Some(ExcludesOption({fieldId, value}))
+          | None => unaryFieldId(arg)->Option.map(id => Falsy({fieldId: id}))
+          }
+        | "in" =>
+          decompileInLeaf(JSON.Object(obj))->Option.map(pair => {
+            let (fieldId, value) = pair
+            IncludesOption({fieldId, value})
+          })
+        | "or" =>
+          switch arg {
+          | Array(items) => decompileInGroup("or", items)
+          | _ => None
+          }
+        | "and" =>
+          switch arg {
+          | Array(items) => decompileInGroup("and", items)
+          | _ => None
+          }
         | _ => None
         }
       }
@@ -266,23 +433,29 @@ let decompileVisibilityTemplate = (rule: option<JSON.t>): option<simpleVisibilit
   | Some(Object(obj)) =>
     switch Dict.keysToArray(obj) {
     | [op] =>
-      let arg = obj->Dict.get(op)->Option.getUnsafe
-      let connectorOpt: option<connector> = switch op {
-      | "and" => Some(#"and")
-      | "or" => Some(#"or")
-      | _ => None
-      }
-      switch connectorOpt {
-      | Some(conn) =>
-        switch arg {
-        | Array(items) if Array.length(items) >= 2 =>
-          decompileConditions(items)->Option.map(cs => Conditions({connector: conn, conditions: cs}))
+      // Try the whole object as a single leaf first: this claims a same-field
+      // `{or|and: [in, …]}` as an IncludesAny/IncludesAll leaf before the
+      // group path below would read it as a multi-condition group.
+      switch decompileCondition(JSON.Object(obj)) {
+      | Some(c) => Some(Conditions({connector: #"and", conditions: [c]}))
+      | None =>
+        let arg = obj->Dict.get(op)->Option.getUnsafe
+        let connectorOpt: option<connector> = switch op {
+        | "and" => Some(#"and")
+        | "or" => Some(#"or")
         | _ => None
         }
-      | None =>
-        decompileCondition(JSON.Object(obj))->Option.map(c =>
-          Conditions({connector: #"and", conditions: [c]})
-        )
+        switch connectorOpt {
+        | Some(conn) =>
+          switch arg {
+          | Array(items) if Array.length(items) >= 2 =>
+            decompileConditions(items)->Option.map(cs =>
+              Conditions({connector: conn, conditions: cs})
+            )
+          | _ => None
+          }
+        | None => None
+        }
       }
     | _ => None
     }

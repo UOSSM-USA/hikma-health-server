@@ -3,6 +3,7 @@ import { Option } from "effect"
 import PatientModel from "@/db/model/Patient"
 import RegistrationFormModel from "@/db/model/PatientRegistrationForm"
 import { type RuleEvaluation, type RuleScope } from "@/lib/form-rules"
+import { getTranslation, splitCheckboxValues } from "@/utils/parsers"
 
 import { type WithInputRules } from "./form-rules"
 import Language from "./Language"
@@ -170,9 +171,6 @@ namespace PatientRegistrationForm {
     fields: RegistrationFormModel["fields"]
     values: Record<RegistrationFormField["id"], number | Date | string | boolean>
   }
-  // ---------------------------------------------------------------------------
-  // Required-field validation
-  // ---------------------------------------------------------------------------
 
   /** Context needed to validate required fields before submission */
   export type RequiredFieldContext = {
@@ -224,9 +222,6 @@ namespace PatientRegistrationForm {
       .map((field) => field.label.en || field.column)
   }
 
-  // ---------------------------------------------------------------------------
-  // Rule-scope assembly (mobile-side)
-  // ---------------------------------------------------------------------------
 
   /**
    * Input for `buildRuleScope`. Registration values are already keyed by
@@ -271,10 +266,55 @@ namespace PatientRegistrationForm {
         form[field.id] = formatDateYMD(value)
         continue
       }
+      // Option fields persist the current-language label; rules key on the
+      // stable `option.en`. Resolve back to `en` (and arrayify a checkbox) at
+      // read time so `in`/`some`/`all` see canonical tokens. Storage untouched.
+      if (field.fieldType === "checkbox") {
+        form[field.id] = canonicalizeCheckbox(value, field.options, ctx.language)
+        continue
+      }
+      if (field.fieldType === "select") {
+        form[field.id] = canonicalizeSelect(value, field.options, ctx.language)
+        continue
+      }
       form[field.id] = value
     }
 
     return { form, ctx }
+  }
+
+  // An unmatched label (option renamed/removed, or no `en`) keeps the raw
+  // token so a stale rule fails to match rather than resolving to the wrong one.
+  function canonicalizeOptionLabel(
+    label: string,
+    options: ReadonlyArray<Language.TranslationObject>,
+    language: string,
+  ): string {
+    const match = options.find((opt) => getTranslation(opt, language) === label)
+    return match?.en || label
+  }
+
+  function canonicalizeCheckbox(
+    value: unknown,
+    options: ReadonlyArray<Language.TranslationObject>,
+    language: string,
+  ): unknown {
+    if (value === undefined || value === null) return value
+    const labels = Array.isArray(value)
+      ? (value as string[])
+      : typeof value === "string"
+        ? splitCheckboxValues(value)
+        : []
+    return labels.map((label) => canonicalizeOptionLabel(label, options, language))
+  }
+
+  function canonicalizeSelect(
+    value: unknown,
+    options: ReadonlyArray<Language.TranslationObject>,
+    language: string,
+  ): unknown {
+    if (typeof value !== "string" || value === "") return value
+    return canonicalizeOptionLabel(value, options, language)
   }
 
   // Local-date YYYY-MM-DD. NOT `toISOString().slice(0, 10)` — UTC truncation

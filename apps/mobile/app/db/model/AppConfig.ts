@@ -16,7 +16,6 @@ export default class AppConfig extends Model {
   // The name of the table in the database schema
   static table = "app_config"
 
-  // --- Configuration Fields ---
   // A namespace to group related keys (e.g., 'ui', 'sync', 'feature_flags')
   @text("namespace") namespace!: string
   @text("key") key!: string
@@ -30,7 +29,6 @@ export default class AppConfig extends Model {
   // The user who last modified this configuration entry (optional)
   // @relation("users", "last_modified_by") lastModifiedBy?: User
 
-  // --- Timestamps (Read-only) ---
   @readonly @date("created_at") createdAt!: Date
   @readonly @date("updated_at") updatedAt!: Date
   @readonly @date("last_modified") lastModified!: Date

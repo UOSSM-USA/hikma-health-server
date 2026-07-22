@@ -20,10 +20,6 @@ import type { DataProvider } from "../../types/data"
 import { ok } from "../../types/data"
 import Patient from "../../app/models/Patient"
 
-// ---------------------------------------------------------------------------
-// Mock Patient data
-// ---------------------------------------------------------------------------
-
 const MOCK_PATIENT_T: Patient.T = {
   id: "p1",
   givenName: "Jane",
@@ -68,10 +64,6 @@ const MOCK_PATIENT_DB = {
   lastModifiedBy: "u1",
 }
 
-// ---------------------------------------------------------------------------
-// Mock provider
-// ---------------------------------------------------------------------------
-
 const mockProvider: DataProvider = {
   patients: {
     getMany: jest.fn().mockResolvedValue(
@@ -107,10 +99,6 @@ const mockProvider: DataProvider = {
   },
 }
 
-// ---------------------------------------------------------------------------
-// Mock WatermelonDB
-// ---------------------------------------------------------------------------
-
 const patientSubject = new Subject<any[]>()
 const countSubject = new Subject<number>()
 
@@ -129,10 +117,6 @@ jest.mock("../../app/db", () => ({
   },
 }))
 
-// ---------------------------------------------------------------------------
-// Mock useClinicIdsWithPermission (replaces old UserClinicPermissions mock)
-// ---------------------------------------------------------------------------
-
 // Stable reference to avoid infinite re-render loops in useEffect dependencies
 const mockClinicIds = ["c1", "c2"]
 const mockPermissionResult = { clinicIds: mockClinicIds, isLoading: false }
@@ -140,10 +124,6 @@ const mockPermissionResult = { clinicIds: mockClinicIds, isLoading: false }
 jest.mock("../../app/hooks/useClinicIdsWithPermission", () => ({
   useClinicIdsWithPermission: () => mockPermissionResult,
 }))
-
-// ---------------------------------------------------------------------------
-// Mock Patient.DB.fromDB
-// ---------------------------------------------------------------------------
 
 jest.mock("../../app/models/Patient", () => ({
   __esModule: true,
@@ -157,10 +137,6 @@ jest.mock("../../app/models/Patient", () => ({
   },
 }))
 
-// ---------------------------------------------------------------------------
-// Configurable mock for useDataAccess
-// ---------------------------------------------------------------------------
-
 let mockIsOnline = true
 
 jest.mock("../../app/providers/DataAccessProvider", () => ({
@@ -170,10 +146,6 @@ jest.mock("../../app/providers/DataAccessProvider", () => ({
     isOnline: mockIsOnline,
   }),
 }))
-
-// ---------------------------------------------------------------------------
-// Test wrapper
-// ---------------------------------------------------------------------------
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -185,10 +157,6 @@ function createWrapper() {
 }
 
 const EMPTY_FORM_FIELDS: any[] = []
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 afterAll(() => {
   patientSubject.complete()
@@ -233,7 +201,6 @@ describe("useDataProviderPatients", () => {
 
       await waitFor(() => expect(result.current.isLoading).toBe(false))
 
-      // Reset mock call count
       ;(mockProvider.patients.getMany as jest.Mock).mockClear()
 
       act(() => {
@@ -269,7 +236,6 @@ describe("useDataProviderPatients", () => {
         { wrapper: createWrapper() },
       )
 
-      // Emit patient data through the observable
       act(() => {
         patientSubject.next([MOCK_PATIENT_DB])
       })

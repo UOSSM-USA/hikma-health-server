@@ -277,9 +277,6 @@ namespace UserClinicPermissions {
     return list
   }
 
-  // -------------------------------------------------------------------------
-  // Check — Pure permission checking (no DB calls, no side effects)
-  // -------------------------------------------------------------------------
 
   export namespace Check {
     /** Minimal user context needed for permission checking (extracted from providerStore) */

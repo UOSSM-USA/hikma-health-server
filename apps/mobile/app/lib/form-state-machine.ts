@@ -95,10 +95,6 @@ export type FormInput = {
   baselineHidden?: "skip-first-render" | "clear-immediately"
 }
 
-// ---------------------------------------------------------------------------
-// Pure helpers — used by the machine's assign callbacks
-// ---------------------------------------------------------------------------
-
 type StabilizeResult = {
   values: Record<string, unknown>
   evaluation: RuleEvaluation
@@ -229,9 +225,6 @@ function applyTransition(
   }
 }
 
-// ---------------------------------------------------------------------------
-// The machine
-// ---------------------------------------------------------------------------
 
 export const formStateMachine = setup({
   types: {

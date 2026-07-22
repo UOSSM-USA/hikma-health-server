@@ -13,18 +13,12 @@ import fc from "fast-check"
 import { getDiagnosesFromFormData, getHtmlEventDisplay } from "../../app/components/EventListItem"
 import type Event from "../../app/models/Event"
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /** Minimal EventModel-like object for getHtmlEventDisplay */
 function makeEvent(formData: Event.FormDataItem[]): any {
   return { eventType: "test-form", formData }
 }
 
-// ---------------------------------------------------------------------------
-// getDiagnosesFromFormData
-// ---------------------------------------------------------------------------
 
 describe("getDiagnosesFromFormData", () => {
   it("returns empty array for empty formData", () => {
@@ -134,9 +128,6 @@ describe("getDiagnosesFromFormData", () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// getHtmlEventDisplay
-// ---------------------------------------------------------------------------
 
 describe("getHtmlEventDisplay", () => {
   it("returns empty string for empty formData", () => {

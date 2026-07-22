@@ -33,6 +33,7 @@ export type {
   logicField as LogicField,
   logicFieldKind as LogicFieldKind,
   logicPrimitiveKind as LogicPrimitiveKind,
+  logicOption as LogicOption,
   comparisonOp as ComparisonOp,
   connector as Connector,
   visibilityCondition as VisibilityCondition,

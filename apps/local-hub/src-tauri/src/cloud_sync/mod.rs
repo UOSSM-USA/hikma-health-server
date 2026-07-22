@@ -86,8 +86,6 @@ pub struct CloudSyncSummary {
     pub new_timestamp: i64,
 }
 
-// ---- Sync phases (separated so `Connection` never crosses an await) ------
-
 /// Phase 1: read the watermark (sync, no HTTP).
 pub fn phase_read_watermark(conn: &Connection) -> Result<i64, CloudSyncError> {
     peer::get_cloud_last_pulled_at(conn)

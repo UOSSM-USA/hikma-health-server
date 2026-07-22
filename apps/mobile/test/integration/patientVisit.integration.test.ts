@@ -5,13 +5,11 @@
  * unavailable in the test environment (Sentry, SecureStore, providerStore).
  */
 
-// ---------------------------------------------------------------------------
 // Mock the singleton database — every model that does `import database from
 // "@/db"` will receive our test database instance instead.
 //
 // We use a shared module (testDatabase) and store the current DB reference
 // there so the jest.mock factory can access it without out-of-scope variables.
-// ---------------------------------------------------------------------------
 
 import { createTestDatabase, resetTestDatabase } from "../helpers/testDatabase"
 
@@ -73,9 +71,7 @@ import UserClinicPermissionModel from "../../app/db/model/UserClinicPermissions"
 import VisitModel from "../../app/db/model/Visit"
 import EventModel from "../../app/db/model/Event"
 
-// ---------------------------------------------------------------------------
 // Lifecycle
-// ---------------------------------------------------------------------------
 
 let testDb: Database
 
@@ -88,9 +84,7 @@ afterEach(async () => {
   await resetTestDatabase(testDb)
 })
 
-// ---------------------------------------------------------------------------
 // Seed helpers — create prerequisite records directly via testDb
-// ---------------------------------------------------------------------------
 
 async function seedClinic(name = "Test Clinic") {
   return testDb.write(() =>
@@ -187,9 +181,7 @@ function makePatientRecord(
   return { fields: formFields, values }
 }
 
-// ===========================================================================
 // Patient.DB integration tests
-// ===========================================================================
 
 describe("Patient.DB", () => {
   let clinic: ClinicModel
@@ -221,7 +213,6 @@ describe("Patient.DB", () => {
       expect(patientId).toBeDefined()
       expect(typeof patientId).toBe("string")
 
-      // Verify the record is actually in the database
       const dbPatient = await testDb.get<PatientModel>("patients").find(patientId)
       expect(dbPatient.givenName).toBe("Alice")
       expect(dbPatient.surname).toBe("Smith")
@@ -235,7 +226,6 @@ describe("Patient.DB", () => {
 
     it("creates additional attribute records for non-base fields", async () => {
       const record = makePatientRecord({ given_name: "Bob", surname: "Jones" })
-      // Add a custom field
       record.fields.push({
         id: "custom_field_1",
         column: "blood_type",
@@ -318,7 +308,6 @@ describe("Patient.DB", () => {
       })
       const patientId = await Patient.DB.register(record, provider(), clinicRef())
 
-      // Update with new data
       const updatedRecord = makePatientRecord({
         given_name: "Eve",
         surname: "Updated",
@@ -337,7 +326,6 @@ describe("Patient.DB", () => {
       const record = makePatientRecord({ given_name: "Frank", surname: "Delete" })
       const patientId = await Patient.DB.register(record, provider(), clinicRef())
 
-      // Create a visit and event for this patient
       await testDb.write(async () => {
         const visit = testDb.get<VisitModel>("visits").prepareCreate((v) => {
           v.patientId = patientId
@@ -408,7 +396,6 @@ describe("Patient.DB", () => {
       const record = makePatientRecord({ given_name: "Helen", surname: "Filter" })
       const patientId = await Patient.DB.register(record, provider(), clinicRef())
 
-      // Create a visit with no events
       await testDb.write(() =>
         testDb.get<VisitModel>("visits").create((v) => {
           v.patientId = patientId
@@ -426,9 +413,7 @@ describe("Patient.DB", () => {
   })
 })
 
-// ===========================================================================
 // PatientVitals.DB integration tests
-// ===========================================================================
 
 describe("PatientVitals.DB", () => {
   let patientId: string
@@ -479,7 +464,6 @@ describe("PatientVitals.DB", () => {
   })
 
   it("getLatestForPatient returns the most recent vitals", async () => {
-    // Create two vitals with different timestamps
     await PatientVitals.DB.create({
       patientId,
       visitId: Option.none(),
@@ -535,9 +519,7 @@ describe("PatientVitals.DB", () => {
   })
 })
 
-// ===========================================================================
 // PatientProblems.DB integration tests
-// ===========================================================================
 
 describe("PatientProblems.DB", () => {
   let patientId: string
@@ -675,9 +657,7 @@ describe("PatientProblems.DB", () => {
   })
 })
 
-// ===========================================================================
 // Peer.DB integration tests
-// ===========================================================================
 
 describe("Peer.DB", () => {
   it("creates and retrieves a peer", async () => {
@@ -749,7 +729,6 @@ describe("Peer.DB", () => {
     expect(peer!.name).toBe("Updated Name")
     expect(peer!.status).toBe("active")
 
-    // Should still be only one record
     const all = await Peer.DB.getAll()
     expect(all).toHaveLength(1)
   })
@@ -813,9 +792,7 @@ describe("Peer.DB", () => {
   })
 })
 
-// ===========================================================================
 // Event.DB integration tests
-// ===========================================================================
 
 describe("Event.DB", () => {
   let patientId: string
@@ -865,7 +842,6 @@ describe("Event.DB", () => {
     expect(result.eventId).toBeDefined()
     expect(result.visitId).toBeDefined()
 
-    // Verify both records exist
     const events = await testDb
       .get<EventModel>("events")
       .query(Q.where("patient_id", patientId))
@@ -930,7 +906,6 @@ describe("Event.DB", () => {
   })
 
   it("adds an event to an existing visit", async () => {
-    // Create visit first
     const visit = await testDb.write(() =>
       testDb.get<VisitModel>("visits").create((v) => {
         v.patientId = patientId
@@ -964,7 +939,6 @@ describe("Event.DB", () => {
 
     expect(result.visitId).toBe(visit.id)
 
-    // No new visit should be created
     const visits = await testDb
       .get<VisitModel>("visits")
       .query(Q.where("patient_id", patientId))
@@ -993,7 +967,6 @@ describe("Event.DB", () => {
       Date.now(),
     )
 
-    // Now update it
     const updatedInput = {
       ...eventInput,
       formData: [{ inputType: "text", fieldType: "text", name: "BP", value: "130/85", fieldId: "bp" }],
@@ -1047,9 +1020,7 @@ describe("Event.DB", () => {
   })
 })
 
-// ===========================================================================
 // Property-based: patient registration round-trip
-// ===========================================================================
 
 describe("Property-based: Patient.DB.register round-trip", () => {
   it("any valid name/phone survives register → getById round-trip", async () => {

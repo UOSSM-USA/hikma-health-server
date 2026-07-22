@@ -1,4 +1,4 @@
-import { FC, useEffect, useMemo, useRef, useState } from "react"
+import { FC, useEffect, useMemo, useState } from "react"
 import { Alert, Pressable, ViewStyle } from "react-native"
 import { captureException } from "@sentry/react-native"
 import { useSelector } from "@xstate/react"
@@ -23,6 +23,7 @@ import { useClinics } from "@/hooks/useClinicsList"
 import { useCreatePatient } from "@/hooks/useCreatePatient"
 import { useDebounce } from "@/hooks/useDebounce"
 import { getBaseFieldByColumn, usePatientRecordEditor } from "@/hooks/usePatientRecordEditor"
+import { usePatientRecordRules } from "@/hooks/usePatientRecordRules"
 import { usePermissionGuard } from "@/hooks/usePermissionGuard"
 import { useSimilarPatientsSearch } from "@/hooks/useSimilarPatientsSearch"
 import { useUpdatePatient } from "@/hooks/useUpdatePatient"
@@ -31,18 +32,11 @@ import Patient from "@/models/Patient"
 import PatientRegistrationForm from "@/models/PatientRegistrationForm"
 import { PatientStackScreenProps } from "@/navigators/PatientNavigator"
 import {
-  compileRules,
-  computedCount,
-  computedEntries,
-  computedValuesEqual,
   filterVisibleFields,
   formatComputedValue,
   getComputed,
   hasComputed,
-  pruneRulesForLiveFields,
-  stabilizeComputedValues,
   summarizeSubmitBlockers,
-  type ValidationError,
 } from "@/lib/form-rules"
 import { useDataAccess } from "@/providers/DataAccessProvider"
 import {
@@ -108,93 +102,19 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
   // the rule slots through unchanged, so the cast is safe.
   const ruleFields = patientRecord.fields as PatientRegistrationForm.RegistrationFormField[]
 
-  // Compile rules once per form schema change. Rules reference fields by
-  // id (load-bearing decision #1), so we feed compileRules the raw
-  // RegistrationFormField[] which carries the rule slots — not the
-  // derived FormField[] from the hook, which drops them.
-  const compiledRules = useMemo(() => {
-    // `ruleFields` is the raw DB record (unfiltered), so build the live set
-    // from the static admin flags: a hidden (`visible: false`) or
-    // soft-deleted field neither contributes its own rules nor can be
-    // referenced by another field's rule.
-    const liveFieldIds = ruleFields.filter((f) => f.visible && !f.deleted).map((f) => f.id)
-    return compileRules(pruneRulesForLiveFields(ruleFields, liveFieldIds))
-  }, [ruleFields])
+  const { evaluation: ruleEvaluation, errorsByFieldId } = usePatientRecordRules({
+    fields: ruleFields,
+    values: patientRecord.values,
+    language,
+    updateField,
+    patientId: editPatientId,
+    isLoading: isPatientRecordLoading,
+  })
 
-  // Build the per-render rule scope. values is already keyed by field
-  // id, so this is straightforward (unlike EventFormScreen, which
-  // reconciles three different key schemes).
-  const ruleStabilization = useMemo(() => {
-    const scope = PatientRegistrationForm.buildRuleScope({
-      fields: ruleFields,
-      values: patientRecord.values,
-      ctx: { now: new Date().toISOString(), language },
-    })
-    return stabilizeComputedValues({ evaluator: compiledRules, initialScope: scope })
-  }, [compiledRules, ruleFields, patientRecord.values, language])
-  const ruleEvaluation = ruleStabilization.evaluation
-
-  // Pre-bucket validator errors by field id for O(1) lookup at render time.
-  const errorsByFieldId = useMemo(() => {
-    const map = new Map<string, ValidationError[]>()
-    for (const err of ruleEvaluation.validationErrors) {
-      const bucket = map.get(err.fieldId) ?? []
-      bucket.push(err)
-      map.set(err.fieldId, bucket)
-    }
-    return map
-  }, [ruleEvaluation])
-
-  // Surface rule diagnostics to dev logs (Logger.warn is a NODE_ENV no-op
-  // in production).
-  useEffect(() => {
-    if (ruleEvaluation.diagnostics.length === 0) return
-    for (const d of ruleEvaluation.diagnostics) {
-      Logger.warn({ msg: "[PatientEditor] rule diagnostic:", ...d })
-    }
-  }, [ruleEvaluation])
-  useEffect(() => {
-    if (ruleStabilization.convergence !== "cycle") return
-    // Author-time guardrail in the form-builder catches this before save.
-    // If we still see one here, the form shipped a cyclic computedValue
-    // chain — suppress writebacks (stabilize already emptied the map)
-    // and surface the diagnostic for dev visibility.
-    Logger.warn({
-      msg: "[PatientEditor] computedValue cycle detected — writebacks suppressed",
-      iterations: ruleStabilization.iterations,
-    })
-  }, [ruleStabilization])
-
-  // Clear-on-hide effect — diverges from EventFormScreen.
-  //
-  // Why the divergence: patient registration values are durable identity
-  // records, and the submit transformer (`patientRecordToCreateInput`)
-  // substitutes `""` for any missing value via
-  // `getPatientFieldByName(record, col, "")`. Clearing a rule-hidden
-  // field that was loaded from the DB would silently overwrite the DB
-  // value with `""` on save. So the first evaluation only baselines the
-  // ref — no clears. Subsequent visible→hidden transitions DO clear
-  // (the user's edits caused the rule to fire, so the value is no
-  // longer intended).
-  const previouslyHiddenRef = useRef<Set<string> | null>(null)
-
-  // Reset the baseline when the edited patient changes. React Navigation
-  // may reuse this screen instance across `navigate(..., { editPatientId })`
-  // calls with different params, in which case the ref would carry the
-  // previous patient's hidden set into the new patient's first eval —
-  // any field hidden in B but not in A would land in `newlyHidden`,
-  // triggering a destructive `""` write via the transformer fallback.
-  useEffect(() => {
-    previouslyHiddenRef.current = null
-  }, [editPatientId])
-
-  // Track which fields the user has directly interacted with so inline
-  // validator errors can be gated on user intent — same reasoning as RHF's
-  // touchedFields/dirtyFields on EventFormScreen. Effects that write via
-  // `updateField` (clear-on-hide, computedValue writeback, primary-clinic
-  // auto-set) must NOT mark fields interacted; only the JSX onChange
-  // handlers go through `userUpdateField`. Reset on editPatientId for the
-  // same screen-reuse reason as `previouslyHiddenRef`.
+  // Fields the user has directly touched, so inline validator errors gate on
+  // intent (RHF touchedFields analog). Only JSX onChange goes through
+  // `userUpdateField`; the hook's writebacks and primary-clinic auto-set use
+  // the raw `updateField` so they don't mark fields touched.
   const [interactedFieldIds, setInteractedFieldIds] = useState<Set<string>>(
     () => new Set(),
   )
@@ -210,45 +130,6 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
     })
     updateField(id, value as never)
   }
-
-  useEffect(() => {
-    if (isPatientRecordLoading) return
-    if (ruleFields.length === 0) return
-
-    const { nowHidden, newlyHidden } = PatientRegistrationForm.computeNewlyHidden({
-      fields: ruleFields,
-      evaluation: ruleEvaluation,
-      previouslyHidden: previouslyHiddenRef.current ?? new Set(),
-    })
-
-    if (previouslyHiddenRef.current === null) {
-      previouslyHiddenRef.current = nowHidden
-      return
-    }
-
-    for (const field of newlyHidden) {
-      updateField(field.id, undefined)
-    }
-    previouslyHiddenRef.current = nowHidden
-  }, [ruleEvaluation, ruleFields, updateField, isPatientRecordLoading])
-
-  // computedValue writeback: push every successfully-computed value into
-  // the record's in-memory values. Structural-equality short-circuit guards
-  // the setValue → re-eval → setValue cycle (see EventFormScreen for the
-  // walkthrough). Patient values are durable, but `updateField` mutates
-  // in-memory state only — nothing writes to the DB until the user presses
-  // Save, so unlike clear-on-hide there is no first-render baseline skip
-  // needed: computedValue *is* the field's value contract, and if a stored
-  // value drifts from the new computation the next save should sync it.
-  useEffect(() => {
-    if (isPatientRecordLoading) return
-    if (computedCount(ruleEvaluation) === 0) return
-    for (const [fieldId, computed] of computedEntries(ruleEvaluation)) {
-      const current = patientRecord.values[fieldId]
-      if (computedValuesEqual(current, computed)) continue
-      updateField(fieldId, computed as never)
-    }
-  }, [ruleEvaluation, patientRecord.values, updateField, isPatientRecordLoading])
 
   // on mount, set the primary_clinic_id to the user's current clinic id (only for new patients or if not set);
   useEffect(() => {

@@ -836,6 +836,19 @@ namespace EventForm {
     name: string;
     fieldType: string;
     inputType?: string;
+    multi?: boolean;
+    options?: FieldOption[];
+  };
+
+  // Option fields expose their choices to the panel's value picker. Event
+  // options carry a stable `value`, so rules key on it directly. `multiValue`
+  // is set only for multi-select fields, gating the includes/excludes kinds.
+  const optionFields = (
+    field: LogicAdaptableField,
+  ): Partial<Pick<LogicField, "multiValue" | "options">> => {
+    if (field.fieldType !== "options" || !field.options) return {};
+    const options = field.options.map((o) => ({ value: o.value, label: o.label }));
+    return field.multi === true ? { multiValue: true, options } : { options };
   };
 
   const fieldTypeToLogicKind = (fieldType: string): LogicFieldKind => {
@@ -881,6 +894,10 @@ namespace EventForm {
       displayName: f.name || f.id,
       kind: fieldTypeToLogicKind(f.fieldType),
       primitiveKind: inferPrimitiveKind(f),
+      ...(f.fieldType === "free-text" && f.inputType !== "number"
+        ? { freeText: true }
+        : {}),
+      ...optionFields(f),
     }));
 
   /**

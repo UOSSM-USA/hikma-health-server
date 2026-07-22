@@ -1088,3 +1088,150 @@ describe("syncTemplateFromAdvanced", () => {
     expect(syncTemplateFromAdvanced(status, false, false)).toBeNull();
   });
 });
+
+const multiForm: LogicField[] = [
+  {
+    id: "langs",
+    displayName: "Languages",
+    kind: "primitive",
+    primitiveKind: "string",
+    multiValue: true,
+    options: [
+      { value: "en", label: "English" },
+      { value: "sw", label: "Swahili" },
+      { value: "ar", label: "Arabic" },
+    ],
+  },
+  { id: "this-field", displayName: "Current", kind: "primitive", primitiveKind: "string" },
+];
+
+describe("FieldLogicPanel — multi-select membership", () => {
+  it("seeds Simple mode with a single-option picker for a stored `in` rule", () => {
+    render(
+      <FieldLogicPanel
+        form={multiForm}
+        fieldId="this-field"
+        initial={{ visibleIf: { in: ["en", { var: "form.langs" }] } }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    // Representable now → no advisory, and the single-option picker renders.
+    expect(screen.queryByText(/authored in Advanced mode/i)).toBeNull();
+    expect(screen.getByTestId("rule-option")).toBeDefined();
+  });
+
+  it("seeds Simple mode with a multi-option picker for a stored `or`-of-`in` rule", () => {
+    render(
+      <FieldLogicPanel
+        form={multiForm}
+        fieldId="this-field"
+        initial={{
+          visibleIf: {
+            or: [
+              { in: ["en", { var: "form.langs" }] },
+              { in: ["sw", { var: "form.langs" }] },
+            ],
+          },
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.queryByText(/authored in Advanced mode/i)).toBeNull();
+    // The multi-pick renders every option inline (labels, not portaled).
+    expect(screen.getByTestId("rule-options")).toBeDefined();
+    expect(screen.getByText("English")).toBeDefined();
+    expect(screen.getByText("Swahili")).toBeDefined();
+    expect(screen.getByText("Arabic")).toBeDefined();
+  });
+});
+
+const textForm: LogicField[] = [
+  {
+    id: "notes",
+    displayName: "Notes",
+    kind: "primitive",
+    primitiveKind: "string",
+    freeText: true,
+  },
+  { id: "this-field", displayName: "Current", kind: "primitive", primitiveKind: "string" },
+];
+
+describe("FieldLogicPanel — length validators", () => {
+  // The headline case: "this value must be longer than 10 characters" — a
+  // validator on `notes` constraining `notes`'s own length.
+  it("seeds Simple mode with a populated length row for a self-referencing length rule", () => {
+    render(
+      <FieldLogicPanel
+        form={textForm}
+        fieldId="notes"
+        initial={{
+          validators: [
+            {
+              id: "min-len",
+              rule: { ">": [{ length: { var: ["form.notes", ""] } }, 10] },
+              message: "Notes must be longer than 10 characters",
+            },
+          ],
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.getByText("Validator 1")).toBeDefined();
+    // A single length leaf decompiles to Simple mode (no Radix Tabs switch
+    // needed), so the character-count input renders populated.
+    expect((screen.getByTestId("rule-length-value") as HTMLInputElement).value).toBe(
+      "10",
+    );
+    expect(
+      screen.getByDisplayValue("Notes must be longer than 10 characters"),
+    ).toBeDefined();
+    // The defaulted-var length rule references its own field, so the
+    // "wrong field" advisory must stay hidden — ruleReferencesField reads the
+    // array-var head.
+    expect(
+      screen.queryByText(/doesn't reference the field being validated/i),
+    ).toBeNull();
+  });
+
+  it("edits the character count and saves the updated bound", () => {
+    const onSave = vi.fn();
+    render(
+      <FieldLogicPanel
+        form={textForm}
+        fieldId="notes"
+        initial={{
+          validators: [
+            {
+              id: "min-len",
+              rule: { ">": [{ length: { var: ["form.notes", ""] } }, 10] },
+              message: "Too short",
+            },
+          ],
+        }}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+
+    fireEvent.change(screen.getByTestId("rule-length-value"), {
+      target: { value: "25" },
+    });
+
+    const saveBtn = screen.getByRole("button", {
+      name: /Save validators/i,
+    }) as HTMLButtonElement;
+    expect(saveBtn.disabled).toBe(false);
+    fireEvent.click(saveBtn);
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const arg = onSave.mock.calls[0]?.[0];
+    expect(arg.validators).toHaveLength(1);
+    expect(arg.validators[0].rule).toEqual({
+      ">": [{ length: { var: ["form.notes", ""] } }, 25],
+    });
+    expect(arg.validators[0].message).toBe("Too short");
+  });
+});

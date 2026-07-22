@@ -70,9 +70,6 @@ export const DiagnosisSearchScreen: FC<DiagnosisSearchScreenProps> = ({ navigati
   return <DiagnosisSearchStep onSelect={setSelected} />
 }
 
-// ---------------------------------------------------------------------------
-// Step 1: Search
-// ---------------------------------------------------------------------------
 
 function DiagnosisSearchStep({ onSelect }: { onSelect: (diagnosis: SelectedDiagnosis) => void }) {
   const [searchQuery, setSearchQuery] = useState("")
@@ -120,10 +117,6 @@ function DiagnosisSearchStep({ onSelect }: { onSelect: (diagnosis: SelectedDiagn
     </Screen>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Step 2: Details form
-// ---------------------------------------------------------------------------
 
 const CLINICAL_STATUSES: PatientProblems.ClinicalStatus[] = [
   "active",

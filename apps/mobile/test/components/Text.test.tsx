@@ -12,9 +12,6 @@ import { NavigationContainer } from "@react-navigation/native"
 import { Text } from "../../app/components/Text"
 import { ThemeProvider } from "../../app/theme/context"
 
-// ---------------------------------------------------------------------------
-// Wrapper
-// ---------------------------------------------------------------------------
 
 function renderText(props: React.ComponentProps<typeof Text>, children?: React.ReactNode) {
   return render(
@@ -26,9 +23,6 @@ function renderText(props: React.ComponentProps<typeof Text>, children?: React.R
   )
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("Text component", () => {
   it("renders text prop", () => {

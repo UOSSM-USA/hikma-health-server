@@ -17,7 +17,6 @@ export default class ClinicModel extends Model {
   @field("is_deleted") isDeleted!: boolean
   @date("deleted_at") deletedAt!: Date
 
-  // --- Timestamps (Read-only) ---
   @readonly @date("created_at") createdAt!: Date
   @readonly @date("updated_at") updatedAt!: Date
 

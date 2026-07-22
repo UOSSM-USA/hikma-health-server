@@ -11,37 +11,30 @@ export default class ClinicDepartmentModel extends Model {
     clinics: { type: "belongs_to", key: "clinic_id" },
   }
 
-  // --- Basic Information ---
   @text("clinic_id") clinicId!: string
   @text("name") name!: string
   @text("code") code?: string // Short code like "CARDIO", "PEDS", "ER", "ICU", "OPD", "LAB"
   @text("description") description?: string
   @text("status") status!: string // active, inactive, maintenance
 
-  // --- Core Capabilities ---
   @field("can_dispense_medications") canDispenseMedications!: boolean
   @field("can_perform_labs") canPerformLabs!: boolean
   @field("can_perform_imaging") canPerformImaging!: boolean
 
-  // --- Future Flexibility ---
   // JSON array stored as string - contains additional capability flags
   @json("additional_capabilities", sanitizeAdditionalCapabilities) additionalCapabilities!: string[]
 
-  // --- Metadata ---
   // JSON object stored as string - contains flexible department-specific data
   @json("metadata", sanitizeMetadata) metadata!: Record<string, any>
 
-  // --- Audit and Soft-Delete ---
   @field("is_deleted") isDeleted!: boolean
   @date("deleted_at") deletedAt?: Date
 
-  // --- Timestamps (Read-only) ---
   @readonly @date("created_at") createdAt!: Date
   @readonly @date("updated_at") updatedAt!: Date
   @readonly @date("last_modified") lastModified!: Date
   @readonly @date("server_created_at") serverCreatedAt!: Date
 
-  // --- Relations ---
   @relation("clinics", "clinic_id") clinic!: ClinicModel
 }
 

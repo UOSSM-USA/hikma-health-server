@@ -16,10 +16,6 @@
 
 import * as RsRules from "@hikmahealth/forms/Rules"
 
-// ---------------------------------------------------------------------------
-// Types — re-exported with mobile-side capitalized names.
-// ---------------------------------------------------------------------------
-
 export type RuleScope = RsRules.ruleScope
 export type ValidationError = RsRules.validationError
 export type RuleEvalDiagnostic = RsRules.ruleEvalDiagnostic
@@ -29,9 +25,6 @@ export type CompiledEvaluator = RsRules.compiledEvaluator
 export type SubmitGate = RsRules.submitGate
 export type StabilizeResult = RsRules.stabilizeResult
 
-// ---------------------------------------------------------------------------
-// Functions — direct re-exports where signatures match.
-// ---------------------------------------------------------------------------
 
 export const compileRules = RsRules.compileRules
 export const pruneRulesForLiveFields = RsRules.pruneRulesForLiveFields
@@ -49,11 +42,6 @@ export const computedEntries = RsRules.computedEntries
 // Existing name; mobile screens + form-state-machine import this constant.
 // ReScript-side it's `maxStabilizeIterations`.
 export const MAX_STABILIZE_ITERATIONS = RsRules.maxStabilizeIterations
-
-// ---------------------------------------------------------------------------
-// Adapter wrappers — preserve the pre-flip TS-ergonomic signatures so
-// screens / form-state-machine call sites stay stable.
-// ---------------------------------------------------------------------------
 
 /**
  * Bundles the two submit-blocker sources into a single decision +

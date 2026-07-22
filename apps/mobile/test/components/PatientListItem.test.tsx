@@ -2,7 +2,6 @@ import React from "react"
 import { Image } from "react-native"
 import { fireEvent } from "@testing-library/react-native"
 
-// Mock all dependencies before importing the component
 jest.mock("@nozbe/watermelondb/react", () => ({
   withObservables: jest.fn(() => (Component: any) => Component),
 }))
@@ -140,7 +139,6 @@ jest.mock("effect", () => ({
   },
 }))
 
-// Now import the component after all mocks are set up
 import { PatientListItem, Avatar } from "../../app/components/PatientListItem"
 import Patient from "../../app/models/Patient"
 import { render } from "../helpers/renderWithProviders"
@@ -364,21 +362,6 @@ describe("PatientListItem", () => {
 
       const pressable = getByTestId(`patientListItem:${patient.id}`)
       expect(pressable).toBeTruthy()
-      // TODO: Fix RTL Tests
-      // // The View with direction style is inside the pressable
-      // // Access it through the children property
-      // const viewWithDirection = pressable.children?.[0]
-
-      // // Check if the view exists and has the expected style
-      // expect(viewWithDirection).toBeTruthy()
-      // const styleObj = Array.isArray(viewWithDirection?.props?.style)
-      //   ? Object.assign({}, ...viewWithDirection.props.style)
-      //   : viewWithDirection?.props?.style || {}
-
-      // expect(styleObj).toMatchObject({
-      //   flexDirection: "row",
-      //   gap: 20,
-      // })
     })
 
     it("should render in RTL mode when isRTL is true", () => {
@@ -395,21 +378,6 @@ describe("PatientListItem", () => {
       const pressable = getByTestId(`patientListItem:${patient.id}`)
 
       expect(pressable).toBeTruthy()
-      // TODO: Fix RTL Tests
-      // The View with direction style is inside the pressable
-      // Access it through the children property
-      // const viewWithDirection = pressable.children?.[0]
-
-      // // Check if the view exists and has the expected style
-      // expect(viewWithDirection).toBeTruthy()
-      // const styleObj = Array.isArray(viewWithDirection?.props?.style)
-      //   ? Object.assign({}, ...viewWithDirection.props.style)
-      //   : viewWithDirection?.props?.style || {}
-
-      // expect(styleObj).toMatchObject({
-      //   flexDirection: "row-reverse",
-      //   gap: 20,
-      // })
     })
   })
 
@@ -531,7 +499,6 @@ describe("PatientListItem", () => {
         surname: "",
       })
 
-      // Mock the displayName to return empty string for empty names
       Patient.displayName.mockReturnValueOnce("")
 
       const { queryByText, getByTestId } = render(
@@ -542,7 +509,6 @@ describe("PatientListItem", () => {
         />,
       )
 
-      // The component should still render even with empty name
       expect(getByTestId(`patientListItem:${patient.id}`)).toBeTruthy()
     })
 
@@ -562,7 +528,6 @@ describe("PatientListItem", () => {
         />,
       )
 
-      // Should still display the date even if it's in the future
       expect(getByText(/DOB:/)).toBeTruthy()
     })
   })
@@ -582,7 +547,6 @@ describe("PatientListItem", () => {
 
       const initialCallCount = displayNameSpy.mock.calls.length
 
-      // Re-render with same patient data
       rerender(
         <PatientListItem
           patient={patient}
@@ -591,7 +555,6 @@ describe("PatientListItem", () => {
         />,
       )
 
-      // displayName should not be called again for the same patient
       expect(displayNameSpy.mock.calls.length).toBe(initialCallCount)
 
       displayNameSpy.mockRestore()
@@ -601,7 +564,6 @@ describe("PatientListItem", () => {
       const patient1 = createMockPatient({ givenName: "John" })
       const patient2 = createMockPatient({ givenName: "Jane" })
 
-      // Set up the mock to return the correct display names
       Patient.displayName.mockImplementation((patient: any) =>
         `${patient.givenName} ${patient.surname}`.trim(),
       )

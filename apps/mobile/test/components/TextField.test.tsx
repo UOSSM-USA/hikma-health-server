@@ -14,10 +14,6 @@ import fc from "fast-check"
 import { TextField } from "../../app/components/TextField"
 import { ThemeProvider } from "../../app/theme/context"
 
-// ---------------------------------------------------------------------------
-// Wrapper
-// ---------------------------------------------------------------------------
-
 function renderField(props: React.ComponentProps<typeof TextField>) {
   return render(
     <ThemeProvider>

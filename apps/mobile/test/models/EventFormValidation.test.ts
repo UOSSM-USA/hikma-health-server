@@ -11,9 +11,7 @@ import { Option } from "effect"
 
 import EventForm from "../../app/models/EventForm"
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /** Build a minimal FieldItem with sensible defaults */
 function makeField(
@@ -45,9 +43,7 @@ const emptyCtx: EventForm.RequiredFieldContext = {
   fileUploads: {},
 }
 
-// ---------------------------------------------------------------------------
 // Unit tests — deterministic edge cases
-// ---------------------------------------------------------------------------
 
 describe("EventForm.getMissingRequiredFields", () => {
   it("returns empty array when there are no form fields", () => {
@@ -66,7 +62,7 @@ describe("EventForm.getMissingRequiredFields", () => {
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual([])
   })
 
-  // ---- text / generic inputs ----
+  // text / generic inputs
 
   it("flags a required text field when data value is undefined", () => {
     const ctx: EventForm.RequiredFieldContext = {
@@ -134,7 +130,7 @@ describe("EventForm.getMissingRequiredFields", () => {
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual([])
   })
 
-  // ---- select / radio / checkbox ----
+  // select / radio / checkbox
 
   it("flags a required select field when value is empty string", () => {
     const ctx: EventForm.RequiredFieldContext = {
@@ -172,7 +168,7 @@ describe("EventForm.getMissingRequiredFields", () => {
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual(["blood_type"])
   })
 
-  // ---- display-only fields (text / separator) are always skipped ----
+  // display-only fields (text / separator) are always skipped
 
   it("skips display-only text fields even if marked required", () => {
     const ctx: EventForm.RequiredFieldContext = {
@@ -196,7 +192,7 @@ describe("EventForm.getMissingRequiredFields", () => {
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual([])
   })
 
-  // ---- diagnosis fields ----
+  // diagnosis fields
 
   it("flags a required diagnosis field when diagnoses array is empty", () => {
     const ctx: EventForm.RequiredFieldContext = {
@@ -220,7 +216,7 @@ describe("EventForm.getMissingRequiredFields", () => {
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual([])
   })
 
-  // ---- medicine fields ----
+  // medicine fields
 
   it("flags a required medicine field when medicines array is empty", () => {
     const ctx: EventForm.RequiredFieldContext = {
@@ -254,7 +250,7 @@ describe("EventForm.getMissingRequiredFields", () => {
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual([])
   })
 
-  // ---- file fields ----
+  // file fields
 
   it("flags a required file field when fileUploads has no entry", () => {
     const ctx: EventForm.RequiredFieldContext = {
@@ -300,7 +296,7 @@ describe("EventForm.getMissingRequiredFields", () => {
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual([])
   })
 
-  // ---- multiple fields mixed ----
+  // multiple fields mixed
 
   it("returns only the names of missing required fields in form order", () => {
     const ctx: EventForm.RequiredFieldContext = {
@@ -362,17 +358,14 @@ describe("EventForm.getMissingRequiredFields", () => {
       fileUploads: { xray: { fileId: "file-001" } },
     }
 
-    // Only Medications should be missing
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual(["Medications"])
   })
 })
 
-// ---------------------------------------------------------------------------
 // Property-based tests
-// ---------------------------------------------------------------------------
 
 describe("EventForm.getMissingRequiredFields — property-based", () => {
-  // -- Arbitraries -----------------------------------------------------------
+  // Arbitraries
 
   const arbFieldName = fc.string({ minLength: 1, maxLength: 30 }).filter((s) => s.trim().length > 0)
 
@@ -407,7 +400,7 @@ describe("EventForm.getMissingRequiredFields — property-based", () => {
   // A non-empty, non-whitespace string value
   const arbFilledValue = fc.string({ minLength: 1 }).filter((s) => s.trim().length > 0)
 
-  // -- Properties ------------------------------------------------------------
+  // Properties
 
   it("display-only fields never appear in output regardless of data", () => {
     fc.assert(
@@ -508,7 +501,6 @@ describe("EventForm.getMissingRequiredFields — property-based", () => {
             return true
           })
 
-          // Fill every field with a valid value
           const data: Record<string, any> = {}
           for (const f of uniqueFields) {
             data[f.name] = "filled-value"
@@ -664,7 +656,6 @@ describe("EventForm.getMissingRequiredFields — property-based", () => {
           { minLength: 2, maxLength: 10 },
         ),
         (fields) => {
-          // Deduplicate by name
           const seen = new Set<string>()
           const uniqueFields = fields.filter((f) => {
             if (seen.has(f.name)) return false

@@ -182,9 +182,6 @@ namespace EventForm {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Required-field validation
-  // ---------------------------------------------------------------------------
 
   /** Context needed to validate required fields before submission */
   export type RequiredFieldContext = {
@@ -252,9 +249,6 @@ namespace EventForm {
       .map((field) => field.name)
   }
 
-  // ---------------------------------------------------------------------------
-  // Rule-scope assembly (mobile-side)
-  // ---------------------------------------------------------------------------
 
   /**
    * Input for `buildRuleScope`. The three keyings the renderer juggles —
