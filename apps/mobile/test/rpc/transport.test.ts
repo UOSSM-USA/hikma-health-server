@@ -2,7 +2,7 @@ import { createEncryptedTransport, createCloudTransport } from "../../app/rpc/tr
 import { encryptForWire, decryptFromWire } from "../../app/rpc/wire"
 import { seal } from "../../app/crypto/cipher"
 import { encode, utf8Encode } from "../../app/crypto/encoding"
-import { randomBytes } from "@noble/ciphers/utils"
+import { randomBytes } from "@noble/ciphers/utils.js"
 import type { HubSession } from "../../app/rpc/handshake"
 import type { LoginResponse } from "../../app/rpc/types"
 

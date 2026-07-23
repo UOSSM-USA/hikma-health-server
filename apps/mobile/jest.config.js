@@ -4,7 +4,9 @@ module.exports = {
   setupFiles: ["<rootDir>/test/setup.ts"],
   testPathIgnorePatterns: ["/node_modules/", "/.maestro/"],
   transformIgnorePatterns: [
-    "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|@noble/curves|@noble/hashes|@noble/ciphers|@scure/base|immer|use-immer|uuid|@nd/jsonlogic|@rescript/runtime)",
+    // @xstate/store v4 and lucide-react-native v1 ship ESM-only dist bundles, so they
+    // must be transformed rather than required raw.
+    "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|@noble/curves|@noble/hashes|@noble/ciphers|@scure/base|immer|use-immer|uuid|@nd/jsonlogic|@rescript/runtime|@xstate/store|lucide-react-native)",
   ],
   // jest-expo's default transform regex only matches .ts/.tsx/.js/.jsx, so
   // ReScript-emitted `.res.mjs` files (e.g. @hikmahealth/js-utils) fall
@@ -18,6 +20,13 @@ module.exports = {
   // Node resolution find the package wherever pnpm hoisted it (mobile-local
   // node_modules or repo root) instead of pinning to <rootDir>.
   moduleNameMapper: {
+    // pnpm's hoisted linker gives apps/mobile its own physical copy of react
+    // alongside the root one. Tests resolve the mobile copy while root-level
+    // react-test-renderer and @tanstack/react-query resolve theirs — two React
+    // instances in one renderer, failing every render with "Invalid hook call".
+    // Metro is unaffected: it only ever sees the mobile copy.
+    "^react$": "<rootDir>/node_modules/react",
+    "^react/(.*)$": "<rootDir>/node_modules/react/$1",
     "^@noble/curves/([^.]+)$": "@noble/curves/$1.js",
     "^@noble/hashes/([^.]+)$": "@noble/hashes/$1.js",
     "^@noble/ciphers/([^.]+)$": "@noble/ciphers/$1.js",

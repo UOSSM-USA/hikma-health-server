@@ -33,6 +33,7 @@ import type { AppStackScreenProps } from "@/navigators/AppNavigator"
 import type { HubSession } from "@/rpc/handshake"
 import { createEncryptedTransport } from "@/rpc/transport"
 import { colors } from "@/theme/colors"
+import { hapticTap } from "@/utils/haptics"
 
 import {
   peerToServerDisplay,
@@ -266,6 +267,8 @@ export const SyncSettingsScreen: FC<SyncSettingsScreenProps> = () => {
   }
 
   const handleManualSync = async () => {
+    hapticTap()
+    if (isSyncing) return
     try {
       await startSync()
       await startSync()
@@ -280,7 +283,6 @@ export const SyncSettingsScreen: FC<SyncSettingsScreenProps> = () => {
         <TouchableOpacity
           style={[$manualSyncButton, isSyncing && $syncButtonDisabled]}
           onPress={handleManualSync}
-          disabled={isSyncing}
         >
           <LucideRefreshCcw
             color={isSyncing ? colors.palette.neutral400 : colors.palette.primary600}

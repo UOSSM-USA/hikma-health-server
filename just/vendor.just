@@ -1,13 +1,11 @@
-# Vendor catalog — manage third-party packages under vendor/. See vendor/README.md
-# for the policy (no local modifications on mode = "sync"; freeze if you must
-# edit). All recipes are thin wrappers over scripts/vendor/vendor.mjs, which is
-# the single source of truth for vendor.toml mutations.
+# Vendor catalog — third-party packages under vendor/. See vendor/README.md for
+# the policy (no local edits while mode = "sync"; freeze first). Every recipe is
+# a thin wrapper over scripts/vendor/vendor.mjs, the sole owner of vendor.toml.
 
 vendor-add NAME URL REF:
     node scripts/vendor/vendor.mjs add {{quote(NAME)}} {{quote(URL)}} {{quote(REF)}}
 
-# vendor-update <name>          — re-pull the recorded ref (drift fix)
-# vendor-update <name> <new-ref> — sync to a new upstream ref
+# Re-pull the recorded ref to fix drift, or pass REF to move to a new one.
 vendor-update NAME REF='':
     node scripts/vendor/vendor.mjs update {{quote(NAME)}} {{quote(REF)}}
 

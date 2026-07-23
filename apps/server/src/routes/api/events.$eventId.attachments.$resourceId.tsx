@@ -1,0 +1,129 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { minutesToMilliseconds } from "date-fns";
+import { Logger } from "@hikmahealth/js-utils";
+import {
+  createRateLimiter,
+  getClientIp,
+  tooManyRequestsResponse,
+} from "@/lib/rate-limiter";
+import Resource from "@/models/resource";
+import Event from "@/models/event";
+import UserClinicPermissions from "@/models/user-clinic-permissions";
+import { getConfiguredAdapter } from "@/storage/factory";
+import {
+  authenticateCaller,
+  eventReferencesResource,
+  isCanonicalUuid,
+  logResourceAudit,
+} from "@/lib/form-resources";
+
+const downloadLimiter = createRateLimiter({
+  windowMs: minutesToMilliseconds(1),
+  maxRequests: 120,
+});
+
+const json = (body: unknown, status: number): Response =>
+  new Response(JSON.stringify(body), {
+    headers: { "Content-Type": "application/json" },
+    status,
+  });
+
+/**
+ * Serve an event-form file attachment through its owning event. The event is
+ * the aggregate that ties the resource to a patient, so a caller may only read
+ * a resource by naming an event that actually references it. `clinic_id` on the
+ * resource is the clinic-level guard on top of that.
+ *
+ * Every negative case returns 404 so the endpoint never confirms whether a
+ * given event or resource id exists.
+ */
+export const Route = createFileRoute(
+  "/api/events/$eventId/attachments/$resourceId",
+)({
+  server: {
+    handlers: {
+      GET: async ({ request, params }) => {
+        const ip = getClientIp(request);
+        const limit = downloadLimiter.check(ip);
+        if (!limit.allowed) return tooManyRequestsResponse(limit.retryAfterMs);
+
+        try {
+          const caller = await authenticateCaller(request);
+          if (!caller) return json({ error: "Unauthorized" }, 401);
+
+          if (
+            !isCanonicalUuid(params.eventId) ||
+            !isCanonicalUuid(params.resourceId)
+          ) {
+            return json({ error: "Not found" }, 404);
+          }
+
+          const formData = await Event.API.getFormDataById(params.eventId);
+          if (!formData) {
+            return json({ error: "Not found" }, 404);
+          }
+          if (!eventReferencesResource(formData, params.resourceId)) {
+            return json({ error: "Not found" }, 404);
+          }
+
+          const resource = await Resource.getById(params.resourceId);
+          if (!resource || resource.source !== Resource.SOURCE.EVENT_FORM) {
+            return json({ error: "Not found" }, 404);
+          }
+
+          // Clinic-level guard, checked per request so revoking a user's clinic
+          // access immediately revokes their ability to read its attachments.
+          const permittedClinicIds =
+            await UserClinicPermissions.API.getClinicIdsWithPermission(
+              caller.id,
+              UserClinicPermissions.userPermissions.CAN_VIEW_HISTORY,
+            );
+          if (
+            !resource.clinic_id ||
+            !permittedClinicIds.includes(resource.clinic_id)
+          ) {
+            return json({ error: "Not found" }, 404);
+          }
+
+          // Fail closed: PHI is not served unless the access is recorded.
+          try {
+            await logResourceAudit(request, {
+              actionType: "VIEW",
+              resourceId: resource.id,
+              userId: caller.id,
+              metadata: {
+                clinic_id: resource.clinic_id,
+                event_id: params.eventId,
+              },
+            });
+          } catch (auditError) {
+            Logger.error({
+              msg: "[events.attachments] audit write failed, refusing to serve",
+              error: auditError,
+            });
+            return json({ error: "Service unavailable" }, 503);
+          }
+
+          const adapter = await getConfiguredAdapter();
+          if (resource.store !== adapter.name) {
+            return json({ error: "Unsupported storage backend" }, 501);
+          }
+
+          const bytes = await adapter.downloadAsBytes(resource.uri);
+
+          return new Response(bytes as unknown as BodyInit, {
+            headers: {
+              "Content-Type": resource.mimetype,
+              "Cache-Control": "no-store, private",
+              "Content-Disposition": "inline",
+              "X-Content-Type-Options": "nosniff",
+            },
+          });
+        } catch (error) {
+          Logger.error({ msg: "[events.attachments] download failed", error });
+          return json({ error: "Internal server error" }, 500);
+        }
+      },
+    },
+  },
+});

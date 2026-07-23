@@ -1,5 +1,5 @@
 import fc from "fast-check"
-import { randomBytes } from "@noble/ciphers/utils"
+import { randomBytes } from "@noble/ciphers/utils.js"
 
 const mockStore = new Map<string, string>()
 

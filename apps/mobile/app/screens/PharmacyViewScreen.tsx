@@ -1,6 +1,6 @@
 import { FC, useEffect, useReducer, useState } from "react"
 import { Pressable, TextStyle, ViewStyle } from "react-native"
-import { LegendList } from "@legendapp/list"
+import { LegendList } from "@legendapp/list/react-native"
 import { Q } from "@nozbe/watermelondb"
 import { withObservables } from "@nozbe/watermelondb/react"
 import { NativeStackScreenProps } from "@react-navigation/native-stack"

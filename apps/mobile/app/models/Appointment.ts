@@ -421,13 +421,14 @@ namespace Appointment {
 
     export const createSearchQueryConditions = (
       searchQuery: string,
-      clinicId: string,
+      clinicIds: string[],
       status: string[],
       date: Date,
       options: { offset?: number; limit?: number } = { offset: 0, limit: 25 },
     ): Q.Clause[] => {
-      // Build query conditions
-      const conditions = [Q.where("clinic_id", clinicId), Q.where("is_deleted", false)]
+      // An empty `clinicIds` correctly matches nothing: no clinic satisfies the
+      // filters, so no appointments should show.
+      const conditions = [Q.where("clinic_id", Q.oneOf(clinicIds)), Q.where("is_deleted", false)]
 
       // Add date filter - filter by day
       const startOfDay = new Date(date)
@@ -490,7 +491,13 @@ namespace Appointment {
     ): Promise<Appointment.T[]> => {
       try {
         // build the conditions
-        const conditions = createSearchQueryConditions(searchQuery, clinicId, status, date, options)
+        const conditions = createSearchQueryConditions(
+          searchQuery,
+          [clinicId],
+          status,
+          date,
+          options,
+        )
 
         // Execute query
         const appointments = await database

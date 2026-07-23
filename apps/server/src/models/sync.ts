@@ -168,8 +168,8 @@ namespace Sync {
     Prescription,
     PatientVital,
     PatientProblem,
-    DispensingRecord,
     PrescriptionItem,
+    DispensingRecord,
   ];
 
   /**

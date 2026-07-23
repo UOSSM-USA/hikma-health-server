@@ -1,6 +1,6 @@
-import { FC, useState, useEffect, useCallback } from "react"
+import { FC, useMemo, useState, useEffect, useCallback } from "react"
 import { ViewStyle, TextStyle, Pressable } from "react-native"
-import { LegendList } from "@legendapp/list"
+import { LegendList } from "@legendapp/list/react-native"
 import { Q } from "@nozbe/watermelondb"
 import { compose } from "@nozbe/watermelondb/react"
 import withObservables from "@nozbe/watermelondb/react/withObservables"
@@ -58,10 +58,11 @@ export const AppointmentsListScreen: FC<AppointmentsListScreenProps> = ({ naviga
   const propsClinicId = Option.getOrElse(clinic_id, () => "")
   // const clinicName = Option.getOrElse(clinic_name, () => "")
 
-  const { appointments, clearFilters, filters, handleFiltersChange, loadMore } =
-    useDBAppointmentsFilter(propsClinicId)
-
   const { clinics: clinicsList, isLoading: isLoadingClinics } = useDBClinicsList()
+
+  const { appointments, clearFilters, filters, handleFiltersChange, loadMore } =
+    useDBAppointmentsFilter(propsClinicId, clinicsList)
+
   const activeClinic = clinicsList.find((clinic) => clinic.id === filters.clinicId)
 
   const handleAppointmentPress = (appointment: { patientId: string; id: string }) => {
@@ -114,7 +115,7 @@ export const AppointmentsListScreen: FC<AppointmentsListScreenProps> = ({ naviga
       ListFooterComponent={<View mb={64}></View>}
       onEndReached={loadMore}
       onEndReachedThreshold={0.5}
-      extraData={`${filters.status}_${filters.clinicId}_${filters.searchQuery}__${filters.date.toDateString()}__${filters.departmentIds}`}
+      extraData={`${filters.status}_${filters.clinicId}_${filters.country}_${filters.city}_${filters.searchQuery}__${filters.date.toDateString()}__${filters.departmentIds}`}
       // extraData={appointmentsCount * loadedAppointmentsCount}
     />
   )
@@ -157,11 +158,43 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
     clinicsList: Clinic.DBClinic[]
   }) => {
     const { themed } = useAppTheme()
-    const [openDropdown, setOpenDropdown] = useState<"clinic" | "status" | "department" | null>(
-      null,
-    )
+    const [openDropdown, setOpenDropdown] = useState<
+      "clinic" | "status" | "department" | "country" | "city" | null
+    >(null)
     const [isCollapsed, setIsCollapsed] = useState(true)
     const { paddingTop: safeAreaPaddingTop } = useSafeAreaInsetsStyle(["top"])
+
+    const countryOptions = useMemo(() => Clinic.countryOptions(clinicsList), [clinicsList])
+    const cityOptions = useMemo(
+      () => Clinic.cityOptions(clinicsList, filters.country),
+      [clinicsList, filters.country],
+    )
+    // The "All …" entry matches the unset value, so leaving it in an otherwise
+    // empty list would mask the placeholder that explains why there is nothing.
+    const countryItems = useMemo(
+      () =>
+        countryOptions.length === 0
+          ? []
+          : [
+              { label: "All countries", value: "" },
+              ...countryOptions.map((country) => ({ label: country, value: country })),
+            ],
+      [countryOptions],
+    )
+    const cityItems = useMemo(
+      () =>
+        cityOptions.length === 0
+          ? []
+          : [
+              { label: "All cities", value: "" },
+              ...cityOptions.map((city) => ({ label: city, value: city })),
+            ],
+      [cityOptions],
+    )
+    const clinicOptions = useMemo(
+      () => Clinic.clinicsIn(clinicsList, filters.country, filters.city),
+      [clinicsList, filters.country, filters.city],
+    )
 
     const selectedClinic = clinicsList.find((clinic) => clinic.id === filters.clinicId)
     const selectedStatus = filters.status
@@ -183,6 +216,10 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
 
         <If condition={isCollapsed}>
           <View>
+            {filters.country ? <Text text={`Country: ${filters.country}`} /> : null}
+
+            {filters.city ? <Text text={`City: ${filters.city}`} /> : null}
+
             {selectedClinic && <Text text={`Clinic: ${selectedClinic.name}`} />}
 
             {selectedStatus && <Text text={`Status: ${friendlyString(selectedStatus)}`} />}
@@ -209,6 +246,68 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
             </Pressable>
           </View>
           <View mt={10}>
+            <Text preset="formLabel" text="Country" />
+
+            <DropDownPicker
+              open={openDropdown === "country"}
+              setOpen={(open) => {
+                if (open as unknown as boolean) setOpenDropdown("country")
+                else setOpenDropdown(null)
+              }}
+              modalTitle="Country"
+              style={$dropDownPickerStyle}
+              modalContentContainerStyle={[
+                $modalContentContainerStyle,
+                { paddingTop: safeAreaPaddingTop },
+              ]}
+              zIndex={990000}
+              zIndexInverse={990000}
+              listMode="MODAL"
+              disabled={countryOptions.length === 0}
+              disabledStyle={$dropDownPickerDisabledStyle}
+              placeholder={
+                countryOptions.length === 0 ? "No clinics have a country set" : "All countries"
+              }
+              items={countryItems}
+              value={filters.country}
+              setValue={(cb) => {
+                const data = cb(filters.country)
+                onFiltersChange({ country: data })
+              }}
+            />
+          </View>
+
+          <View mt={10}>
+            <Text preset="formLabel" text="City" />
+
+            <DropDownPicker
+              open={openDropdown === "city"}
+              setOpen={(open) => {
+                if (open as unknown as boolean) setOpenDropdown("city")
+                else setOpenDropdown(null)
+              }}
+              modalTitle="City"
+              style={$dropDownPickerStyle}
+              modalContentContainerStyle={[
+                $modalContentContainerStyle,
+                { paddingTop: safeAreaPaddingTop },
+              ]}
+              zIndex={990000}
+              zIndexInverse={990000}
+              listMode="MODAL"
+              disabled={cityOptions.length === 0}
+              disabledStyle={$dropDownPickerDisabledStyle}
+              placeholder={cityOptions.length === 0 ? "No clinics have a city set" : "All cities"}
+              items={cityItems}
+              value={filters.city}
+              setValue={(cb) => {
+                const data = cb(filters.city)
+                onFiltersChange({ city: data })
+              }}
+            />
+          </View>
+
+          <View mt={10}>
             <Text preset="formLabel" text="Clinic" />
 
             <DropDownPicker
@@ -226,10 +325,13 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
               zIndex={990000}
               zIndexInverse={990000}
               listMode="MODAL"
-              items={clinicsList.map((clinic) => ({
-                label: clinic.name,
-                value: clinic.id,
-              }))}
+              items={[
+                { label: "All clinics", value: "" },
+                ...clinicOptions.map((clinic) => ({
+                  label: clinic.name,
+                  value: clinic.id,
+                })),
+              ]}
               value={filters.clinicId || ""}
               setValue={(cb) => {
                 const data = cb(filters.clinicId)
@@ -482,6 +584,10 @@ const $dropDownPickerStyle: ViewStyle = {
   borderColor: colors.palette.neutral400,
   zIndex: 990000,
   flex: 1,
+}
+
+const $dropDownPickerDisabledStyle: ViewStyle = {
+  opacity: 0.5,
 }
 
 const $statusChip: ViewStyle = {

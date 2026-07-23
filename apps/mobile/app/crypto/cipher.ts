@@ -4,8 +4,8 @@
  * Wire format: nonce(12B) || ciphertext || tag(16B)
  */
 
-import { gcm } from "@noble/ciphers/aes"
-import { randomBytes } from "@noble/ciphers/utils"
+import { gcm } from "@noble/ciphers/aes.js"
+import { randomBytes } from "@noble/ciphers/utils.js"
 import { utf8Encode } from "./encoding"
 
 const NONCE_LENGTH = 12

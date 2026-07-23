@@ -60,6 +60,8 @@ import { Logger } from "@hikmahealth/js-utils"
  * - Network connection fails
  * - Server returns an error
  */
+let syncInFlight: Promise<void> | null = null
+
 export const startSync = async (providerEmail?: string): Promise<void> => {
   // Skip sync in online mode — data flows directly via RPC
   if (operationModeStore.getSnapshot().context.mode === "online") {
@@ -73,13 +75,21 @@ export const startSync = async (providerEmail?: string): Promise<void> => {
     return Promise.reject(new Error("Test account cannot sync"))
   }
 
-  // Check if already syncing
-  const currentState = syncStore.getSnapshot().context.state
-  if (currentState !== Sync.State.IDLE) {
-    Logger.log("Sync already in progress, skipping...")
-    return Promise.resolve()
+  // Mutex. `syncInFlight` is assigned below with no await in between, so two
+  // callers racing across the login / netinfo settle both see it and join
+  // rather than starting a second synchronize() that WatermelonDB would abort.
+  if (syncInFlight) {
+    Logger.log("Sync already in progress, joining existing run...")
+    return syncInFlight
   }
 
+  syncInFlight = runSync(providerEmail).finally(() => {
+    syncInFlight = null
+  })
+  return syncInFlight
+}
+
+const runSync = async (providerEmail?: string): Promise<void> => {
   try {
     // Find the active peer to sync with — prefer hub if available, fall back to cloud
     // const activePeer = await resolveActivePeer()

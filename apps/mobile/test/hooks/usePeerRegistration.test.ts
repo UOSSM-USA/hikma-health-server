@@ -3,7 +3,7 @@
  * Validates QR parsing → peer registration flow for both hub and cloud peers.
  */
 
-import { randomBytes } from "@noble/ciphers/utils"
+import { randomBytes } from "@noble/ciphers/utils.js"
 import type { HubSession } from "../../app/rpc/handshake"
 
 // --- Mocks ---

@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { FileText } from "lucide-react";
+import { attachmentKind } from "@/lib/attachment-kind";
 import { getEventForms } from "@/lib/server-functions/event-forms";
 import { SelectInput } from "@/components/select-input";
 import { Fragment, useEffect, useState } from "react";
@@ -234,6 +236,28 @@ function RouteComponent() {
                         </TableCell>
                       );
                     }
+                    if (column.fieldType === "file") {
+                      return (
+                        <TableCell key={column.id}>
+                          <AttachmentCell
+                            eventId={event.id}
+                            resourceId={
+                              typeof field?.value === "string" ? field.value : ""
+                            }
+                            fileName={
+                              typeof field?.fileName === "string"
+                                ? field.fileName
+                                : null
+                            }
+                            mimetype={
+                              typeof field?.mimetype === "string"
+                                ? field.mimetype
+                                : null
+                            }
+                          />
+                        </TableCell>
+                      );
+                    }
                     return (
                       <TableCell key={column.id}>{field?.value}</TableCell>
                     );
@@ -298,6 +322,60 @@ function RouteComponent() {
         </Pagination>
       </div>
     </div>
+  );
+}
+
+/**
+ * Render an event-form file attachment inline. Bytes load from the
+ * cookie-authenticated download route; `loading="lazy"` limits the audited fetch
+ * to rows scrolled into view.
+ *
+ * The explorer lists events across every clinic, but the download route's
+ * per-clinic guard may 404 an image for a clinic this admin cannot view — hence
+ * the fallback to an icon + filename link on load error.
+ */
+function AttachmentCell({
+  eventId,
+  resourceId,
+  fileName,
+  mimetype,
+}: {
+  eventId: string;
+  resourceId: string;
+  fileName: string | null;
+  mimetype: string | null;
+}) {
+  const [imageError, setImageError] = useState(false);
+
+  if (!resourceId) return null;
+
+  const url = `/api/events/${eventId}/attachments/${resourceId}`;
+  const label = fileName ?? "Attachment";
+
+  if (attachmentKind(mimetype) === "image" && !imageError) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" title={label}>
+        <img
+          src={url}
+          alt={label}
+          loading="lazy"
+          onError={() => setImageError(true)}
+          style={{ maxWidth: 120, maxHeight: 120, objectFit: "contain" }}
+        />
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-2 underline"
+    >
+      <FileText size={16} />
+      <span>{label}</span>
+    </a>
   );
 }
 

@@ -3,9 +3,9 @@
  * Uses @noble/curves for X25519 and @noble/hashes for HKDF.
  */
 
-import { x25519 } from "@noble/curves/ed25519"
-import { hkdf } from "@noble/hashes/hkdf"
-import { sha256 } from "@noble/hashes/sha2"
+import { x25519 } from "@noble/curves/ed25519.js"
+import { hkdf } from "@noble/hashes/hkdf.js"
+import { sha256 } from "@noble/hashes/sha2.js"
 import { utf8Encode } from "./encoding"
 
 const HKDF_SALT = utf8Encode("hikma-health-pairing-v1")

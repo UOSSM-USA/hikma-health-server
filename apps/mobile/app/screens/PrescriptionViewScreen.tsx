@@ -5,7 +5,7 @@ import { withObservables } from "@nozbe/watermelondb/react"
 import { catchError, of as of$ } from "@nozbe/watermelondb/utils/rx"
 import { NativeStackScreenProps } from "@react-navigation/native-stack"
 import { useSelector } from "@xstate/react"
-import { LucideCheck, LucideX } from "lucide-react-native"
+import { ChevronDownIcon, ChevronUpIcon, LucideCheck, LucideX } from "lucide-react-native"
 import Toast from "react-native-root-toast"
 
 import { Button } from "@/components/Button"
@@ -15,6 +15,8 @@ import { Text } from "@/components/Text"
 import { Radio } from "@/components/Toggle/Radio"
 import { View } from "@/components/View"
 import database from "@/db"
+import PatientProblem from "@/db/model/PatientProblems"
+import { useDBPatientProblems } from "@/hooks/useDBPatientProblems"
 import DrugCatalogue from "@/models/DrugCatalogue"
 import Patient from "@/models/Patient"
 import Prescription from "@/models/Prescription"
@@ -42,6 +44,8 @@ export const PrescriptionViewScreen: FC<PrescriptionViewScreenProps> = ({ route,
   const providerId = useSelector(providerStore, (state) => state.context.id)
   const [prescription, setPrescription] = useState<Prescription.DB.T | null>(null)
   const [patient, setPatient] = useState<Patient.DB.T | null>(null)
+  const diagnoses = useDBPatientProblems(prescription?.patientId ?? "")
+  const [diagnosesExpanded, setDiagnosesExpanded] = useState(false)
 
   useEffect(() => {
     const prescriptionSub = database
@@ -199,6 +203,39 @@ export const PrescriptionViewScreen: FC<PrescriptionViewScreenProps> = ({ route,
         </View>
       )}
 
+      {diagnoses.length > 0 && (
+        <View gap={8} pb={14}>
+          <Pressable
+            onPress={() => setDiagnosesExpanded((expanded) => !expanded)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: diagnosesExpanded }}
+            style={$diagnosesHeader}
+          >
+            <Text text={`Current Diagnoses (${diagnoses.length})`} size="lg" />
+            {diagnosesExpanded ? (
+              <ChevronUpIcon size={18} color={colors.palette.neutral800} />
+            ) : (
+              <ChevronDownIcon size={18} color={colors.palette.neutral800} />
+            )}
+          </Pressable>
+
+          <If condition={diagnosesExpanded}>
+            <View gap={10}>
+              {diagnoses.slice(0, recentDiagnosesMax).map((diagnosis) => (
+                <DiagnosisSnippet key={diagnosis.id} diagnosis={diagnosis} />
+              ))}
+              <If condition={diagnoses.length > recentDiagnosesMax}>
+                <Text
+                  text={`+ ${diagnoses.length - recentDiagnosesMax} older`}
+                  size="xs"
+                  color={colors.textDim}
+                />
+              </If>
+            </View>
+          </If>
+        </View>
+      )}
+
       <View>
         <Text text="Change Status" size="lg" />
         <View gap={6}>
@@ -243,6 +280,46 @@ export const PrescriptionViewScreen: FC<PrescriptionViewScreenProps> = ({ route,
         </View>
       </If>*/}
     </Screen>
+  )
+}
+
+// Only the latest few diagnoses are shown here; the full list lives in the Diagnosis History screen.
+const recentDiagnosesMax = 5
+
+const $diagnosesHeader: ViewStyle = {
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "space-between",
+}
+
+const diagnosisStatusColors: Record<PatientProblem["clinicalStatus"], string> = {
+  active: colors.palette.primary500,
+  remission: colors.palette.accent500,
+  resolved: colors.palette.neutral500,
+  unknown: colors.textDim,
+}
+
+function DiagnosisSnippet({ diagnosis }: { diagnosis: PatientProblem }) {
+  const statusColor = diagnosisStatusColors[diagnosis.clinicalStatus] ?? colors.textDim
+
+  return (
+    <View>
+      <Text text={diagnosis.problemLabel} size="sm" preset="bold" />
+      <View direction="row" gap={8} alignItems="center">
+        <Text
+          text={`${diagnosis.problemCodeSystem.toUpperCase()}: ${diagnosis.problemCode}`}
+          size="xs"
+          color={colors.textDim}
+        />
+        <Text
+          text={
+            diagnosis.clinicalStatus.charAt(0).toUpperCase() + diagnosis.clinicalStatus.slice(1)
+          }
+          size="xs"
+          color={statusColor}
+        />
+      </View>
+    </View>
   )
 }
 

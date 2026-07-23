@@ -1,6 +1,6 @@
 import { FC, memo, useEffect, useMemo } from "react"
 import { Alert, Pressable } from "react-native"
-import { LegendList } from "@legendapp/list"
+import { LegendList } from "@legendapp/list/react-native"
 import { withObservables } from "@nozbe/watermelondb/react"
 import * as Sentry from "@sentry/react-native"
 import { useSelector } from "@xstate/react"

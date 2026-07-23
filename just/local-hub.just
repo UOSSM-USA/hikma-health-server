@@ -1,8 +1,6 @@
-# Local hub (Tauri) — tests.
-# Frontend-only is fast and runs in `test-all`. Backend (Tauri/Rust) is opt-in:
-# it requires GTK/webkit system libs + cargo-nextest + a long Rust compile, so
-# CI gates it on apps/local-hub/src-tauri/** changes. Run `just test-local-hub`
-# locally to do both.
+# Local hub (Tauri). Frontend-only tests are fast and run in `test-all`. The
+# backend (Tauri/Rust) is opt-in — it needs GTK/webkit system libs, cargo-nextest
+# and a long Rust compile, so CI gates it on apps/local-hub/src-tauri/** changes.
 
 test-local-hub-frontend:
     pnpm --filter hh-local-hub run test:frontend
@@ -12,12 +10,11 @@ test-local-hub-backend:
 
 test-local-hub: test-local-hub-frontend test-local-hub-backend
 
-# Builds a host-OS bundle (not Linux), but the Tauri JS↔Rust version-parity
-# preflight it runs is platform-independent, so it catches that class of failure
-# (e.g. a drifted plugin version) before CI does. Assumes Tauri system deps are
-# already installed — CI installs them itself.
-#
-# Reproduce the local-hub CI gates before pushing: lockfile check + full test suite + unsigned bundle smoke-build.
+# Bundles for the host OS rather than Linux, but Tauri's JS↔Rust version-parity
+# preflight is platform-independent, so a drifted plugin version still surfaces
+# here before CI. Assumes Tauri system deps are installed; CI installs its own.
+
+# Reproduce the local-hub CI gates: lockfile check, tests, unsigned smoke-build.
 ci-local:
     pnpm install --frozen-lockfile --filter "hh-local-hub..."
     just test-local-hub

@@ -552,6 +552,27 @@ namespace Patient {
   };
 
   export namespace API {
+    /**
+     * Resolve a patient's primary clinic without token/cookie scoping, for
+     * authorization on non-cookie code paths (e.g. mobile Basic-auth uploads).
+     * Returns null when the patient does not exist; `primaryClinicId` is null
+     * for legacy patients with no primary clinic set.
+     */
+    export const getClinicScope = createServerOnlyFn(
+      async (
+        patientId: string,
+      ): Promise<{ primaryClinicId: string | null } | null> => {
+        const row = await db
+          .selectFrom(Table.name)
+          .select(["id", "primary_clinic_id"])
+          .where("id", "=", patientId)
+          .where("is_deleted", "=", false)
+          .executeTakeFirst();
+        if (!row) return null;
+        return { primaryClinicId: row.primary_clinic_id ?? null };
+      },
+    );
+
     export const getById = createServerOnlyFn(
       async (patientId: string): Promise<Patient.EncodedT> => {
         // permissions check

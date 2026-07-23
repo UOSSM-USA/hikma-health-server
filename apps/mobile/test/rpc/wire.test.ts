@@ -1,6 +1,6 @@
 import fc from "fast-check"
 import { encryptForWire, decryptFromWire } from "../../app/rpc/wire"
-import { randomBytes } from "@noble/ciphers/utils"
+import { randomBytes } from "@noble/ciphers/utils.js"
 import type { AadTag } from "../../app/crypto/cipher"
 
 const aadArb = fc.constantFrom<AadTag>("command", "query", "command_response", "query_response")

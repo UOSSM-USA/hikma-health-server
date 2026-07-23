@@ -19,6 +19,10 @@ namespace Event {
         name: string
         value: string | number | Date | any[]
         fieldId: string
+        // File fields only, and absent on older events. `value` stays the
+        // resource id — the authz key; these are for display.
+        fileName?: string
+        mimetype?: string
       }
     | {
         inputType: string
@@ -95,6 +99,15 @@ namespace Event {
             )}</div>`
           })
         }
+      } else if (inputType === "file") {
+        // The report references the attachment by name rather than embedding the
+        // bytes. The filename is user-supplied and interpolated into HTML.
+        const fileName = (field as { fileName?: string }).fileName ?? "file"
+        const safeName = fileName
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+        display += `<div>[Attachment: ${safeName}]</div>`
       } else if (fieldType !== "diagnosis" && inputType !== "input-group") {
         display += `<div>${value}</div>`
       }

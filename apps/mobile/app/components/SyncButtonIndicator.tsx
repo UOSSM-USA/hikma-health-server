@@ -11,6 +11,7 @@ import Animated, {
 
 import { useSync } from "@/hooks/useSync"
 import { colors } from "@/theme/colors"
+import { hapticTap } from "@/utils/haptics"
 import { Logger } from "@hikmahealth/js-utils"
 
 export interface SyncButtonIndicatorProps {
@@ -50,6 +51,8 @@ export const SyncButtonIndicator = (props: SyncButtonIndicatorProps) => {
   }, [isFetching, isResolving, isPushing, rotation])
 
   const handlePress = () => {
+    hapticTap()
+
     if (hasError) {
       forceReset()
     }

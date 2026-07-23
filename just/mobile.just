@@ -1,5 +1,5 @@
 # Mobile (Expo / React Native) — typecheck / test / dev runs / EAS builds.
-# build-utils-js + build-hh-forms precede every recipe that resolves JS so the
+# build-utils-js + build-hh-forms precede every recipe that resolves JS, so the
 # gitignored .gen.ts / ReScript outputs exist before Metro / tsc run.
 
 typecheck-mobile: build-utils-js build-hh-forms
@@ -9,16 +9,12 @@ test-mobile: build-utils-js build-hh-forms
     pnpm --filter hikma-health-mobile run test
 
 
-# ---- Dev runs ----
-# Expo's run:android / run:ios builds the native app, installs on the connected
-# device/emulator, and starts Metro. Assumes `pnpm install` has been run.
-#
-# start-mobile-android / -ios accept an optional mode argument:
-#   `just start-mobile-android`        → debug variant (default, dev client + Metro)
-#   `just start-mobile-android prod`   → release variant (bundled JS, minified,
-#                                         no fast refresh) — for on-device perf
-#                                         testing in real-world conditions.
+# Dev runs — build the native app, install it on the connected device/emulator,
+# and start Metro. Assumes `pnpm install` has already been run. `mode` picks the
+# variant: 'dev' (default) is the dev client with fast refresh; 'prod' is a
+# release build for on-device perf testing.
 
+# Build and run the Android app. mode: dev | prod.
 start-mobile-android mode='dev': build-utils-js build-hh-forms
     #!/usr/bin/env bash
     set -euo pipefail
@@ -32,6 +28,7 @@ start-mobile-android mode='dev': build-utils-js build-hh-forms
         exit 2 ;;
     esac
 
+# Build and run the iOS app. mode: dev | prod.
 start-mobile-ios mode='dev': build-utils-js build-hh-forms
     #!/usr/bin/env bash
     set -euo pipefail
@@ -46,23 +43,17 @@ start-mobile-ios mode='dev': build-utils-js build-hh-forms
     esac
 
 
-# ---- EAS builds / store submissions ----
-# EAS commands must run from apps/mobile (eas.json / app.json live there), so we
-# use `pnpm --filter hikma-health-mobile exec` to set that CWD without a manual
-# cd. `eas` is expected on PATH (install once with `npm i -g eas-cli`).
-#
-# Build-time vars (EXPO_PUBLIC_*, SENTRY_AUTH_TOKEN) live in the repo-root .env,
-# so recipes that bundle JS (build, update) load it via dotenvx — bare eas would
-# only see apps/mobile/.env (absent today). submit / adb need no build-time env.
-#
-# build/update depend on build-utils-js + build-hh-forms (same as typecheck- and
-# start-mobile-*) so the .gen.ts / ReScript outputs Metro resolves exist first.
-#
-# The `profile` arg maps to an eas.json build profile:
+# EAS builds / store submissions. `eas` must be on PATH (`npm i -g eas-cli`).
+# Recipes go through `pnpm --filter hikma-health-mobile exec` because EAS needs
+# apps/mobile as its CWD (eas.json / app.json live there). Those that bundle JS
+# load the root .env via dotenvx for EXPO_PUBLIC_* / SENTRY_AUTH_TOKEN — bare
+# eas would only see apps/mobile/.env. `profile` maps to an eas.json profile:
 #   sim → development   dev → development:device   preview → preview   prod → production
 
+# Build the iOS app with EAS. profile: sim | dev | preview | prod.
 build-mobile-ios profile='prod': build-utils-js build-hh-forms (_eas-build 'ios' profile)
 
+# Build the Android app with EAS. profile: sim | dev | preview | prod.
 build-mobile-android profile='prod': build-utils-js build-hh-forms (_eas-build 'android' profile)
 
 _eas-build platform profile:

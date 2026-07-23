@@ -1,21 +1,17 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { isValid, startOfDay } from "date-fns"
 import { useDebounceValue } from "usehooks-ts"
 
 import database from "@/db"
 import Appointment from "@/models/Appointment"
-
-type FilterState = {
-  selectedClinicId: string | null
-  selectedDepartmentIds: string[]
-  selectedStatuses: Appointment.Status[]
-  searchQuery: string
-}
+import Clinic from "@/models/Clinic"
 
 export type AppointmentsFilters = {
   status: Appointment.Status | "all"
   date: Date
   clinicId: string
+  country: string
+  city: string
   searchQuery: string
   departmentIds: string[]
 }
@@ -24,6 +20,8 @@ const initialFilters: AppointmentsFilters = {
   status: "pending",
   date: startOfDay(new Date()),
   clinicId: "",
+  country: "",
+  city: "",
   searchQuery: "",
   departmentIds: [],
 }
@@ -34,6 +32,7 @@ type ISOStringDate = string
 
 export function useDBAppointmentsFilter(
   clinicId: string,
+  clinics: readonly Clinic.LocationFields[],
   date?: ISOStringDate,
 ): {
   filters: AppointmentsFilters
@@ -59,14 +58,27 @@ export function useDBAppointmentsFilter(
     setDebouncedSearchQuery(filters.searchQuery)
   }, [filters.searchQuery])
 
+  const clinicIds = useMemo(
+    () =>
+      Clinic.resolveClinicIds(clinics, {
+        country: filters.country,
+        city: filters.city,
+        clinicId: filters.clinicId,
+      }),
+    [clinics, filters.country, filters.city, filters.clinicId],
+  )
+  // A value the dependency array can compare; stands in for the clinic,
+  // country and city filters together.
+  const clinicIdsKey = clinicIds.join(",")
+
   useEffect(() => {
-    const { status, date, clinicId, searchQuery, departmentIds } = filters
+    const { status, date, searchQuery, departmentIds } = filters
     setLoading(true)
 
     // build the conditions
     const conditions = Appointment.DB.createSearchQueryConditions(
       searchQuery,
-      clinicId,
+      clinicIds,
       [status],
       date,
       pagination,
@@ -96,7 +108,7 @@ export function useDBAppointmentsFilter(
       sub.unsubscribe()
     }
   }, [
-    filters.clinicId,
+    clinicIdsKey,
     filters.date.toISOString(),
     debouncedSearchQuery,
     filters.departmentIds,
@@ -104,8 +116,16 @@ export function useDBAppointmentsFilter(
     pagination.limit,
   ])
 
-  const handleFiltersChange = (newFilters: Partial<FilterState>) => {
-    setFilters((prev) => ({ ...prev, ...newFilters }))
+  const handleFiltersChange = (newFilters: Partial<AppointmentsFilters>) => {
+    setFilters((prev) => {
+      const next = { ...prev, ...newFilters }
+      const location = Clinic.pruneLocationSelection(clinics, {
+        country: next.country,
+        city: next.city,
+        clinicId: next.clinicId,
+      })
+      return { ...next, ...location }
+    })
   }
 
   const clearFilters = () => {

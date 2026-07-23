@@ -109,6 +109,28 @@ namespace Event {
   }
 
   export namespace API {
+    /**
+     * A live event's parsed form_data, or null when the event is missing or
+     * soft-deleted. Authorizes event-mediated attachment downloads: the caller
+     * must reach the resource through an event that references it.
+     */
+    export const getFormDataById = createServerOnlyFn(
+      async (
+        eventId: string,
+      ): Promise<Array<Record<string, unknown>> | null> => {
+        const row = await db
+          .selectFrom(Table.name)
+          .select("form_data")
+          .where("id", "=", eventId)
+          .where("is_deleted", "=", false)
+          .executeTakeFirst();
+        if (!row) return null;
+        return safeJSONParse(row.form_data, []) as Array<
+          Record<string, unknown>
+        >;
+      },
+    );
+
     // FIXME: Events should only be created if the visit_id is present and the visit exists. Update!
     export const save = createServerOnlyFn(
       async (id: string | null, event: Event.EncodedT) => {

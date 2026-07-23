@@ -602,7 +602,9 @@ export interface Reports {
 }
 
 export interface Resources {
+  clinic_id: string | null;
   created_at: Generated<Timestamp | null>;
+  created_by_user_id: string | null;
   deleted_at: Timestamp | null;
   description: string | null;
   hash: string | null;
@@ -611,6 +613,7 @@ export interface Resources {
   last_modified: Generated<Timestamp | null>;
   mimetype: string;
   server_created_at: Generated<Timestamp | null>;
+  source: Generated<string>;
   store: string;
   store_version: string;
   updated_at: Generated<Timestamp | null>;

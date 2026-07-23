@@ -40,6 +40,12 @@ export const loadDateFnsLocale = () => {
   }
 }
 
+/**
+ * Undefined before loadDateFnsLocale has run. date-fns reads that as en-US, so
+ * callers can pass the result straight through without a null check.
+ */
+export const getDateFnsLocale = (): Locale | undefined => dateFnsLocale
+
 export const formatDate = (date: string, dateFormat?: string, options?: Options) => {
   const dateOptions = {
     ...options,

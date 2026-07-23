@@ -27,7 +27,7 @@
     "tailwindcss": "^4.1.18",
     "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.3"
   },
   "dependencies": {
     "@hookform/error-message": "^2.0.1",

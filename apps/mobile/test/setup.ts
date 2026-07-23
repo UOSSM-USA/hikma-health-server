@@ -3,13 +3,26 @@
 import fc from "fast-check"
 fc.configureGlobal({ seed: 1337 })
 
-// Eagerly resolve all lazy globals installed by expo/src/winter/runtime.native.ts.
-// Expo installs lazy getters for globals like structuredClone, __ExpoImportMetaRegistry, etc.
-// Jest 30 blocks imports after leaveTestCode(), so if any lazy getter fires outside
-// a test/hook scope it throws. Force-reading each global here (during setupFiles)
-// resolves them eagerly while imports are still allowed.
-void globalThis.__ExpoImportMetaRegistry
-void globalThis.structuredClone
+// Expo installs these globals as lazy getters. Jest 30 blocks imports after
+// leaveTestCode(), so a getter firing outside a test/hook scope throws "You are
+// trying to `require` a file outside of the scope of the test code". Reading them
+// here (during setupFiles) resolves them while imports are still allowed.
+//
+// Mirrors the `install(...)` calls in expo/src/winter/runtime.native.ts; when Expo
+// adds more, the failure names the offending line there.
+for (const name of [
+  "TextDecoder",
+  "TextDecoderStream",
+  "TextEncoderStream",
+  "URL",
+  "URLSearchParams",
+  "DOMException",
+  "__ExpoImportMetaRegistry",
+  "structuredClone",
+  "fetch",
+]) {
+  void (globalThis as Record<string, unknown>)[name]
+}
 
 // we always make sure 'react-native' gets included first
 // eslint-disable-next-line no-restricted-imports

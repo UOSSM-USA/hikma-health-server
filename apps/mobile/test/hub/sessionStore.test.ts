@@ -1,5 +1,5 @@
 import fc from "fast-check"
-import { randomBytes } from "@noble/ciphers/utils"
+import { randomBytes } from "@noble/ciphers/utils.js"
 
 // Must use "mock" prefix for Jest scoping rules
 const mockStore = new Map<string, string>()

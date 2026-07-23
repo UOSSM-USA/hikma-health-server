@@ -15,13 +15,14 @@ config.transformer.getTransformOptions = async () => ({
   },
 })
 
-// This is a temporary fix that helps fixing an issue with axios/apisauce.
-// See the following issues in Github for more details:
+// Picks axios's CJS build over its ESM one, which apisauce needs.
 // https://github.com/infinitered/apisauce/issues/331
-// https://github.com/axios/axios/issues/6899
-// The solution was taken from the following issue:
-// https://github.com/facebook/metro/issues/1272
-config.resolver.unstable_conditionNames = ["require", "default", "browser"]
+//
+// These apply to every platform, so "browser" must not be here — conditions
+// match in the order the *package* lists them, and a package listing "browser"
+// before "react-native" would hand native builds its web entry. Expo supplies
+// the per-platform conditions itself via `unstable_conditionsByPlatform`.
+config.resolver.unstable_conditionNames = ["require", "default"]
 
 // This helps support certain popular third-party libraries
 // such as Firebase that use the extension cjs.

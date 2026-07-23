@@ -1,21 +1,6 @@
-# Legacy moon-based pipeline — scaffolds a per-app workspace under .build/ with
-# `moon docker scaffold`, installs, and builds/starts via moon. Being phased out
-# in favour of the pnpm-workspace recipes (server.just / aiproxy.just); kept for
-# deploy platforms still wired to it.
-
-# migrate-server:
-#     #!/usr/bin/env bash
-#     set -euxo pipefail
-#     # Migrations resolve their folder via process.cwd() (see database/alembic/kysely-migrator.ts),
-#     # so we must run from inside the database package.
-#     echo "==> [migrate] running kysely migrate latest in ./$APP_FOLDER/database"
-#     cd $APP_FOLDER/database
-#     pnpm run migrate-latest
-#     echo "==> [migrate] complete"
-# Migrations run unconditionally before start. They are idempotent — if the
-# schema is already current, `kysely migrate latest` is a single no-op round
-# trip. This keeps "starting the server" the single entrypoint that guarantee a
-# current schema, regardless of deploy platform.
+# Legacy moon pipeline — scaffolds a per-app workspace under .build/, installs,
+# then builds/starts via moon. Being phased out in favour of the pnpm-workspace
+# recipes (server.just / aiproxy.just); kept for deploy platforms still on it.
 
 prepare-project project:
     #!/usr/bin/env bash
@@ -27,10 +12,9 @@ prepare-project project:
     export MOON_DEBUG_PROCESS_ENV=true
 
     echo "==> [build] scaffolding service workspace into ./$APP_FOLDER"
-    # prepare the server project
     moon docker scaffold {{ project }}
 
-    # package the content needed to build the server in a single folder
+    # Collect everything needed to build the app into a single folder.
     rm -rf $APP_FOLDER;
     mkdir -p "./$APP_FOLDER"/;
     find ./.moon/docker/configs -maxdepth 1 -mindepth 1 \
@@ -55,6 +39,9 @@ install-build-aiproxy: (prepare-project 'aiproxy')
     pnpm install --no-frozen-lockfile
     moon run aiproxy:build
 
+# Migrates unconditionally before starting. `migrate latest` is idempotent, so a
+# current schema costs one no-op round trip and starting stays the single
+# entrypoint that guarantees the schema, whatever the deploy platform.
 moon_start-server:
     cd .build/server/database && pnpm run migrate-latest
     cd .build/server/apps/server && pnpm run start-only

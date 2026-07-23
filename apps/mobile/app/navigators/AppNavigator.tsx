@@ -6,7 +6,6 @@
  */
 import { ComponentProps, useEffect } from "react"
 import * as SecureStore from "expo-secure-store"
-import { useNetInfo } from "@react-native-community/netinfo"
 import { createDrawerNavigator } from "@react-navigation/drawer"
 import { NavigationContainer } from "@react-navigation/native"
 import { createNativeStackNavigator, NativeStackScreenProps } from "@react-navigation/native-stack"
@@ -147,8 +146,6 @@ const AppStack = () => {
     setThemeContextOverride("light")
   }, [])
 
-  const { isInternetReachable } = useNetInfo()
-
   const provider = useSelector(providerStore, (state) => state.context)
 
   // Check if the provider is signed in
@@ -203,7 +200,7 @@ const AppStack = () => {
         extra: { message: "Failed to start sync" },
       })
     })
-  }, [isSignedIn, provider.email, isInternetReachable])
+  }, [isSignedIn, provider.email])
 
   return isSignedIn ? <MainDrawer /> : <AuthStack />
 }

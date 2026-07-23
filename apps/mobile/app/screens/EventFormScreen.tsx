@@ -1,6 +1,7 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Alert, TextStyle, ViewStyle } from "react-native"
 import * as DocumentPicker from "expo-document-picker"
+import * as FileSystem from "expo-file-system/legacy"
 import {
   BottomSheetModal,
   BottomSheetModalProvider,
@@ -18,6 +19,7 @@ import { Controller, useForm, useFormState, useWatch } from "react-hook-form"
 import DropDownPicker from "react-native-dropdown-picker"
 import Toast from "react-native-root-toast"
 import { useImmer } from "use-immer"
+import { uuidv7 } from "uuidv7"
 
 import Peer from "@/models/Peer"
 
@@ -68,6 +70,7 @@ import {
   getOptionId,
   type ResolvedFormTranslations,
 } from "@/utils/eventFormTranslations"
+import { getProviderAuthHeader } from "@/utils/authHeader"
 import { sanitizeFieldName, unsanitizeFormData } from "@/utils/fieldNameSanitizer"
 import { EVENT_MULTI_SEPARATOR, joinMultiValues } from "@/utils/parsers"
 import { useSafeAreaInsetsStyle } from "@/utils/useSafeAreaInsetsStyle"
@@ -84,7 +87,31 @@ type FileUploadState = {
   isComplete: boolean
   fileName: string | null
   fileId: string | null
+  mimetype: string | null
   error: string | null
+}
+
+// Mirrors the server's allowlist. The server re-checks the leading bytes, so this
+// only keeps the picker from offering files that would be rejected on upload.
+const FORM_FILE_MIMETYPES = ["image/png", "image/jpeg", "application/pdf"]
+const FORM_FILE_SIZE_LIMIT_BYTES = 50 * 1024 * 1024
+
+const uploadErrorMessage = (status: number): string => {
+  if (status === 401) return "Your session has expired. Please sign in again."
+  if (status === 403) return "You do not have permission to upload for this clinic."
+  if (status === 409) return "This file could not be attached. Please select it again."
+  if (status === 413) return "That file is too large. The maximum size is 50MB."
+  if (status === 415) return "That file type is not supported. Use a PNG, JPEG, or PDF."
+  return "Failed to upload file. Please try again."
+}
+
+const idleFileUploadState: FileUploadState = {
+  isUploading: false,
+  isComplete: false,
+  fileName: null,
+  fileId: null,
+  mimetype: null,
+  error: null,
 }
 
 /**
@@ -496,16 +523,27 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
       ruleEvaluation,
     )
     const formData = visibleFields
-      .map((field) => ({
-        fieldId: field.id,
-        fieldType: field.fieldType,
-        value:
-          field.inputType === "file"
-            ? fileUploads[field.name]?.fileId || ""
-            : data[field.name] || "",
-        inputType: field.inputType,
-        name: field.name,
-      }))
+      .map((field) => {
+        const base = {
+          fieldId: field.id,
+          fieldType: field.fieldType,
+          value:
+            field.inputType === "file"
+              ? fileUploads[field.name]?.fileId || ""
+              : data[field.name] || "",
+          inputType: field.inputType,
+          name: field.name,
+        }
+        if (field.inputType !== "file") return base
+        // Display metadata for the viewer; `value` (the resource id) stays the
+        // sole authz key. Absent on events created before this was added.
+        const upload = fileUploads[field.name]
+        return {
+          ...base,
+          fileName: upload?.fileName ?? undefined,
+          mimetype: upload?.mimetype ?? undefined,
+        }
+      })
       .filter(
         (field) =>
           field.name.toLowerCase() !== "diagnosis" &&
@@ -702,109 +740,101 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
     return []
   }, [form?.formFields])
 
-  // Handle file selection and upload
-  const handleFileUpload = async (fieldName: string) => {
-    try {
-      // Initialize upload state
-      setFileUploads((prev) => ({
-        ...prev,
-        [fieldName]: {
-          isUploading: true,
-          isComplete: false,
-          fileName: null,
-          fileId: null,
-          error: null,
-        },
-      }))
+  /**
+   * Pick and upload a file, storing the resource id as the field's value. The id
+   * is generated on the device so a retry carrying identical bytes resolves to the
+   * same resource rather than creating a duplicate.
+   *
+   * Filenames are not logged: they can carry patient-identifying information.
+   */
+  const handleFileUpload = async (field: { id: string; name: string }) => {
+    const fieldName = field.name
+    const setState = (state: FileUploadState) =>
+      setFileUploads((prev) => ({ ...prev, [fieldName]: state }))
 
-      // Pick document
-      const result = await DocumentPicker.getDocumentAsync({
-        type: "*/*", // Allow any file type
+    try {
+      setState({ ...idleFileUploadState, isUploading: true })
+
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: FORM_FILE_MIMETYPES,
         copyToCacheDirectory: true,
       })
 
-      if (result.canceled) {
-        Logger.log("Document picking canceled by user")
-        setFileUploads((prev) => ({
-          ...prev,
-          [fieldName]: {
-            isUploading: false,
-            isComplete: false,
-            fileName: null,
-            fileId: null,
-            error: null,
-          },
-        }))
+      if (picked.canceled) {
+        setState(idleFileUploadState)
         return
       }
 
-      const file = result.assets[0]
-      Logger.log(`File selected: ${file.name}, type: ${file.mimeType}, size: ${file.size} bytes`)
-
-      // Create FormData object
-      Logger.log("Creating FormData for upload")
-      const formData = new FormData()
-      formData.append("file", {
-        uri: file.uri,
-        name: file.name,
-        type: file.mimeType,
-      } as any)
-
-      // Upload to server
-      const apiUrl = await Peer.getActiveUrl()
-      if (!apiUrl) throw new Error("No server URL configured")
-      Logger.log(`Uploading to ${apiUrl}/v1/api/forms/resources`)
-      const response = await fetch(`${apiUrl}/v1/api/forms/resources`, {
-        method: "PUT",
-        body: formData,
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      })
-
-      Logger.log(`Server response status: ${response.status}`)
-      if (!response.ok) {
-        throw new Error(`Upload failed with status ${response.status}`)
+      const file = picked.assets[0]
+      if (!file) {
+        setState(idleFileUploadState)
+        return
       }
 
-      const responseData = await response.json()
-      Logger.log({ msg: "Upload successful, response data:", responseData })
+      if (typeof file.size === "number" && file.size > FORM_FILE_SIZE_LIMIT_BYTES) {
+        const message = uploadErrorMessage(413)
+        setState({ ...idleFileUploadState, error: message })
+        Alert.alert("Upload Error", message)
+        return
+      }
 
-      // Update state with successful upload
-      Logger.log(`Updating state for successful upload of ${file.name}`)
-      setFileUploads((prev) => ({
-        ...prev,
-        [fieldName]: {
-          isUploading: false,
-          isComplete: true,
-          fileName: file.name,
-          fileId: responseData.id, // Assuming the API returns an id field
-          error: null,
+      const clinicId = Option.getOrNull(provider.clinic_id)
+      if (!clinicId) throw new Error("No clinic is assigned to this account.")
+
+      const authorization = await getProviderAuthHeader()
+      if (!authorization) throw new Error("Not signed in. Please sign in again.")
+
+      const apiUrl = await Peer.getActiveUrl()
+      if (!apiUrl) throw new Error("No server URL configured")
+
+      const resourceId = uuidv7()
+
+      // Not fetch + FormData: Expo replaces the global fetch, and its FormData
+      // serializer rejects React Native's `{ uri, name, type }` file part with
+      // "Unsupported FormDataPart implementation". uploadAsync also streams from
+      // disk instead of buffering up to 50MB into JS memory.
+      const uploaded = await FileSystem.uploadAsync(
+        `${apiUrl}/api/forms/resources`,
+        file.uri,
+        {
+          httpMethod: "POST",
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: "file",
+          mimeType: file.mimeType,
+          parameters: {
+            id: resourceId,
+            patient_id: patientId,
+            clinic_id: clinicId,
+            field_id: field.id,
+          },
+          headers: { Authorization: authorization },
         },
-      }))
+      )
 
-      // Update form control value
-      Logger.log(`Setting form value for ${fieldName} to ${responseData.id}`)
-      setValue(fieldName as never, responseData.id as never)
+      if (uploaded.status < 200 || uploaded.status >= 300) {
+        throw new Error(uploadErrorMessage(uploaded.status))
+      }
+
+      const { id, mimetype } = JSON.parse(uploaded.body) as {
+        id: string
+        mimetype: string | null
+      }
+      setState({
+        isUploading: false,
+        isComplete: true,
+        fileName: file.name,
+        fileId: id,
+        mimetype: mimetype ?? null,
+        error: null,
+      })
+      setValue(sanitizeFieldName(fieldName) as never, id as never)
     } catch (error: unknown) {
-      Logger.error({ msg: "File upload error:", error })
+      Logger.error({ msg: "File upload failed", error })
       Sentry.captureException(error)
 
-      // Update state with error
-      const errorMessage = error instanceof Error ? error.message : "Failed to upload file"
-      Logger.log(`Updating state for failed upload: ${errorMessage}`)
-      setFileUploads((prev) => ({
-        ...prev,
-        [fieldName]: {
-          isUploading: false,
-          isComplete: false,
-          fileName: null,
-          fileId: null,
-          error: errorMessage,
-        },
-      }))
-
-      Alert.alert("Upload Error", "Failed to upload file. Please try again.")
+      const message = error instanceof Error ? error.message : "Failed to upload file"
+      setState({ ...idleFileUploadState, error: message })
+      Alert.alert("Upload Error", message)
     }
   }
 
@@ -1028,8 +1058,7 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                   />
                 </If>
 
-                {/* File UPLOADS ARE NOT SUPPORTED YET */}
-                <If condition={field.inputType === "file" && false}>
+                <If condition={field.inputType === "file"}>
                   <Controller
                     render={() => (
                       <View gap={4}>
@@ -1066,7 +1095,7 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                                 text="Replace"
                                 style={$fileButtonStyle}
                                 preset="default"
-                                onPress={() => handleFileUpload(field.name)}
+                                onPress={() => handleFileUpload(field)}
                               />
                             </View>
                           ) : (
@@ -1074,7 +1103,7 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                               text="Select File"
                               preset="default"
                               style={$fileButtonStyle}
-                              onPress={() => handleFileUpload(field.name)}
+                              onPress={() => handleFileUpload(field)}
                             />
                           )}
                           {fileUploads[field.name]?.error && (

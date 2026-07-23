@@ -1,16 +1,41 @@
-import { Pressable, StyleProp, ViewStyle } from "react-native"
+import { useState } from "react"
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  ImageStyle,
+  Modal,
+  Pressable,
+  StyleProp,
+  TextStyle,
+  ViewStyle,
+} from "react-native"
+import * as FileSystem from "expo-file-system/legacy"
+import * as Sharing from "expo-sharing"
 import { withObservables } from "@nozbe/watermelondb/react"
 import { upperFirst } from "es-toolkit/compat"
-import { LucideEllipsisVertical } from "lucide-react-native"
+import { LucideEllipsisVertical, LucideEye, LucideFile } from "lucide-react-native"
 
 import { Text } from "@/components/Text"
 import { View } from "@/components/View"
 import EventModel from "@/db/model/Event"
 import Event from "@/models/Event"
 import ICDEntry from "@/models/ICDEntry"
+import Peer from "@/models/Peer"
 import { colors } from "@/theme/colors"
+import { getProviderAuthHeader } from "@/utils/authHeader"
 
 import { If } from "./If"
+
+type AttachmentKind = "image" | "pdf" | "file"
+
+/** Mirrors the server's `@/lib/attachment-kind`; the two codebases cannot share a module. */
+const attachmentKind = (mimetype: string | null | undefined): AttachmentKind => {
+  if (!mimetype) return "file"
+  if (mimetype === "application/pdf") return "pdf"
+  if (mimetype.startsWith("image/")) return "image"
+  return "file"
+}
 
 export interface EventListItemProps {
   /**
@@ -187,7 +212,21 @@ const getEventDisplay = (event: EventModel, language: string): React.JSX.Element
                   ))}
               </View>
             </If>
-            <If condition={fieldType !== "diagnosis" && inputType !== "input-group"}>
+            <If condition={inputType === "file"}>
+              <FileAttachmentField
+                eventId={event.id}
+                resourceId={typeof value === "string" ? value : ""}
+                fileName={(field as { fileName?: string }).fileName ?? null}
+                mimetype={(field as { mimetype?: string }).mimetype ?? null}
+              />
+            </If>
+            <If
+              condition={
+                fieldType !== "diagnosis" &&
+                inputType !== "input-group" &&
+                inputType !== "file"
+              }
+            >
               <Text text={String(value)} />
             </If>
           </View>
@@ -197,9 +236,138 @@ const getEventDisplay = (event: EventModel, language: string): React.JSX.Element
   )
 }
 
+/**
+ * A single event-form file attachment. Bytes are fetched on press, not on
+ * render, and cached by resource id so two same-named files never collide.
+ * Every view goes through the audited download route.
+ */
+function FileAttachmentField({
+  eventId,
+  resourceId,
+  fileName,
+  mimetype,
+}: {
+  eventId: string
+  resourceId: string
+  fileName: string | null
+  mimetype: string | null
+}): React.JSX.Element | null {
+  const [isLoading, setIsLoading] = useState(false)
+  const [imageUri, setImageUri] = useState<string | null>(null)
+
+  const label = fileName ?? "Attachment"
+
+  const openAttachment = async () => {
+    if (isLoading || !resourceId) return
+    setIsLoading(true)
+    try {
+      const authorization = await getProviderAuthHeader()
+      if (!authorization) throw new Error("Not signed in. Please sign in again.")
+
+      const apiUrl = await Peer.getActiveUrl()
+      if (!apiUrl) throw new Error("No server URL configured")
+
+      const storedKind = attachmentKind(mimetype)
+      const extension =
+        storedKind === "pdf" ? ".pdf" : storedKind === "image" ? ".png" : ""
+      const target = `${FileSystem.cacheDirectory}hh_attachment_${resourceId}${extension}`
+
+      const url = `${apiUrl}/api/events/${eventId}/attachments/${resourceId}`
+      const result = await FileSystem.downloadAsync(url, target, {
+        headers: { Authorization: authorization },
+      })
+
+      // A non-200 wrote a JSON error body to the file, not the attachment.
+      if (result.status !== 200) {
+        throw new Error(
+          result.status === 401
+            ? "Your session has expired. Please sign in again."
+            : "This attachment could not be opened.",
+        )
+      }
+
+      const kind = attachmentKind(mimetype ?? result.mimeType)
+      if (kind === "image") {
+        setImageUri(result.uri)
+        return
+      }
+
+      const shareType = mimetype ?? result.mimeType ?? "application/pdf"
+      if (!(await Sharing.isAvailableAsync())) {
+        throw new Error("Opening files is not supported on this device.")
+      }
+      await Sharing.shareAsync(result.uri, {
+        mimeType: shareType,
+        UTI: shareType === "application/pdf" ? "com.adobe.pdf" : undefined,
+      })
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Could not open attachment."
+      Alert.alert("Attachment", message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // An optional file field left empty carries no resource id.
+  if (!resourceId) return null
+
+  return (
+    <View direction="row" alignItems="center" gap={8}>
+      <LucideFile size={16} color={colors.palette.primary400} />
+      <Text text={label} />
+      <Pressable onPress={openAttachment} disabled={isLoading} hitSlop={8}>
+        <View direction="row" alignItems="center" gap={4}>
+          {isLoading ? (
+            <ActivityIndicator size="small" color={colors.palette.primary400} />
+          ) : (
+            <LucideEye size={16} color={colors.palette.primary400} />
+          )}
+          <Text preset="formLabel" text="View attachment" style={$viewLink} />
+        </View>
+      </Pressable>
+
+      <Modal
+        visible={imageUri !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImageUri(null)}
+      >
+        <Pressable style={$modalBackdrop} onPress={() => setImageUri(null)}>
+          {imageUri !== null && (
+            <Image
+              source={{ uri: imageUri }}
+              style={$modalImage}
+              resizeMode="contain"
+            />
+          )}
+        </Pressable>
+      </Modal>
+    </View>
+  )
+}
+
 const $medicineItemSeparator: ViewStyle = {
   borderBottomWidth: 1,
   borderBottomColor: colors.border,
+}
+
+const $viewLink: TextStyle = {
+  textDecorationLine: "underline",
+  color: colors.palette.primary400,
+}
+
+const $modalBackdrop: ViewStyle = {
+  flex: 1,
+  backgroundColor: "rgba(0, 0, 0, 0.9)",
+  justifyContent: "center",
+  alignItems: "center",
+  padding: 16,
+}
+
+const $modalImage: ImageStyle = {
+  width: "100%",
+  height: "100%",
 }
 
 /**

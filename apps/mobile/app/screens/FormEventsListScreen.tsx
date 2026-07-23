@@ -1,6 +1,6 @@
 import { FC, useEffect } from "react"
 import { Alert, View } from "react-native"
-import { LegendList } from "@legendapp/list"
+import { LegendList } from "@legendapp/list/react-native"
 import { NativeStackScreenProps } from "@react-navigation/native-stack"
 import { useSelector } from "@xstate/react"
 

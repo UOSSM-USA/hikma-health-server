@@ -13,6 +13,12 @@ import { createServerOnlyFn } from "@tanstack/react-start";
 namespace Resource {
   // TODO: Consider adding is_deleted column support in a future migration
   // for soft-delete consistency with other syncable tables.
+  /** Discriminates education uploads from event-form file uploads. */
+  export const SOURCE = {
+    EDUCATION: "education",
+    EVENT_FORM: "event_form",
+  } as const;
+
   export type T = {
     id: string;
     description: Option.Option<string>;
@@ -21,6 +27,9 @@ namespace Resource {
     uri: string;
     hash: Option.Option<string>;
     mimetype: string;
+    clinic_id: Option.Option<string>;
+    created_by_user_id: Option.Option<string>;
+    source: string;
     created_at: Date;
     updated_at: Date;
     last_modified: Date;
@@ -43,6 +52,9 @@ namespace Resource {
       uri: "uri",
       hash: "hash",
       mimetype: "mimetype",
+      clinic_id: "clinic_id",
+      created_by_user_id: "created_by_user_id",
+      source: "source",
       created_at: "created_at",
       updated_at: "updated_at",
       last_modified: "last_modified",
@@ -58,6 +70,9 @@ namespace Resource {
       uri: string;
       hash: string | null;
       mimetype: string;
+      clinic_id: string | null;
+      created_by_user_id: string | null;
+      source: Generated<string>;
       created_at: Generated<ColumnType<Date, string | undefined, never>>;
       updated_at: Generated<
         ColumnType<Date, string | undefined, string | undefined>
@@ -96,6 +111,44 @@ namespace Resource {
         .selectAll()
         .executeTakeFirst();
       return row ?? null;
+    },
+  );
+
+  export type NewFormResource = {
+    id: string;
+    store: string;
+    store_version: string;
+    uri: string;
+    hash: string;
+    mimetype: string;
+    description: string | null;
+    clinic_id: string;
+    created_by_user_id: string;
+  };
+
+  /**
+   * Insert an event-form file resource with its clinic/uploader scope. `id` is
+   * client-generated, so a primary-key conflict means a concurrent or replayed
+   * upload claimed it first; the error propagates for idempotent-replay handling.
+   */
+  export const insertFormResource = createServerOnlyFn(
+    async (input: NewFormResource): Promise<{ id: string }> => {
+      return db
+        .insertInto(Table.name)
+        .values({
+          id: input.id,
+          store: input.store,
+          store_version: input.store_version,
+          uri: input.uri,
+          hash: input.hash,
+          mimetype: input.mimetype,
+          description: input.description,
+          clinic_id: input.clinic_id,
+          created_by_user_id: input.created_by_user_id,
+          source: SOURCE.EVENT_FORM,
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
     },
   );
 }

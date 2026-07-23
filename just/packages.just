@@ -1,17 +1,15 @@
-# Leaf builds — small atoms that the app builds and tests depend on, plus their
-# cleans. ReScript outputs (`.res.mjs` + `.gen.ts`) are gitignored and consumed
-# by server + mobile at runtime / type-check time, so every recipe that builds
-# or tests those apps runs build-hh-forms (and build-utils-js) first.
+# Leaf builds — the atoms app builds and tests depend on. ReScript outputs
+# (`.res.mjs` + `.gen.ts`) are gitignored but resolved by server + mobile, so
+# every recipe building or testing those apps runs these first.
 
-# Clear stale ReScript build locks before any rescript build. A build (or `just
-# dev-server`) killed mid-compile leaves lib/rescript.lock holding its PID; once
-# the OS recycles that PID to an unrelated process, every later rescript run
-# aborts with "A ReScript build is already running". `rescript clean` can't fix
-# it — it takes the same lock and fails — so the file is removed directly. Locks
-# whose PID is still a live rescript process (e.g. a `res:dev` watch in another
-# terminal) are left untouched. Depended on by the rescript leaf builds below,
-# so every server / mobile build + test path self-heals; Just runs it once per
-# invocation regardless of how many depend on it.
+# A build killed mid-compile leaves lib/rescript.lock holding its PID; once the
+# OS recycles that PID, every later rescript run aborts with "A ReScript build
+# is already running". `rescript clean` can't fix it — it takes the same lock —
+# so the file is removed directly. Locks whose PID is still a live rescript
+# process (e.g. a `res:dev` watch elsewhere) are left alone. The rescript leaf
+# builds depend on this, so every build + test path self-heals.
+
+# Remove stale ReScript build locks left by an interrupted compile.
 unlock-rescript:
     #!/usr/bin/env bash
     set -euo pipefail

@@ -1,6 +1,6 @@
 import fc from "fast-check"
 import { seal, open, type AadTag } from "../../app/crypto/cipher"
-import { randomBytes } from "@noble/ciphers/utils"
+import { randomBytes } from "@noble/ciphers/utils.js"
 
 /** Generate a random 32-byte key for testing */
 function randomKey(): Uint8Array {

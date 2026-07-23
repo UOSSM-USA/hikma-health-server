@@ -1,26 +1,16 @@
 set export := true
 
-# ============================================================================
-# HikmaHealth monorepo task runner.
+# HikmaHealth monorepo task runner. Recipes are split by domain into
+# ./just/*.just and imported into one flat namespace, so a recipe in one file
+# may depend on a recipe in another.
 #
-# Recipes are split by domain into ./just/*.just and imported below into one
-# flat namespace — `just --list` shows everything, and a recipe in one file may
-# depend on a recipe in another. This file holds shared settings, the
-# cross-cutting conventions, and the aggregators that fan out across domains.
-#
-# Conventions shared across the imported files:
-#   • pnpm workspaces + Just replace moon for JS workloads. The moon recipes
-#     that remain live in just/moon-legacy.just.
-#   • Env loading: recipes that need env vars use dotenvx (root devDep) to layer
-#     root .env + the relevant app .env. Shell env wins over .env (dotenvx
-#     default). Leaf builds (tsc/rescript only) skip env loading.
-#   • Install targeting: `pnpm install --filter "<pkg>..."` pulls a deploy app's
-#     dependency closure only, skipping unrelated apps. Wired as a dep of the
-#     app's build recipe so platforms only call `just build-server` / etc.
-#   • Leaf builds first: build-hh-forms / build-utils-js emit gitignored
-#     .gen.ts / .res.mjs that server + mobile resolve, so they precede those
-#     apps' build / test / typecheck recipes.
-# ============================================================================
+# Conventions across the imported files:
+#   - Env loading uses dotenvx to layer root .env + the app's .env. Shell env
+#     wins. Leaf builds (tsc/rescript only) skip it.
+#   - `pnpm install --filter "<pkg>..."` pulls a deploy app's dependency
+#     closure only, so platforms need call just the app's build recipe.
+#   - build-hh-forms / build-utils-js emit gitignored .gen.ts / .res.mjs that
+#     server + mobile resolve, so they precede those apps' recipes.
 
 import 'just/packages.just'
 import 'just/server.just'
@@ -31,7 +21,7 @@ import 'just/vendor.just'
 import 'just/moon-legacy.just'
 
 
-# ---- Aggregators : fan out across domains. Buy one get N free !! ----
+# Aggregators — fan out across domains.
 
 build-packages: build-utils-js build-database build-ui build-hh-forms
 

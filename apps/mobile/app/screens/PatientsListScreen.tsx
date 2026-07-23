@@ -1,6 +1,6 @@
 import { FC, useEffect, useState } from "react"
 import { ViewStyle, StatusBar, Pressable, Alert } from "react-native"
-import { LegendList } from "@legendapp/list"
+import { LegendList } from "@legendapp/list/react-native"
 import { useIsFocused } from "@react-navigation/native"
 import { NativeStackScreenProps } from "@react-navigation/native-stack"
 import { useSelector } from "@xstate/react"
