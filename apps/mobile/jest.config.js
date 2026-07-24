@@ -20,13 +20,10 @@ module.exports = {
   // Node resolution find the package wherever pnpm hoisted it (mobile-local
   // node_modules or repo root) instead of pinning to <rootDir>.
   moduleNameMapper: {
-    // pnpm's hoisted linker gives apps/mobile its own physical copy of react
-    // alongside the root one. Tests resolve the mobile copy while root-level
-    // react-test-renderer and @tanstack/react-query resolve theirs — two React
-    // instances in one renderer, failing every render with "Invalid hook call".
-    // Metro is unaffected: it only ever sees the mobile copy.
-    "^react$": "<rootDir>/node_modules/react",
-    "^react/(.*)$": "<rootDir>/node_modules/react/$1",
+    // Don't pin react to <rootDir>/node_modules. Every importer resolves react
+    // 19.2.3, so `nodeLinker: hoisted` leaves exactly one copy at the repo root
+    // and apps/mobile/node_modules/react does not exist on a clean install —
+    // mapping to it fails every `require("react")`, CI included.
     "^@noble/curves/([^.]+)$": "@noble/curves/$1.js",
     "^@noble/hashes/([^.]+)$": "@noble/hashes/$1.js",
     "^@noble/ciphers/([^.]+)$": "@noble/ciphers/$1.js",
