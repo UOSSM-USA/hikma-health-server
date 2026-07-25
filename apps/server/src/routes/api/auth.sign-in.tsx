@@ -1,77 +1,31 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { setCookie } from "@tanstack/react-start/server";
-import User from "@/models/user";
-import Clinic from "@/models/clinic";
-import {
-  createRateLimiter,
-  getClientIp,
-  tooManyRequestsResponse,
-} from "@/lib/rate-limiter";
-import { minutesToMilliseconds } from "date-fns";
-import { Logger } from "@hikmahealth/js-utils";
-
-const authLimiter = createRateLimiter({
-  windowMs: minutesToMilliseconds(15),
-  maxRequests: 30,
-});
+import { attemptSignIn } from "@/lib/auth/sign-in";
+import { tooManyRequestsResponse } from "@/lib/rate-limiter";
 
 export const Route = createFileRoute("/api/auth/sign-in")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const ip = getClientIp(request);
-        const limit = authLimiter.check(ip);
-        if (!limit.allowed) return tooManyRequestsResponse(limit.retryAfterMs);
+        const outcome = await attemptSignIn(request);
 
-        const { email, password } = await request.json();
-
-        try {
-          const { user, token } = await User.signIn(email, password);
-
-          const clinic = user.clinic_id
-            ? await Clinic.getById(user.clinic_id)
-            : null;
-
-          setCookie("token", token, {
-            httpOnly: true,
-            secure: import.meta.env.DEV ? false : true,
-            // "lax" (not "strict") so the cookie is sent on top-level
-            // navigations into the app (refresh, bookmarks, external links).
-            // Under "strict" the SSR auth guard sees no token on these loads
-            // and bounces the user to the login screen.
-            sameSite: "lax",
-            path: "/",
-            expires: new Date(Date.now() + 2 * 60 * 60 * 1000),
-          });
-
-          return new Response(
-            JSON.stringify({
-              user: {
-                ...user,
-                hashed_password: "************",
-                clinic_name: clinic?.name,
-              },
-              token,
-            }),
-            {
-              headers: {
-                "Content-Type": "application/json",
-              },
-              status: 200,
-            },
-          );
-        } catch (error) {
-          Logger.error({ msg: "[sign-in error]", error });
-          return new Response(
-            JSON.stringify({ error: "Invalid credentials" }),
-            {
-              headers: {
-                "Content-Type": "application/json",
-              },
-              status: 401,
-            },
-          );
+        if (outcome.kind === "rate-limited") {
+          return tooManyRequestsResponse(outcome.retryAfterMs);
         }
+
+        if (outcome.kind === "invalid") {
+          return new Response(JSON.stringify({ error: "Invalid credentials" }), {
+            headers: { "Content-Type": "application/json" },
+            status: 401,
+          });
+        }
+
+        return new Response(
+          JSON.stringify({ user: outcome.user, token: outcome.token }),
+          {
+            headers: { "Content-Type": "application/json" },
+            status: 200,
+          },
+        );
       },
     },
   },
