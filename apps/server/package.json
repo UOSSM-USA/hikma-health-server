@@ -30,10 +30,13 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1094.0",
+    "@azure/storage-blob": "^12.33.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@faker-js/faker": "^9.6.0",
+    "@google-cloud/storage": "^7.21.0",
     "@hikmahealth/database": "workspace:*",
     "@hikmahealth/forms": "workspace:*",
     "@hikmahealth/js-utils": "workspace:*",
