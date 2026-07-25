@@ -24,6 +24,7 @@ import {
   buildRegistrationFieldView,
   type RegistrationFieldView,
 } from "@/components/form-builder/PatientRegistrationFields";
+import { adminMiddleware } from "@/middleware/auth";
 import {
   compileRules,
   computedCount,
@@ -69,6 +70,7 @@ type RegisterPatientInput = {
 
 export const createPatient = createServerFn({ method: "POST" })
   .inputValidator((data: RegisterPatientInput) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const token = getCookie("token");
     if (!token) throw new Error("Unauthorized");
@@ -87,9 +89,11 @@ export const createPatient = createServerFn({ method: "POST" })
 
 export const getAllPatientRegistrationForms = createServerFn({
   method: "GET",
-}).handler(async () => {
-  return PatientRegistrationForm.getAll();
-});
+})
+  .middleware([adminMiddleware])
+  .handler(async () => {
+    return PatientRegistrationForm.getAll();
+  });
 
 export const Route = createFileRoute("/app/patients/register")({
   component: RouteComponent,
@@ -131,7 +135,8 @@ function RouteComponent() {
   // RHF keys values by `field.column` (legacy); the engine references
   // fields by `field.id`. Translate at the scope boundary so the engine
   // contract stays uniform with mobile.
-  const watchedValues = useWatch({ control }) as Record<string, unknown> | undefined;
+  const watchedValues = useWatch({ control }) as
+    Record<string, unknown> | undefined;
   const valuesById = useMemo(() => {
     const out: Record<string, unknown> = {};
     for (const f of fields) {
@@ -228,12 +233,11 @@ function RouteComponent() {
     // required-and-empty (`requiredIf` rules) and validator-failed
     // fields, in one consolidated alert (two alerts in sequence
     // clobber each other on most browsers).
-    const missingRequired =
-      PatientRegistrationForm.getMissingRequiredFields({
-        fields,
-        values: valuesById,
-        evaluation: ruleEvaluation,
-      });
+    const missingRequired = PatientRegistrationForm.getMissingRequiredFields({
+      fields,
+      values: valuesById,
+      evaluation: ruleEvaluation,
+    });
     const validatorErrors = ruleEvaluation.validationErrors;
     if (missingRequired.length > 0 || validatorErrors.length > 0) {
       const parts: string[] = [];
@@ -351,25 +355,27 @@ function RouteComponent() {
     .filter((field) => field.visible && field.deleted !== true)
     .filter((field) => ruleEvaluation.isVisible(field.id));
 
-  const fieldViews: RegistrationFieldView[] = visibleFields.map((field, idx) => {
-    const isComputed = hasComputed(ruleEvaluation, field.id);
-    const rhfError = formState.errors[field.column]?.message;
-    return buildRegistrationFieldView(field, idx, lang, {
-      value: watch(field.column),
-      required: ruleEvaluation.isRequired(field.id),
-      computedDisplay: isComputed
-        ? formatComputedValue(getComputed(ruleEvaluation, field.id))
-        : null,
-      errorMessage: typeof rhfError === "string" ? rhfError : null,
-      validatorErrors: Array.from(
-        new Set((errorsByFieldId.get(field.id) ?? []).map((e) => e.message)),
-      ),
-      clinicOptions: clinicsList.map((clinic) => ({
-        value: clinic.id,
-        label: clinic.name,
-      })),
-    });
-  });
+  const fieldViews: RegistrationFieldView[] = visibleFields.map(
+    (field, idx) => {
+      const isComputed = hasComputed(ruleEvaluation, field.id);
+      const rhfError = formState.errors[field.column]?.message;
+      return buildRegistrationFieldView(field, idx, lang, {
+        value: watch(field.column),
+        required: ruleEvaluation.isRequired(field.id),
+        computedDisplay: isComputed
+          ? formatComputedValue(getComputed(ruleEvaluation, field.id))
+          : null,
+        errorMessage: typeof rhfError === "string" ? rhfError : null,
+        validatorErrors: Array.from(
+          new Set((errorsByFieldId.get(field.id) ?? []).map((e) => e.message)),
+        ),
+        clinicOptions: clinicsList.map((clinic) => ({
+          value: clinic.id,
+          label: clinic.name,
+        })),
+      });
+    },
+  );
 
   return (
     <div className="pb-4">

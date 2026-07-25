@@ -181,6 +181,10 @@ pub fn dispatch_command(
             let payload: visits::UpdateVisitCommand = serde_json::from_value(cmd.data.clone())?;
             visits::handle_update_visit(&payload, conn)
         }),
+        "vitals.create" => try_handle(|| {
+            let payload: visits::CreateVitalsCommand = serde_json::from_value(cmd.data.clone())?;
+            visits::handle_create_vitals(&payload, conn)
+        }),
         "vitals.update" => try_handle(|| {
             let payload: visits::UpdateVitalsCommand = serde_json::from_value(cmd.data.clone())?;
             visits::handle_update_vitals(&payload, conn)
@@ -347,6 +351,10 @@ pub fn dispatch_query(
         "get_visit_events" => try_handle(|| {
             let payload: visits::GetVisitEventsQuery = serde_json::from_value(qry.params.clone())?;
             visits::handle_get_visit_events(&payload, conn)
+        }),
+        "vitals.list" => try_handle(|| {
+            let payload: visits::ListVitalsQuery = serde_json::from_value(qry.params.clone())?;
+            visits::handle_list_vitals(&payload, conn)
         }),
         "get_patient_registration_form" => {
             try_handle(|| forms::handle_get_patient_registration_form(conn))
@@ -1064,6 +1072,7 @@ mod tests {
             "inventory.search",
             "inventory.check_availability",
             "dispensing.by_patient",
+            "vitals.list",
         ];
         for route in routes {
             let qry = RpcQueryPayload {
@@ -1088,6 +1097,7 @@ mod tests {
         let conn = setup_test_db();
         let routes = [
             "visits.update",
+            "vitals.create",
             "vitals.update",
             "appointments.create",
             "appointments.update",

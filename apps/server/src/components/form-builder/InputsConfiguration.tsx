@@ -395,6 +395,13 @@ export function InputsConfiguration({
                       />
                     )}
 
+                    {field.fieldType === "file" && (
+                      <FileItemsConfiguration
+                        field={field}
+                        onFieldChange={onFieldChange}
+                      />
+                    )}
+
                     <Checkbox
                       onCheckedChange={(checked) =>
                         onFieldChange(field.id, "required", checked)
@@ -444,6 +451,70 @@ export function InputsConfiguration({
         </SortableContext>
       </div>
     </DndContext>
+  );
+}
+
+/**
+ * Item-count settings for a file field. The count inputs only appear once the
+ * field accepts multiple files — a single-file field has no bounds to author,
+ * and the renderers pin it to exactly one regardless of what is stored.
+ */
+function FileItemsConfiguration({
+  field,
+  onFieldChange,
+}: {
+  field: EventForm.FileField2;
+  onFieldChange: InputConfigProps["onFieldChange"];
+}) {
+  const applyBounds = (change: { minItems?: number; maxItems?: number }) => {
+    const bounds = EventForm.withFileItemBounds(field, change);
+    onFieldChange(field.id, "minItems", bounds.minItems);
+    onFieldChange(field.id, "maxItems", bounds.maxItems);
+  };
+
+  // `Number("")` is 0, which the bounds helper would take as a real edit. NaN
+  // instead leaves the value alone while the author is mid-retype.
+  const parseCount = (raw: string): number =>
+    raw.trim() === "" ? Number.NaN : Number(raw);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Checkbox
+        onCheckedChange={(checked) =>
+          onFieldChange(field.id, "multiple", checked === true)
+        }
+        checked={field.multiple}
+        label="Allow multiple files"
+        data-testid="file-multiple"
+      />
+
+      <If show={field.multiple}>
+        <div className="flex gap-3">
+          <Input
+            label="Minimum files"
+            type="number"
+            min={0}
+            max={EventForm.FILE_FIELD_ITEMS_MAX}
+            value={String(field.minItems)}
+            onChange={(e) =>
+              applyBounds({ minItems: parseCount(e.currentTarget.value) })
+            }
+            data-testid="file-min-items"
+          />
+          <Input
+            label="Maximum files"
+            type="number"
+            min={1}
+            max={EventForm.FILE_FIELD_ITEMS_MAX}
+            value={String(field.maxItems)}
+            onChange={(e) =>
+              applyBounds({ maxItems: parseCount(e.currentTarget.value) })
+            }
+            data-testid="file-max-items"
+          />
+        </div>
+      </If>
+    </div>
   );
 }
 

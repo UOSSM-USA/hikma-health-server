@@ -1,4 +1,4 @@
-import { Data, Either, Match, Schema } from "effect";
+import { Data, Either, Schema } from "effect";
 import type {
   ColumnType,
   Generated,
@@ -99,8 +99,6 @@ namespace EventForm {
   }
 
   export const RESERVED_FIELD_NAMES = ["diagnosis", "medicine"];
-
-  // ==============
 
   // INPUT TYPES FOR CUSTOM FORMS & WORKFLOWS
   export type InputType =
@@ -232,7 +230,7 @@ namespace EventForm {
     value: string;
   };
 
-  // ============== TRANSLATIONS ==============
+  // TRANSLATIONS
 
   /** Sentinel field IDs for form-level translations */
   export const FORM_NAME_FIELD_ID = "__form_name__";
@@ -345,74 +343,116 @@ namespace EventForm {
     return translations.filter((t) => t.fieldId !== fieldId);
   }
 
-  export type BinaryField = HHFieldBase & WithInputRules & {
-    fieldType: "binary";
-    inputType: "checkbox" | "radio" | "select";
-    options: FieldOption[];
-  };
+  // ==========================================================================
+  // TOMBSTONE — commented out 2026-07-26 · DELETE AFTER 2027-01-26
+  //
+  // The pre-`Field`/`FieldData` plain-type field model: BinaryField,
+  // OptionsField, DiagnosisField, TextField, MedicineField, DateField, the
+  // `HHField` union, `HHFieldWithPosition`, and the `Fields` namespace
+  // (hasUnits/getUnits). Superseded by the `*Field2` TaggedClasses and
+  // `FieldSchema` below, which every live consumer already uses.
+  //
+  // References at tombstone time, all retired alongside — no production caller
+  // existed for any of them:
+  //   - `forms/builder-context.tsx`, `forms/components/input.tsx` and
+  //     `forms/components-registry.tsx`: an unreachable subtree (the registry is
+  //     imported by nothing and is the only importer of `input.tsx`), tombstoned
+  //     as whole files.
+  //   - `tests/models/event-form-schema.test.ts`: four tests over `Fields`
+  //     (`hasUnits`/`getUnits`) and two `HHField` fixtures, tombstoned in place.
+  //     `packages/hh-forms`' `getUnitsOpt` is the live replacement and carries
+  //     equivalent tests.
+  // Note `InputSettingsList.tsx` imports a *same-named* `HHFieldWithPosition`
+  // from `components/types/Inputs` — a different module, unaffected. Likewise
+  // every `EventForm.*Field2` reference is the live TaggedClass, not these.
+  //
+  // Search `tests/` as well as `src/` before concluding one of these is unused:
+  // the `Fields` helpers looked dead in `src/` and had four passing tests.
+  //
+  // Commented rather than deleted so the shape stays readable while any
+  // straggler surfaces. Do not treat "it still compiles" as proof these are
+  // unused: `tsc -p .` in this app checks zero files (project-reference config
+  // errors) and types are erased at build time, so a forgotten reference is
+  // neither a CI failure nor a runtime error. A real bug proved it — `fieldType`
+  // was dropped from one member of both `OptionsField` and `TextField`,
+  // un-discriminating both unions, and produced no error anywhere. `getUnits`
+  // carried a standing `units`-does-not-exist error for the same reason.
+  //
+  // If nothing has needed these by the date above, delete the blocks outright.
+  // ==========================================================================
 
-  export type OptionsField = HHFieldBase &
-    WithInputRules &
-    (
-      | {
-          fieldType: "options";
-          inputType: "radio";
-          multi: false;
-          options: FieldOption[];
-        }
-      | {
-          fieldType: "options";
-          inputType: "checkbox" | "select";
-          multi: boolean;
-          options: FieldOption[];
-        }
-    );
+  // export type BinaryField = HHFieldBase &
+  //   WithInputRules & {
+  //     fieldType: "binary";
+  //     inputType: "checkbox" | "radio" | "select";
+  //     options: FieldOption[];
+  //   };
+
+  // `fieldType` is hoisted out of the union rather than repeated in each
+  // member: it is the discriminant `HHField` narrows on, and a copy per member
+  // is one reindent away from being dropped from one of them — which silently
+  // un-discriminates the whole union.
+  // export type OptionsField = HHFieldBase &
+  //   WithInputRules & { fieldType: "options" } & (
+  //     | {
+  //         inputType: "radio";
+  //         multi: false;
+  //         options: FieldOption[];
+  //       }
+  //     | {
+  //         inputType: "checkbox" | "select";
+  //         multi: boolean;
+  //         options: FieldOption[];
+  //       }
+  //   );
 
   // Diagnoses / medicines / files collect bulk data via custom UIs and
   // their value-shape isn't a single primitive — only `visibleIf` makes
   // sense for now. `requiredIf`/`validators`/`computedValue` are
   // intentionally omitted until the renderer can model them.
-  export type DiagnosisField = HHFieldBase & WithVisibility & {
-    fieldType: "diagnosis";
-    inputType: "select";
-    options: FieldOption[];
-  };
+  // export type DiagnosisField = HHFieldBase &
+  //   WithVisibility & {
+  //     fieldType: "diagnosis";
+  //     inputType: "select";
+  //     options: FieldOption[];
+  //   };
 
-  export type TextField = HHFieldBase &
-    WithInputRules &
-    (
-      | {
-          fieldType: "free-text";
-          inputType: "text" | "number" | "email" | "password" | "tel";
-          length: "short";
-          units?: DoseUnit[] | DurationUnit[];
-        }
-      | {
-          fieldType: "free-text";
-          inputType: "textarea";
-          length: "long";
-          units?: DoseUnit[] | DurationUnit[];
-        }
-    );
+  // `fieldType` hoisted out of the union — see the note on `OptionsField`.
+  // export type TextField = HHFieldBase &
+  //   WithInputRules & { fieldType: "free-text" } & (
+  //     | {
+  //         inputType: "text" | "number" | "email" | "password" | "tel";
+  //         length: "short";
+  //         units?: DoseUnit[] | DurationUnit[];
+  //       }
+  //     | {
+  //         inputType: "textarea";
+  //         length: "long";
+  //         units?: DoseUnit[] | DurationUnit[];
+  //       }
+  //   );
 
   export type MedicineFieldOptions = string[] | FieldOption[];
 
-  export type MedicineField = HHFieldBase & WithVisibility & {
-    fieldType: "medicine";
-    inputType: "input-group";
-    options: MedicineFieldOptions;
-    fields: {
-      name: TextField;
-      route: MedicineRoute;
-      form: MedicineForm;
-      frequency: TextField;
-      intervals: TextField;
-      dose: TextField;
-      doseUnits: DoseUnit;
-      duration: TextField;
-      durationUnits: DurationUnit;
-    };
-  };
+  // TOMBSTONE 2026-07-26 — see the banner above. (`MedicineFieldOptions` just
+  // above stays: `MedicineField2` still uses it.)
+  // export type MedicineField = HHFieldBase &
+  //   WithVisibility & {
+  //     fieldType: "medicine";
+  //     inputType: "input-group";
+  //     options: MedicineFieldOptions;
+  //     fields: {
+  //       name: TextField;
+  //       route: MedicineRoute;
+  //       form: MedicineForm;
+  //       frequency: TextField;
+  //       intervals: TextField;
+  //       dose: TextField;
+  //       doseUnits: DoseUnit;
+  //       duration: TextField;
+  //       durationUnits: DurationUnit;
+  //     };
+  //   };
 
   type MedicationEntry = {
     name: string;
@@ -426,21 +466,24 @@ namespace EventForm {
     durationUnits: DurationUnit;
   };
 
-  export type DateField = HHFieldBase & WithInputRules & {
-    fieldType: "date";
-    inputType: "date";
-    min?: Date;
-    max?: Date;
-  };
+  // TOMBSTONE 2026-07-26 — see the banner above. (`MedicationEntry` just above
+  // stays: it is independent of this cluster.)
+  // export type DateField = HHFieldBase &
+  //   WithInputRules & {
+  //     fieldType: "date";
+  //     inputType: "date";
+  //     min?: Date;
+  //     max?: Date;
+  //   };
 
-  export type HHField =
-    | BinaryField
-    | TextField
-    | MedicineField
-    | DiagnosisField
-    | DateField
-    | OptionsField;
-  // | FileField;
+  // export type HHField =
+  //   | BinaryField
+  //   | TextField
+  //   | MedicineField
+  //   | DiagnosisField
+  //   | DateField
+  //   | OptionsField;
+  // // | FileField;
 
   export const BaseFieldSchema = Schema.Struct({
     id: Schema.String,
@@ -483,16 +526,21 @@ namespace EventForm {
       options: FieldOption[];
     } & HHFieldBase &
       WithInputRules
-  > {}
+  > {
+    readonly fieldType = "binary" as const;
+  }
 
   export class TextField2 extends Data.TaggedClass("free-text")<
     {
+      fieldType: "free-text";
       inputType: "text" | "number" | "email" | "password" | "tel";
       length: "short" | "long";
       units: DoseUnit[] | DurationUnit[];
     } & HHFieldBase &
       WithInputRules
-  > {}
+  > {
+    readonly fieldType = "free-text" as const;
+  }
 
   export class MedicineField2 extends Data.TaggedClass("medicine")<
     {
@@ -511,7 +559,9 @@ namespace EventForm {
       };
     } & HHFieldBase &
       WithVisibility
-  > {}
+  > {
+    readonly fieldType = "medicine" as const;
+  }
 
   export class DiagnosisField2 extends Data.TaggedClass("diagnosis")<
     {
@@ -519,23 +569,30 @@ namespace EventForm {
       options: FieldOption[];
     } & HHFieldBase &
       WithVisibility
-  > {}
+  > {
+    readonly fieldType = "diagnosis" as const;
+  }
 
   export class DateField2 extends Data.TaggedClass("date")<
     {
       inputType: "date";
     } & HHFieldBase &
       WithInputRules
-  > {}
+  > {
+    readonly fieldType = "date" as const;
+  }
 
   export class OptionsField2 extends Data.TaggedClass("options")<
     {
+      fieldType: "options";
       inputType: "radio" | "checkbox" | "select";
       multi: boolean;
       options: FieldOption[];
     } & HHFieldBase &
       WithInputRules
-  > {}
+  > {
+    readonly fieldType = "options" as const;
+  }
 
   export class FileField2 extends Data.TaggedClass("file")<
     {
@@ -543,14 +600,15 @@ namespace EventForm {
       // fieldType: "file" | "image";
       inputType: "file";
       allowedMimeTypes:
-        | ("image/png" | "image/jpeg" | "application/pdf")[]
-        | null;
+        ("image/png" | "image/jpeg" | "application/pdf")[] | null;
       multiple: boolean;
       minItems: number;
       maxItems: number;
     } & HHFieldBase &
       WithVisibility
-  > {}
+  > {
+    readonly fieldType = "file" as const;
+  }
 
   export class TextDisplayField2 extends Data.TaggedClass("text")<
     {
@@ -558,11 +616,60 @@ namespace EventForm {
       size: TextDisplaySize;
     } & HHFieldBase &
       WithVisibility
-  > {}
+  > {
+    readonly fieldType = "text" as const;
+  }
 
   export class SeparatorField2 extends Data.TaggedClass("separator")<
     HHFieldBase & WithVisibility
-  > {}
+  > {
+    readonly fieldType = "separator" as const;
+  }
+
+  /**
+   * Ceiling on files per field, bounding what an author can commit a clinician
+   * to uploading from a phone over clinic bandwidth.
+   */
+  export const FILE_FIELD_ITEMS_MAX = 20;
+
+  /**
+   * Apply an edit to a file field's item bounds, keeping the pair coherent:
+   * `1 <= maxItems <= FILE_FIELD_ITEMS_MAX` and `0 <= minItems <= maxItems`.
+   *
+   * The edited bound wins and the other yields, so dragging `minItems` above
+   * `maxItems` raises the ceiling rather than silently discarding the input.
+   * Non-numeric input (an emptied number field) leaves that bound unchanged.
+   */
+  export function withFileItemBounds(
+    current: { minItems: number; maxItems: number },
+    change: { minItems?: number; maxItems?: number },
+  ): { minItems: number; maxItems: number } {
+    const clamp = (value: number, low: number, high: number): number =>
+      Math.min(Math.max(Math.trunc(value), low), high);
+
+    const currentMax = clamp(current.maxItems, 1, FILE_FIELD_ITEMS_MAX);
+    const currentMin = clamp(current.minItems, 0, currentMax);
+
+    if (Number.isFinite(change.maxItems)) {
+      const maxItems = clamp(
+        change.maxItems as number,
+        1,
+        FILE_FIELD_ITEMS_MAX,
+      );
+      return { minItems: Math.min(currentMin, maxItems), maxItems };
+    }
+
+    if (Number.isFinite(change.minItems)) {
+      const minItems = clamp(
+        change.minItems as number,
+        0,
+        FILE_FIELD_ITEMS_MAX,
+      );
+      return { minItems, maxItems: Math.max(currentMax, minItems, 1) };
+    }
+
+    return { minItems: currentMin, maxItems: currentMax };
+  }
 
   export const FieldOptionSchema = Schema.Struct({
     id: Schema.optional(Schema.String),
@@ -579,21 +686,14 @@ namespace EventForm {
       fieldType: Schema.Literal(tag),
     }).pipe(Schema.extend(specific), Schema.extend(BaseFieldSchema));
 
-  // Given a fieldType and inputType, return the appropriate _tag field
-  export const getFieldTag = (fieldType: Field["fieldType"]): Field["_tag"] => {
-    return Match.value(fieldType).pipe(
-      Match.when("binary", () => "binary"),
-      Match.when("free-text", () => "free-text"),
-      Match.when("medicine", () => "medicine"),
-      Match.when("diagnosis", () => "diagnosis"),
-      Match.when("date", () => "date"),
-      Match.when("file", () => "file"),
-      Match.when("options", () => "options"),
-      Match.when("text", () => "text"),
-      Match.when("separator", () => "separator"),
-      Match.exhaustive,
-    ) as Field["_tag"];
-  };
+  /**
+   * The `_tag` for a field type. `createFieldSchema` derives both discriminants
+   * from the same literal, so the two are always the same string; this exists
+   * to graft `_tag` onto plain field objects loaded from storage, which the
+   * encoder still requires.
+   */
+  export const getFieldTag = (fieldType: Field["fieldType"]): Field["_tag"] =>
+    fieldType;
 
   export const BinaryFieldSchema = createFieldSchema(
     "binary",
@@ -790,11 +890,7 @@ namespace EventForm {
     | SeparatorField2;
 
   export function toSchema(field: FieldData): Either.Either<Field, Error> {
-    return Schema.encodeUnknownEither(FieldSchema)({
-      ...field,
-      // Have to re-add the fieldType property that was removed by the tagged class
-      fieldType: field._tag,
-    });
+    return Schema.encodeUnknownEither(FieldSchema)({ ...field });
   }
 
   // Flow: Parse with schemas → work with TaggedClass instances → serialize back with schemas.
@@ -820,9 +916,10 @@ namespace EventForm {
   export type T = typeof EventFormSchema.Type;
   export type EncodedT = typeof EventFormSchema.Encoded;
 
-  export type HHFieldWithPosition = HHField & { position: number };
+  // TOMBSTONE 2026-07-26 — see the banner near `BinaryField`. Not to be
+  // confused with the live same-named type in `components/types/Inputs`.
+  // export type HHFieldWithPosition = HHField & { position: number };
 
-  // ------------------------------------------------------------------
   // FieldLogicPanel adapter.
   //
   // Maps each variant's `fieldType` (+ `inputType` for free-text) to a
@@ -830,7 +927,6 @@ namespace EventForm {
   // shape so callers can hand in either decoded `Field`s or the
   // `FieldData` (TaggedClass) instances the form-builder store carries
   // — both expose the same id/name/fieldType/inputType keys at runtime.
-  // ------------------------------------------------------------------
   type LogicAdaptableField = {
     id: string;
     name: string;
@@ -847,7 +943,10 @@ namespace EventForm {
     field: LogicAdaptableField,
   ): Partial<Pick<LogicField, "multiValue" | "options">> => {
     if (field.fieldType !== "options" || !field.options) return {};
-    const options = field.options.map((o) => ({ value: o.value, label: o.label }));
+    const options = field.options.map((o) => ({
+      value: o.value,
+      label: o.label,
+    }));
     return field.multi === true ? { multiValue: true, options } : { options };
   };
 
@@ -931,29 +1030,33 @@ namespace EventForm {
         : undefined,
   });
 
-  export namespace Fields {
-    /**
-     * Type guard for HHFieldWithPosition | HHField to check if the field has units
-     * @param field
-     * @returns
-     */
-    export function hasUnits(
-      field: HHFieldWithPosition | HHField,
-    ): field is HHFieldWithPosition {
-      return "units" in field;
-    }
-
-    /**
-     * Get the units for a field
-     * @param field
-     * @returns
-     */
-    export function getUnits(
-      field: HHFieldWithPosition | HHField,
-    ): (DoseUnit | DurationUnit)[] {
-      return hasUnits(field) ? Array.from(new Set(field?.units || [])) : [];
-    }
-  }
+  // TOMBSTONE 2026-07-26 — see the banner near `BinaryField`. Unreferenced:
+  // `packages/hh-forms`' `EventForm.getUnitsOpt` is the live replacement, and
+  // `components-registry.tsx`'s `hasUnits` is an unrelated local variable.
+  // `getUnits` is where the standing `units`-does-not-exist error lived.
+  // export namespace Fields {
+  //   /**
+  //    * Type guard for HHFieldWithPosition | HHField to check if the field has units
+  //    * @param field
+  //    * @returns
+  //    */
+  //   export function hasUnits(
+  //     field: HHFieldWithPosition | HHField,
+  //   ): field is HHFieldWithPosition {
+  //     return "units" in field;
+  //   }
+  //
+  //   /**
+  //    * Get the units for a field
+  //    * @param field
+  //    * @returns
+  //    */
+  //   export function getUnits(
+  //     field: HHFieldWithPosition | HHField,
+  //   ): (DoseUnit | DurationUnit)[] {
+  //     return hasUnits(field) ? Array.from(new Set(field?.units || [])) : [];
+  //   }
+  // }
 
   // Two letter iso639-2 language code
   // as seen here: https://www.loc.gov/standards/iso639-2/php/code_list.php
@@ -1099,15 +1202,17 @@ namespace EventForm {
      * Get a form by an id
      * @param id - The id of the form
      */
-    export const getById = createServerOnlyFn(async (id: string): Promise<EncodedT> => {
-      const result = await db
-        .selectFrom(EventForm.Table.name)
-        .where("id", "=", id)
-        .where("is_deleted", "=", false)
-        .selectAll()
-        .executeTakeFirst();
-      return result;
-    });
+    export const getById = createServerOnlyFn(
+      async (id: string): Promise<EncodedT> => {
+        const result = await db
+          .selectFrom(EventForm.Table.name)
+          .where("id", "=", id)
+          .where("is_deleted", "=", false)
+          .selectAll()
+          .executeTakeFirst();
+        return result;
+      },
+    );
 
     /**
      * Insert a new event form
@@ -1122,8 +1227,13 @@ namespace EventForm {
         // bypasses. Throws FormFieldRulesValidationError on invalid
         // rules; TanStack server functions surface the message to
         // the caller.
-        const parsedFields = safeJSONParse(form.form_fields, [] as Array<unknown>);
-        assertFieldRulesValid(parsedFields as Array<{ id?: unknown } & Record<string, unknown>>);
+        const parsedFields = safeJSONParse(
+          form.form_fields,
+          [] as Array<unknown>,
+        );
+        assertFieldRulesValid(
+          parsedFields as Array<{ id?: unknown } & Record<string, unknown>>,
+        );
 
         const result = await db
           .insertInto(EventForm.Table.name)
@@ -1166,8 +1276,13 @@ namespace EventForm {
         form: EventForm.EncodedT;
       }): Promise<EventForm.T> => {
         // Same defense-in-depth as `insert` — see the comment there.
-        const parsedFields = safeJSONParse(form.form_fields, [] as Array<unknown>);
-        assertFieldRulesValid(parsedFields as Array<{ id?: unknown } & Record<string, unknown>>);
+        const parsedFields = safeJSONParse(
+          form.form_fields,
+          [] as Array<unknown>,
+        );
+        assertFieldRulesValid(
+          parsedFields as Array<{ id?: unknown } & Record<string, unknown>>,
+        );
 
         const result = await db
           .updateTable(EventForm.Table.name)

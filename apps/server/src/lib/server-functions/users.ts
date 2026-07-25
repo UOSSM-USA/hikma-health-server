@@ -6,6 +6,7 @@ import { getCookie } from "@tanstack/react-start/server";
 import Token from "@/models/token";
 import { Option } from "effect";
 import { userRoleTokenHasCapability } from "@/lib/auth/request";
+import { adminMiddleware } from "@/middleware/auth";
 // import Patient from "@/models/patient";
 
 /**
@@ -48,8 +49,8 @@ export const getClinicIdsWithUserPermission = createServerFn({ method: "GET" })
       permission: UserClinicPermissions.UserPermissionsT;
     }) => data,
   )
-  .middleware([permissionsMiddleware])
-  .handler(async ({ data, context }) => {
+  .middleware([adminMiddleware])
+  .handler(async ({ data }) => {
     const user = await User.API.getById(data.userId);
     if (!user) return [];
     const permissions =
@@ -130,6 +131,7 @@ export const currentUserHasRole = createServerFn({ method: "GET" })
  */
 export const getUserClinicPermissions = createServerFn({ method: "GET" })
   .inputValidator((data: { userId: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return await UserClinicPermissions.API.getByUser(data.userId);
   });

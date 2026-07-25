@@ -2,11 +2,27 @@
 
 import * as Logger from "./Logger.res.mjs";
 
+let log = Logger.Production.log;
+
+let warn = Logger.Production.warn;
+
+let error = Logger.Production.error;
+
+let info = Logger.Production.info;
+
+let Production = {
+  log: log,
+  warn: warn,
+  error: error,
+  info: info
+};
+
 let Logger$1 = {
   log: Logger.log,
   warn: Logger.warn,
   error: Logger.error,
-  info: Logger.info
+  info: Logger.info,
+  Production: Production
 };
 
 export {

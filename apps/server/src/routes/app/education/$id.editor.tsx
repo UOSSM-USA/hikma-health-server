@@ -24,6 +24,7 @@ import { v7 as uuidV7 } from "uuid";
 import { TipTapEditor } from "@/components/education/tiptap-editor";
 import { getCurrentUserId } from "@/lib/server-functions/auth";
 import type EducationContent from "@/models/education-content";
+import { adminMiddleware } from "@/middleware/auth";
 
 type ContentRow = EducationContent.Serialized;
 
@@ -31,6 +32,7 @@ type ContentRow = EducationContent.Serialized;
 
 const getContentById = createServerFn({ method: "GET" })
   .inputValidator((data: { id: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<ContentRow | null> => {
     const row = await db
       .selectFrom("education_content")
@@ -57,15 +59,19 @@ const saveContent = createServerFn({ method: "POST" })
       metadata: Record<string, unknown>;
     }) => data,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<ContentRow> => {
     const { id, ...fields } = data;
-    const publishedAt = fields.status === "published" ? new Date().toISOString() : null;
+    const publishedAt =
+      fields.status === "published" ? new Date().toISOString() : null;
     const authorId = await getCurrentUserId();
 
     if (id) {
       const updateData: Record<string, unknown> = {
         ...fields,
-        tiptap_content: fields.tiptap_content ? JSON.stringify(fields.tiptap_content) : null,
+        tiptap_content: fields.tiptap_content
+          ? JSON.stringify(fields.tiptap_content)
+          : null,
         resource_id: fields.resource_id ?? null,
         tags: JSON.stringify(fields.tags),
         metadata: JSON.stringify(fields.metadata),
@@ -97,7 +103,9 @@ const saveContent = createServerFn({ method: "POST" })
         title: fields.title,
         description: fields.description,
         content_type: fields.content_type,
-        tiptap_content: fields.tiptap_content ? JSON.stringify(fields.tiptap_content) : null,
+        tiptap_content: fields.tiptap_content
+          ? JSON.stringify(fields.tiptap_content)
+          : null,
         resource_id: fields.resource_id,
         status: fields.status,
         visibility: fields.visibility,
@@ -117,6 +125,7 @@ const uploadFile = createServerFn({ method: "POST" })
   .inputValidator(
     (data: { fileName: string; mimetype: string; fileBase64: string }) => data,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<{ id: string }> => {
     // Validate mimetype server-side before storing — client-supplied values are untrusted
     const { isAllowedMimetype } = await import("@/storage/types");
@@ -124,7 +133,9 @@ const uploadFile = createServerFn({ method: "POST" })
       throw new Error(`File type not allowed: ${data.mimetype}`);
     }
 
-    const bytes = Uint8Array.from(atob(data.fileBase64), (c) => c.charCodeAt(0));
+    const bytes = Uint8Array.from(atob(data.fileBase64), (c) =>
+      c.charCodeAt(0),
+    );
     const adapter = await createDiskAdapter();
     const destination = `${EDUCATION_RESOURCE_PATH_PREFIX}/${uuidV7()}_${data.fileName}`;
     const result = await adapter.put(bytes, destination, data.mimetype);
@@ -202,7 +213,8 @@ function RouteComponent() {
     title: content?.title ?? "",
     description: content?.description ?? "",
     content_type: (content?.content_type as "tiptap" | "resource") ?? "tiptap",
-    tiptap_content: (content?.tiptap_content as Record<string, unknown>) ?? null,
+    tiptap_content:
+      (content?.tiptap_content as Record<string, unknown>) ?? null,
     resource_id: content?.resource_id ?? null,
     resource_name: null,
     status: (content?.status as "draft" | "published") ?? "draft",
@@ -240,8 +252,10 @@ function RouteComponent() {
           title: form.title,
           description: form.description || null,
           content_type: form.content_type,
-          tiptap_content: form.content_type === "tiptap" ? form.tiptap_content : null,
-          resource_id: form.content_type === "resource" ? form.resource_id : null,
+          tiptap_content:
+            form.content_type === "tiptap" ? form.tiptap_content : null,
+          resource_id:
+            form.content_type === "resource" ? form.resource_id : null,
           status: form.status,
           visibility: form.visibility,
           language: form.language,
@@ -251,7 +265,10 @@ function RouteComponent() {
       });
       toast.success(isNew ? "Content created" : "Content saved");
       if (isNew && result?.id) {
-        router.navigate({ to: "/app/education/$id/editor", params: { id: result.id } });
+        router.navigate({
+          to: "/app/education/$id/editor",
+          params: { id: result.id },
+        });
       }
     } catch {
       toast.error("Failed to save content");
@@ -269,7 +286,10 @@ function RouteComponent() {
       try {
         const buffer = await file.arrayBuffer();
         const base64 = btoa(
-          new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), ""),
+          new Uint8Array(buffer).reduce(
+            (s, b) => s + String.fromCharCode(b),
+            "",
+          ),
         );
         const resource = await uploadFile({
           data: {
@@ -291,20 +311,23 @@ function RouteComponent() {
   );
 
   /** Upload an image from inside TipTap and return its URL. */
-  const handleEditorImageUpload = useCallback(async (file: File): Promise<string> => {
-    const buffer = await file.arrayBuffer();
-    const base64 = btoa(
-      new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), ""),
-    );
-    const resource = await uploadFile({
-      data: {
-        fileName: file.name,
-        mimetype: file.type,
-        fileBase64: base64,
-      },
-    });
-    return `/api/resources/${resource.id}`;
-  }, []);
+  const handleEditorImageUpload = useCallback(
+    async (file: File): Promise<string> => {
+      const buffer = await file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), ""),
+      );
+      const resource = await uploadFile({
+        data: {
+          fileName: file.name,
+          mimetype: file.type,
+          fileBase64: base64,
+        },
+      });
+      return `/api/resources/${resource.id}`;
+    },
+    [],
+  );
 
   return (
     <div className="max-w-5xl mx-auto py-6 space-y-6">
@@ -314,17 +337,19 @@ function RouteComponent() {
           {isNew ? "New Education Content" : "Edit Education Content"}
         </h1>
         <div className="flex items-center gap-2">
-          {!isNew && content?.status === "published" && content?.visibility === "public" && (
-            <a
-              href={`/education/${paramId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Button variant="outline" size="sm">
-                <LucideEye className="mr-1 h-4 w-4" /> Preview
-              </Button>
-            </a>
-          )}
+          {!isNew &&
+            content?.status === "published" &&
+            content?.visibility === "public" && (
+              <a
+                href={`/education/${paramId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Button variant="outline" size="sm">
+                  <LucideEye className="mr-1 h-4 w-4" /> Preview
+                </Button>
+              </a>
+            )}
           <Button onClick={handleSave} disabled={saving}>
             <LucideSave className="mr-1 h-4 w-4" />
             {saving ? "Saving..." : "Save"}
@@ -417,7 +442,8 @@ function RouteComponent() {
               </label>
               {(form.resource_name || form.resource_id) && (
                 <Badge variant="secondary">
-                  {form.resource_name ?? `Resource: ${form.resource_id?.slice(0, 8)}...`}
+                  {form.resource_name ??
+                    `Resource: ${form.resource_id?.slice(0, 8)}...`}
                 </Badge>
               )}
             </div>

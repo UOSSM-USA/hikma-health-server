@@ -23,7 +23,7 @@ import { ok, err } from "../../types/data"
 import type { CreatePatientInput, UpdatePatientInput, GetPatientsParams } from "../../types/patient"
 import type { CreateVisitInput } from "../../types/visit"
 import type { CreateEventInput, UpdateEventInput } from "../../types/event"
-import type { CreateVitalsInput } from "../../types/vitals"
+import type { CreateVitalsInput, UpdateVitalsInput } from "../../types/vitals"
 import type { CreateProblemInput, UpdateProblemInput } from "../../types/problem"
 
 /** Patient columns searched by the ranked patient lookup, in priority order. */
@@ -276,6 +276,15 @@ export function createOfflineProvider(db: Database): DataProvider {
         try {
           const id = await PatientVitals.DB.create(data)
           return ok({ id })
+        } catch (error) {
+          return err({ _tag: "ServerError", message: String(error) })
+        }
+      },
+
+      async update(id: string, data: UpdateVitalsInput) {
+        try {
+          const updatedId = await PatientVitals.DB.update(id, data)
+          return ok({ id: updatedId })
         } catch (error) {
           return err({ _tag: "ServerError", message: String(error) })
         }

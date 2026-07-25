@@ -37,6 +37,47 @@ export const superAdminMiddleware = createMiddleware({
   });
 });
 
+/**
+ * Middleware that rejects requests from users who are not admin or super_admin.
+ * The default gate for server functions — the web app is an administrative
+ * surface; providers and registrars use mobile.
+ *
+ * Throws rather than passing a flag downstream, so an endpoint that forgets to
+ * check its context still fails closed.
+ */
+export const adminMiddleware = createMiddleware({
+  type: "function",
+}).server(async ({ next }) => {
+  const token = getCookieToken();
+  if (!token) {
+    throw new Error("Unauthorized: no session token");
+  }
+
+  const caller = await Token.getUser(token);
+
+  if (Option.isNone(caller)) {
+    deleteCookie("token");
+  }
+
+  const role = Option.map(caller, (c) => c.role);
+
+  // None is checked explicitly so an absent role can't pass by comparing
+  // undefined against the allowed values.
+  if (
+    Option.isNone(role) ||
+    (role.value !== User.ROLES.ADMIN && role.value !== User.ROLES.SUPER_ADMIN)
+  ) {
+    throw new Error("Unauthorized: admin role required");
+  }
+
+  return next({
+    context: {
+      userId: Option.getOrNull(Option.map(caller, (c) => c.id)),
+      role: role.value,
+    },
+  });
+});
+
 export const authMiddleware = createMiddleware({ type: "function" })
   .inputValidator(
     (data: { capabilities?: (typeof User.CapabilitySchema.Type)[] }) => data,

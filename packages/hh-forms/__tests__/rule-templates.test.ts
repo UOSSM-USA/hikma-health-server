@@ -57,6 +57,11 @@ const incAll = (fieldId: string, values: string[]): visibilityCondition => ({
   fieldId,
   values,
 });
+const eqAny = (fieldId: string, values: string[]): visibilityCondition => ({
+  TAG: "EqualsAny",
+  fieldId,
+  values,
+});
 const lengthCmp = (
   fieldId: string,
   op: comparisonOp,
@@ -183,6 +188,7 @@ describe("decompileVisibilityTemplate — round-trip across every template", () 
     one(exc("langs", "fr")),
     one(incAny("langs", ["en", "sw"])),
     one(incAll("langs", ["en", "ar"])),
+    one(eqAny("city", ["dar", "arusha"])),
     one(lengthCmp("notes", ">", 10)),
     one(lengthCmp("code", "<=", 6)),
     one(lengthCmp("pin", "==", 4)),
@@ -300,6 +306,82 @@ describe("multi-value membership leaves", () => {
         { in: ["en", { var: "form.langs" }] },
         { in: ["sw", { var: "form.langs" }] },
       ],
+    });
+  });
+
+  // EqualsAny is the single-valued counterpart of IncludesAny. It must never
+  // compile to `in`: the evaluator falls back to substring matching on a string
+  // haystack, so `{in: ["opt1", <string>]}` also matches a stored "opt10".
+  it("compiles EqualsAny to an `or` of `==`s, not `in`s", () => {
+    expect(compileVisibilityTemplate(one(eqAny("city", ["dar", "arusha"])))).toEqual({
+      or: [
+        { "==": [{ var: "form.city" }, "dar"] },
+        { "==": [{ var: "form.city" }, "arusha"] },
+      ],
+    });
+  });
+
+  it("collapses a same-field `or` of `==`s to EqualsAny", () => {
+    expect(
+      decompileVisibilityTemplate({
+        or: [
+          { "==": [{ var: "form.city" }, "dar"] },
+          { "==": [{ var: "form.city" }, "arusha"] },
+        ],
+      }),
+    ).toEqual(one(eqAny("city", ["dar", "arusha"])));
+  });
+
+  it("round-trips EqualsAny", () => {
+    const t = one(eqAny("city", ["dar", "arusha", "mwanza"]));
+    expect(decompileVisibilityTemplate(compileVisibilityTemplate(t))).toEqual(t);
+  });
+
+  it("does not collapse an `or` of `==`s over different fields", () => {
+    // Two distinct fields is a genuine two-condition OR, not one "is one of";
+    // it stays a group so the multi-row editor keeps both rows.
+    expect(
+      decompileVisibilityTemplate({
+        or: [
+          { "==": [{ var: "form.city" }, "dar"] },
+          { "==": [{ var: "form.region" }, "dar"] },
+        ],
+      }),
+    ).toEqual({
+      TAG: "Conditions",
+      connector: "or",
+      conditions: [cmp("city", "==", "dar"), cmp("region", "==", "dar")],
+    });
+  });
+
+  it("does not collapse an `or` mixing `in` and `==` leaves", () => {
+    expect(
+      decompileVisibilityTemplate({
+        or: [
+          { in: ["en", { var: "form.langs" }] },
+          { "==": [{ var: "form.langs" }, "sw"] },
+        ],
+      }),
+    ).toEqual({
+      TAG: "Conditions",
+      connector: "or",
+      conditions: [inc("langs", "en"), cmp("langs", "==", "sw")],
+    });
+  });
+
+  it("keeps a non-string `==` group out of EqualsAny", () => {
+    // Numeric literals are plain comparisons, not option tokens.
+    expect(
+      decompileVisibilityTemplate({
+        or: [
+          { "==": [{ var: "form.age" }, 10] },
+          { "==": [{ var: "form.age" }, 20] },
+        ],
+      }),
+    ).toEqual({
+      TAG: "Conditions",
+      connector: "or",
+      conditions: [cmp("age", "==", 10), cmp("age", "==", 20)],
     });
   });
 
@@ -637,5 +719,47 @@ describe("LengthCompare — evaluation semantics", () => {
     const flag = "🇹🇿";
     expect(evalLen(one(lengthCmp("notes", "==", 4)), flag).failed).toBe(false);
     expect(evalLen(one(lengthCmp("notes", "==", 1)), flag).failed).toBe(true);
+  });
+})
+
+describe("membership on a single-valued option field — evaluation semantics", () => {
+  const scope = (form: Record<string, unknown>): ruleScope => ({
+    form,
+    ctx: { now: "2026-01-01T00:00:00Z", language: "en" },
+  });
+
+  // A single-select stores one string. Evaluate a compiled template as a
+  // visibility rule over that string and report whether the field shows.
+  const evalVisible = (tpl: simpleVisibilityTemplate, stored: unknown): boolean => {
+    const rule = compileVisibilityTemplate(tpl)!;
+    const result = compileRules([{ id: "target", visibleIf: rule }])(
+      scope({ city: stored, target: null }),
+    );
+    return result.isVisible("target");
+  };
+
+  it("matches the stored option exactly", () => {
+    expect(evalVisible(one(cmp("city", "==", "opt1")), "opt1")).toBe(true);
+    expect(evalVisible(one(cmp("city", "==", "opt1")), "arusha")).toBe(false);
+  });
+
+  it("does not fire on an option that merely contains the token", () => {
+    expect(evalVisible(one(cmp("city", "==", "opt1")), "opt10")).toBe(false);
+  });
+
+  it("shows the same rule compiled to `in` does substring-match", () => {
+    const asMembership = compileVisibilityTemplate(one(inc("city", "opt1")))!;
+    const result = compileRules([{ id: "target", visibleIf: asMembership }])(
+      scope({ city: "opt10", target: null }),
+    );
+    expect(result.isVisible("target")).toBe(true);
+  });
+
+  it("evaluates EqualsAny as an exact 'is one of'", () => {
+    const anyOf = one(eqAny("city", ["dar", "arusha"]));
+    expect(evalVisible(anyOf, "dar")).toBe(true);
+    expect(evalVisible(anyOf, "arusha")).toBe(true);
+    expect(evalVisible(anyOf, "mwanza")).toBe(false);
+    expect(evalVisible(anyOf, "dar es salaam")).toBe(false);
   });
 })

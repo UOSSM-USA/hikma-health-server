@@ -13,6 +13,7 @@ import {
   type Connector,
   decompileVisibilityTemplate,
   type LogicField,
+  type LogicOption,
   type SimpleVisibilityTemplate,
   type VisibilityCondition,
 } from "@/lib/form-rule-templates";
@@ -36,7 +37,11 @@ export type ConditionKind =
 // Slot-level kinds add the no-rule "Always" state.
 export type VisibilityKind = "Always" | ConditionKind;
 
-export const CONDITION_KINDS: ConditionKind[] = ["Comparison", "Truthy", "Falsy"];
+export const CONDITION_KINDS: ConditionKind[] = [
+  "Comparison",
+  "Truthy",
+  "Falsy",
+];
 // Free-text fields add a character-length comparison; Comparison stays first so
 // it remains the default kind a fresh condition opens on.
 const TEXT_CONDITION_KINDS: ConditionKind[] = [
@@ -53,14 +58,69 @@ const MULTI_CONDITION_KINDS: ConditionKind[] = [
   "Truthy",
   "Falsy",
 ];
+// Same kinds as multi-value, minus "includes all of" — one value can never be
+// two options. They differ only in what they compile to; see
+// `defaultConditionForKind`.
+const SCALAR_OPTION_CONDITION_KINDS: ConditionKind[] = [
+  "IncludesOption",
+  "ExcludesOption",
+  "IncludesAny",
+  "Truthy",
+  "Falsy",
+];
 
-// The condition kinds a field supports: multi-value fields swap scalar
-// comparison for membership kinds; free-text fields add length comparison
-// (Truthy/Falsy stay throughout). A missing field falls back to the scalar set.
-export function conditionKindsFor(field: LogicField | undefined): ConditionKind[] {
-  if (field?.multiValue) return MULTI_CONDITION_KINDS;
-  if (field?.freeText) return TEXT_CONDITION_KINDS;
-  return CONDITION_KINDS;
+// Option-backed but single-valued. Zero-option fields are excluded: nothing to
+// pick, so they keep the plain comparison editor.
+export const isScalarOptionField = (field: LogicField | undefined): boolean =>
+  !field?.multiValue && (field?.options?.length ?? 0) > 0;
+
+// Tokens the rule names that the field's options no longer offer — left behind
+// when an option is renamed or deleted. They still compile but can never match,
+// so the editors render them rather than let them vanish from the pickers.
+// A field with no options stays silent: "not loaded yet" is indistinguishable
+// from "all deleted", and a false alarm is worse.
+export const unknownOptionTokens = (
+  tokens: ReadonlyArray<string>,
+  options: ReadonlyArray<LogicOption> | undefined,
+): string[] => {
+  if (!options || options.length === 0) return [];
+  const known = new Set(options.map((o) => o.value));
+  return tokens.filter((t) => t !== "" && !known.has(t));
+};
+
+// The "When" kind a stored condition presents as. Membership over a scalar
+// option field is stored as equality, so the leaf alone doesn't determine the
+// kind — the field's arity does.
+export function displayKindOf(
+  condition: VisibilityCondition,
+  field: LogicField | undefined,
+): ConditionKind {
+  if (condition.TAG === "EqualsAny") return "IncludesAny";
+  if (condition.TAG === "Comparison" && isScalarOptionField(field)) {
+    if (condition.op === "==") return "IncludesOption";
+    if (condition.op === "!=") return "ExcludesOption";
+  }
+  return condition.TAG;
+}
+
+// The condition kinds a field supports: option-backed fields swap scalar
+// comparison for membership kinds; free-text adds length comparison. The row's
+// current leaf has its kind unioned in, so a stored rule the field no longer
+// offers (a `>` on an option field) still renders instead of going blank.
+export function conditionKindsFor(
+  field: LogicField | undefined,
+  condition?: VisibilityCondition,
+): ConditionKind[] {
+  const base = field?.multiValue
+    ? MULTI_CONDITION_KINDS
+    : isScalarOptionField(field)
+      ? SCALAR_OPTION_CONDITION_KINDS
+      : field?.freeText
+        ? TEXT_CONDITION_KINDS
+        : CONDITION_KINDS;
+  if (!condition) return base;
+  const current = displayKindOf(condition, field);
+  return base.includes(current) ? base : [...base, current];
 }
 
 export type RuleState = {
@@ -81,8 +141,9 @@ export const primitiveFieldsOf = (
 ): LogicField[] => fields.filter((f) => f.kind === "primitive");
 
 // The conditions a template carries; "Always" has none.
-export const conditionsOf = (t: SimpleVisibilityTemplate): VisibilityCondition[] =>
-  t === "Always" ? [] : t.conditions;
+export const conditionsOf = (
+  t: SimpleVisibilityTemplate,
+): VisibilityCondition[] => (t === "Always" ? [] : t.conditions);
 
 // Build a template from a connector + condition list, collapsing an empty
 // list to "Always" when the section permits a no-rule state.
@@ -112,12 +173,25 @@ export function defaultConditionForKind(
       return { TAG: "Truthy", fieldId };
     case "Falsy":
       return { TAG: "Falsy", fieldId };
-    case "IncludesOption":
-      return { TAG: "IncludesOption", fieldId, value: field?.options?.[0]?.value ?? "" };
-    case "ExcludesOption":
-      return { TAG: "ExcludesOption", fieldId, value: field?.options?.[0]?.value ?? "" };
+    // Membership on a single-valued option field compiles to equality: the
+    // evaluator's `in` degrades to substring matching against a string
+    // haystack, so `in` would match "opt1" against a stored "opt10".
+    case "IncludesOption": {
+      const value = field?.options?.[0]?.value ?? "";
+      return isScalarOptionField(field)
+        ? { TAG: "Comparison", fieldId, op: "==", value }
+        : { TAG: "IncludesOption", fieldId, value };
+    }
+    case "ExcludesOption": {
+      const value = field?.options?.[0]?.value ?? "";
+      return isScalarOptionField(field)
+        ? { TAG: "Comparison", fieldId, op: "!=", value }
+        : { TAG: "ExcludesOption", fieldId, value };
+    }
     case "IncludesAny":
-      return { TAG: "IncludesAny", fieldId, values: [] };
+      return isScalarOptionField(field)
+        ? { TAG: "EqualsAny", fieldId, values: [] }
+        : { TAG: "IncludesAny", fieldId, values: [] };
     case "IncludesAll":
       return { TAG: "IncludesAll", fieldId, values: [] };
   }
@@ -155,32 +229,59 @@ export function defaultTemplateFor(
   };
 }
 
-// Whether the simple editor can represent a decompiled template:
-//   - "Always" only when the section allows a no-rule state
-//   - a single condition always (one row)
-//   - multiple conditions only when the section allows multiple AND the
-//     connector is `and` (OR / mixed logic stays in advanced mode for now)
+// Whether the simple editor can represent a decompiled template: "Always" only
+// where the section allows a no-rule state; one condition always; several
+// whenever the section allows them, under either connector. Nesting and mixed
+// logic never reach here — `decompileVisibilityTemplate` returns None for those,
+// which sections read as "authored in Advanced mode".
 export function isSimpleRepresentable(
   t: SimpleVisibilityTemplate,
   allowAlways: boolean,
   allowMultiple: boolean,
+  fields: ReadonlyArray<LogicField>,
 ): boolean {
   if (t === "Always") return allowAlways;
+  if (!t.conditions.every((c) => editableInSimple(c, fields))) return false;
   if (t.conditions.length <= 1) return true;
-  return allowMultiple && t.connector === "and";
+  return allowMultiple;
 }
 
+// Membership leaves need an option list to edit against. The ReScript decompiler
+// is field-blind, so a same-field `or`-of-`==` over a free-text field also lands
+// as `EqualsAny` — valid at runtime, unrenderable here, so it stays in Advanced.
+// `options: []` still qualifies: that's the stale-token case, where the author
+// needs Simple mode to drop the orphans.
+const editableInSimple = (
+  c: VisibilityCondition,
+  fields: ReadonlyArray<LogicField>,
+): boolean => {
+  const needsOptions =
+    c.TAG === "IncludesOption" ||
+    c.TAG === "ExcludesOption" ||
+    c.TAG === "IncludesAny" ||
+    c.TAG === "IncludesAll" ||
+    c.TAG === "EqualsAny";
+  if (!needsOptions) return true;
+  return fields.find((f) => f.id === c.fieldId)?.options !== undefined;
+};
+
 // A stored rule is "stuck in advanced" when the simple editor can't
-// represent it in the given section: OR, nesting, or unknown operators
-// stick. Sections surface this as an advisory above the tabs.
+// represent it in the given section: nesting, mixed boolean logic, or
+// unknown operators stick. A flat AND/OR group does not — the
+// multi-condition editor carries a connector picker.
+// Sections surface this as an advisory above the tabs.
 export function isStuckInAdvanced(
   initialRule: JsonLogicRule | undefined,
   allowAlways: boolean,
   allowMultiple: boolean,
+  fields: ReadonlyArray<LogicField>,
 ): boolean {
   if (initialRule === undefined) return false;
   const t = decompileVisibilityTemplate(initialRule);
-  return t === undefined || !isSimpleRepresentable(t, allowAlways, allowMultiple);
+  return (
+    t === undefined ||
+    !isSimpleRepresentable(t, allowAlways, allowMultiple, fields)
+  );
 }
 
 /**
@@ -208,6 +309,7 @@ export function conditionValid(
       return c.value !== "";
     case "IncludesAny":
     case "IncludesAll":
+    case "EqualsAny":
       return c.values.length >= 2;
     case "Truthy":
     case "Falsy":
@@ -301,23 +403,27 @@ export function syncTextFromSimple(simpleState: RuleState): string | null {
  *
  * @internal
  */
+// `fields` is required rather than defaulted: an empty list makes every
+// membership leaf unrepresentable, so a caller that forgets it silently reports
+// "stuck in advanced" for rules that are perfectly editable.
 export function syncTemplateFromAdvanced(
   advancedStatus: ValidationStatus,
   allowAlways: boolean,
   allowMultiple: boolean,
+  fields: ReadonlyArray<LogicField>,
 ): SimpleVisibilityTemplate | null {
   let parsed: JsonLogicRule | undefined;
   if (advancedStatus.kind === "empty") parsed = undefined;
-  else if (advancedStatus.kind === "ok") parsed = advancedStatus.parsed as JsonLogicRule;
+  else if (advancedStatus.kind === "ok")
+    parsed = advancedStatus.parsed as JsonLogicRule;
   else return null;
   const decompiled = decompileVisibilityTemplate(parsed);
   if (decompiled === undefined) return null;
-  if (!isSimpleRepresentable(decompiled, allowAlways, allowMultiple)) return null;
+  if (!isSimpleRepresentable(decompiled, allowAlways, allowMultiple, fields))
+    return null;
   return decompiled;
 }
 
-// EDITOR STATE MACHINE
-//
 // RuleEditor holds one state value: which tab is active plus the draft
 // each tab is editing. Drafts are kept independently so switching tabs
 // never destroys what the user typed; the switch action cross-syncs the
@@ -356,7 +462,12 @@ export function initEditorState(
   const decompiled = decompileVisibilityTemplate(initialRule);
   const representable =
     decompiled !== undefined &&
-    isSimpleRepresentable(decompiled, config.allowAlways, config.allowMultiple)
+    isSimpleRepresentable(
+      decompiled,
+      config.allowAlways,
+      config.allowMultiple,
+      config.fields,
+    )
       ? decompiled
       : undefined;
   return {
@@ -397,6 +508,10 @@ export function editorReduce(
         computeAdvancedStatus(state.text),
         config.allowAlways,
         config.allowMultiple,
+        // Same field set `makeInitialState` judges representability against —
+        // membership leaves need the option lists, and a narrower set here would
+        // make a rule representable at open but not after a tab round-trip.
+        config.fields,
       );
       return { ...state, mode: "simple", template: synced ?? state.template };
     }
@@ -410,13 +525,17 @@ export function editorRuleState(
   state: EditorState,
 ): RuleState {
   if (state.mode === "simple") {
-    return evaluateSimpleTemplate(state.template, primitiveFieldsOf(config.fields));
+    return evaluateSimpleTemplate(
+      state.template,
+      primitiveFieldsOf(config.fields),
+    );
   }
-  return advancedStatusToState(computeAdvancedStatus(state.text), config.allowAlways);
+  return advancedStatusToState(
+    computeAdvancedStatus(state.text),
+    config.allowAlways,
+  );
 }
 
-// KIND LABELS
-//
 // Per-kind copy for the Simple "When" dropdown. Sections pass
 // context-appropriate verbs so the same template shape reads correctly
 // in each surface.

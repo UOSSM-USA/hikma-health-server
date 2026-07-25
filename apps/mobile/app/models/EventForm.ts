@@ -50,6 +50,28 @@ namespace EventForm {
     return (DISPLAY_ONLY_FIELD_TYPES as readonly string[]).includes(field.fieldType)
   }
 
+  /**
+   * Upper bound on files per field when a `multiple` field omits `maxItems`.
+   * Keeps an unbounded upload loop out of a low-bandwidth clinic.
+   */
+  const FILE_FIELD_MAX_ITEMS_DEFAULT = 10
+
+  /**
+   * How many files a file field accepts. A field authored without these props
+   * is a single optional file. `required` is enforced separately by
+   * `getMissingRequiredFields`, which floors `minItems` at 1.
+   */
+  export function fileFieldLimits(field: {
+    multiple?: boolean
+    minItems?: number
+    maxItems?: number
+  }): { minItems: number; maxItems: number } {
+    if (field.multiple !== true) return { minItems: 0, maxItems: 1 }
+    const maxItems = Math.max(1, field.maxItems ?? FILE_FIELD_MAX_ITEMS_DEFAULT)
+    const minItems = Math.min(Math.max(0, field.minItems ?? 0), maxItems)
+    return { minItems, maxItems }
+  }
+
   export type FieldTranslation = {
     fieldId: string
     name: Language.TranslationObject
@@ -76,6 +98,11 @@ namespace EventForm {
     content?: string
     size?: "xxl" | "xl" | "lg" | "md" | "sm"
     required?: boolean
+    // File fields. Absent on older authored forms; `fileFieldLimits` fills in
+    // single-file defaults when they are.
+    multiple?: boolean
+    minItems?: number
+    maxItems?: number
   } & WithInputRules
   export type T = {
     id: string
@@ -189,7 +216,7 @@ namespace EventForm {
     data: Record<string, any>
     diagnoses: any[]
     medicines: any[]
-    fileUploads: Record<string, { fileId?: string | null } | undefined>
+    fileUploads: Record<string, { files?: { id: string }[] } | undefined>
     /**
      * Optional rule evaluation result. When present, the helper consults
      * `isVisible` (hidden fields cannot be missing) and `isRequired`
@@ -214,7 +241,10 @@ namespace EventForm {
    *   provided, else falls back to the static `field.required` flag.
    * - Diagnosis fields check `diagnoses.length`.
    * - Medicine fields check `medicines.length`.
-   * - File fields check `fileUploads[name]?.fileId`.
+   * - File fields check the uploaded count against `minItems`, floored at 1
+   *   (a required field needs at least one file whatever `minItems` says).
+   *   `minItems` on a field that is *not* required is not enforced here —
+   *   this function reports missing **required** fields only.
    * - Everything else checks `data[name]` — `undefined`, `null`, and
    *   empty / whitespace-only strings are all treated as missing.
    */
@@ -237,7 +267,10 @@ namespace EventForm {
         if (field.fieldType === "medicine") return medicines.length === 0
 
         // File uploads tracked in a separate state map
-        if (field.inputType === "file") return !fileUploads[field.name]?.fileId
+        if (field.inputType === "file") {
+          const uploadedCount = fileUploads[field.name]?.files?.length ?? 0
+          return uploadedCount < Math.max(fileFieldLimits(field).minItems, 1)
+        }
 
         // All other inputs: value lives in react-hook-form `data`
         const value = data[field.name]
@@ -267,7 +300,7 @@ namespace EventForm {
     diagnoses: ReadonlyArray<unknown>
     medicines: ReadonlyArray<unknown>
     /** Keyed by **raw** field name — matches the screen's existing usage. */
-    fileUploads: Record<string, { fileId?: string | null } | undefined>
+    fileUploads: Record<string, { files?: { id: string }[] } | undefined>
     /** Non-form data rules may reference via `{var: "ctx.<key>"}`. */
     ctx: RuleScope["ctx"]
   }
@@ -295,9 +328,11 @@ namespace EventForm {
    * - Display-only fields contribute nothing (rules on them only ever
    *   reference *other* fields).
    * - Diagnosis / medicine fields → the corresponding side-state array.
-   * - File fields → `fileUploads[field.name]?.fileId ?? null`. Other
-   *   metadata (fileName, isComplete) isn't surfaced — rules don't have
-   *   a stable contract for it yet.
+   * - File fields → the uploaded resource ids as a `string[]` (empty when
+   *   nothing is attached). Filenames and mimetypes aren't surfaced — rules
+   *   have no stable contract for them. The form-builder only offers
+   *   `primitive`-kind fields as rule subjects and file maps to `list`, so
+   *   nothing reads this today.
    * - Multi-select fields → the chosen option values as a `string[]`
    *   (split from the persisted joined string) so membership rules see a
    *   real array.
@@ -321,7 +356,7 @@ namespace EventForm {
         continue
       }
       if (field.inputType === "file") {
-        form[field.id] = fileUploads[field.name]?.fileId ?? null
+        form[field.id] = (fileUploads[field.name]?.files ?? []).map((file) => file.id)
         continue
       }
 

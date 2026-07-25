@@ -225,10 +225,13 @@ const ar: Translations = {
     description: "عرض وإدارة التاريخ الحيوي الخاص بك",
     newEntry: "إدخال جديد",
     noRecordedVitals: "لا توجد قراءات حيوية مسجلة لهذا المريض.",
+    editEntry: "تعديل",
   },
   vitalForm: {
     title: "نموذج المعلومات الحيوية",
+    editTitle: "تعديل القراءات الحيوية",
     description: "املأ معلوماتك الحيوية",
+    loadingEntry: "جارٍ تحميل السجل الحيوي…",
   },
   appointmentsList: {
     title: "قائمة المواعيد",

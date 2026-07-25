@@ -213,12 +213,17 @@ const getEventDisplay = (event: EventModel, language: string): React.JSX.Element
               </View>
             </If>
             <If condition={inputType === "file"}>
-              <FileAttachmentField
-                eventId={event.id}
-                resourceId={typeof value === "string" ? value : ""}
-                fileName={(field as { fileName?: string }).fileName ?? null}
-                mimetype={(field as { mimetype?: string }).mimetype ?? null}
-              />
+              <View gap={5}>
+                {Event.readAttachments(field).map((attachment) => (
+                  <FileAttachmentField
+                    key={attachment.id}
+                    eventId={event.id}
+                    resourceId={attachment.id}
+                    fileName={attachment.fileName}
+                    mimetype={attachment.mimetype}
+                  />
+                ))}
+              </View>
             </If>
             <If
               condition={

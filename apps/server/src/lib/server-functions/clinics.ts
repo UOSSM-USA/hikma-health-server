@@ -1,8 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import Clinic from "@/models/clinic";
+import User from "@/models/user";
 import * as Sentry from "@sentry/tanstackstart-react";
 import ClinicDepartment from "@/models/clinic-department";
-import { permissionsMiddleware } from "@/middleware/auth";
+import {
+  adminMiddleware,
+  permissionsMiddleware,
+  superAdminMiddleware,
+} from "@/middleware/auth";
 import UserClinicPermissions from "@/models/user-clinic-permissions";
 import { Result } from "@/lib/result";
 import { Logger } from "@hikmahealth/js-utils";
@@ -11,8 +16,21 @@ import { Logger } from "@hikmahealth/js-utils";
  * Get all clinics
  * @returns {Promise<Clinic.T[]>} - The list of clinics
  */
-export const getAllClinics = createServerFn({ method: "GET" }).handler(
-  async () => {
+export const getAllClinics = createServerFn({ method: "GET" })
+  .middleware([permissionsMiddleware])
+  .handler(async ({ context }) => {
+    // Returns an error Result instead of throwing: this runs in the /app layout
+    // loader, where a throw takes down every page rather than one widget.
+    if (
+      !context.userId ||
+      (context.role !== User.ROLES.ADMIN &&
+        context.role !== User.ROLES.SUPER_ADMIN)
+    ) {
+      return Result.err({
+        _tag: "Unauthorized" as const,
+        message: "Unauthorized: admin role required",
+      });
+    }
     return Sentry.startSpan({ name: "Get all clinics" }, async () => {
       try {
         const clinics = await Clinic.getAll();
@@ -26,13 +44,13 @@ export const getAllClinics = createServerFn({ method: "GET" }).handler(
         });
       }
     });
-  },
-);
+  });
 
 export const getClinicById = createServerFn({
   method: "GET",
 })
   .inputValidator((data: { id: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const clinicId = data.id;
     return await Sentry.startSpan({ name: "getClinicById" }, async () => {
@@ -67,6 +85,7 @@ export const createDepartment = createServerFn({ method: "POST" })
       can_perform_labs: boolean;
     }) => data,
   )
+  .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     const departmentId = await ClinicDepartment.API.upsert({
       clinic_id: data.clinicId,

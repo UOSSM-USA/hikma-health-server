@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import EventForm from "@/models/event-form";
 import { safeJSONParse } from "../utils";
+import { adminMiddleware } from "@/middleware/auth";
 
 /**
  * Get all event forms
@@ -8,6 +9,7 @@ import { safeJSONParse } from "../utils";
  */
 export const getEventForms = createServerFn({ method: "GET" })
   .inputValidator((data: { includeDeleted?: boolean } = {}) => data)
+  .middleware([adminMiddleware])
   .handler(
     async ({
       data,

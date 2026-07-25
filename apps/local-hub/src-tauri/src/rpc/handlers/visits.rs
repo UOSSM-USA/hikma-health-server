@@ -3,7 +3,9 @@
 use rusqlite::Connection;
 use serde::Deserialize;
 
-use super::serde_flexible::{flexible_opt_timestamp, flexible_timestamp, stringify_json};
+use super::serde_flexible::{
+    double_option, flexible_opt_timestamp, flexible_timestamp, stringify_json,
+};
 use super::{now_millis, HandlerResult};
 
 // ============================================================================
@@ -57,9 +59,59 @@ pub struct UpdateVisitCommand {
 }
 
 /// Update an existing vitals record.
+///
+/// Measurements are `Option<Option<_>>` (see `double_option`): the client omits
+/// a field it isn't changing and sends `null` to clear a reading. Collapsing
+/// those to one `None` would silently drop the clear, leaving a reading the
+/// clinician believes they deleted — and diverging from the central server,
+/// which does honour an explicit null.
 #[derive(Debug, Deserialize)]
 pub struct UpdateVitalsCommand {
     pub id: String,
+    #[serde(default, deserialize_with = "double_option")]
+    pub systolic_bp: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub diastolic_bp: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub bp_position: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub height_cm: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub weight_kg: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub bmi: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub waist_circumference_cm: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub heart_rate: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub pulse_rate: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub oxygen_saturation: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub respiratory_rate: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub temperature_celsius: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub pain_level: Option<Option<f64>>,
+    // Not double-optioned: the mobile update payload never carries metadata, so
+    // there is no clear-vs-absent case to distinguish yet. An explicit null here
+    // is still ignored rather than clearing — unlike the central server.
+    pub metadata: Option<String>,
+    #[serde(default, deserialize_with = "flexible_opt_timestamp")]
+    pub updated_at: Option<i64>,
+}
+
+/// Record a new vitals entry for a patient.
+#[derive(Debug, Deserialize)]
+pub struct CreateVitalsCommand {
+    /// Supplying this on a retry makes the insert idempotent; absent, the hub
+    /// generates one.
+    pub id: Option<String>,
+    pub patient_id: String,
+    pub visit_id: Option<String>,
+    #[serde(deserialize_with = "flexible_timestamp")]
+    pub timestamp: i64,
     pub systolic_bp: Option<f64>,
     pub diastolic_bp: Option<f64>,
     pub bp_position: Option<String>,
@@ -73,9 +125,15 @@ pub struct UpdateVitalsCommand {
     pub respiratory_rate: Option<f64>,
     pub temperature_celsius: Option<f64>,
     pub pain_level: Option<f64>,
-    pub metadata: Option<String>,
-    #[serde(default, deserialize_with = "flexible_opt_timestamp")]
-    pub updated_at: Option<i64>,
+    pub recorded_by_user_id: Option<String>,
+    #[serde(deserialize_with = "stringify_json")]
+    pub metadata: String, // JSON text
+}
+
+/// List a patient's vitals records.
+#[derive(Debug, Deserialize)]
+pub struct ListVitalsQuery {
+    pub patient_id: String,
 }
 
 // ============================================================================
@@ -253,7 +311,10 @@ pub fn handle_update_vitals(payload: &UpdateVitalsCommand, conn: &Connection) ->
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(now)];
     let mut idx = 2;
 
-    macro_rules! set_if_some {
+    // Present-but-null writes SQL NULL; absent leaves the column untouched.
+    // `Option<T>` implements ToSql as NULL for None, so the inner option can be
+    // bound directly.
+    macro_rules! set_if_present {
         ($field:ident, $col:expr) => {
             if let Some(ref val) = payload.$field {
                 sets.push(format!("{} = ?{idx}", $col));
@@ -263,20 +324,21 @@ pub fn handle_update_vitals(payload: &UpdateVitalsCommand, conn: &Connection) ->
         };
     }
 
-    set_if_some!(systolic_bp, "systolic_bp");
-    set_if_some!(diastolic_bp, "diastolic_bp");
-    set_if_some!(bp_position, "bp_position");
-    set_if_some!(height_cm, "height_cm");
-    set_if_some!(weight_kg, "weight_kg");
-    set_if_some!(bmi, "bmi");
-    set_if_some!(waist_circumference_cm, "waist_circumference_cm");
-    set_if_some!(heart_rate, "heart_rate");
-    set_if_some!(pulse_rate, "pulse_rate");
-    set_if_some!(oxygen_saturation, "oxygen_saturation");
-    set_if_some!(respiratory_rate, "respiratory_rate");
-    set_if_some!(temperature_celsius, "temperature_celsius");
-    set_if_some!(pain_level, "pain_level");
-    set_if_some!(metadata, "metadata");
+    set_if_present!(systolic_bp, "systolic_bp");
+    set_if_present!(diastolic_bp, "diastolic_bp");
+    set_if_present!(bp_position, "bp_position");
+    set_if_present!(height_cm, "height_cm");
+    set_if_present!(weight_kg, "weight_kg");
+    set_if_present!(bmi, "bmi");
+    set_if_present!(waist_circumference_cm, "waist_circumference_cm");
+    set_if_present!(heart_rate, "heart_rate");
+    set_if_present!(pulse_rate, "pulse_rate");
+    set_if_present!(oxygen_saturation, "oxygen_saturation");
+    set_if_present!(respiratory_rate, "respiratory_rate");
+    set_if_present!(temperature_celsius, "temperature_celsius");
+    set_if_present!(pain_level, "pain_level");
+    // Still single-option: absent and null both leave metadata alone.
+    set_if_present!(metadata, "metadata");
 
     let updated_at = payload.updated_at.unwrap_or(now);
     sets.push(format!("updated_at = ?{idx}"));
@@ -298,6 +360,132 @@ pub fn handle_update_vitals(payload: &UpdateVitalsCommand, conn: &Connection) ->
     }
 
     Ok(serde_json::json!({ "ok": true, "id": payload.id }))
+}
+
+/// Record a new vitals entry, returning its id. Upserts on id so a retry cannot
+/// leave two readings behind for one measurement.
+pub fn handle_create_vitals(payload: &CreateVitalsCommand, conn: &Connection) -> HandlerResult {
+    let now = now_millis();
+    let id = payload
+        .id
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+
+    conn.execute(
+        r#"INSERT INTO patient_vitals (
+            id, patient_id, visit_id, timestamp, systolic_bp, diastolic_bp,
+            bp_position, height_cm, weight_kg, bmi, waist_circumference_cm,
+            heart_rate, pulse_rate, oxygen_saturation, respiratory_rate,
+            temperature_celsius, pain_level, recorded_by_user_id, metadata,
+            is_deleted, created_at, updated_at, last_modified, server_created_at,
+            local_server_created_at, local_server_last_modified_at
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6,
+            ?7, ?8, ?9, ?10, ?11,
+            ?12, ?13, ?14, ?15,
+            ?16, ?17, ?18, ?19,
+            0, ?20, ?21, ?22, ?23,
+            ?24, ?25
+        )
+        ON CONFLICT(id) DO UPDATE SET
+            visit_id = excluded.visit_id,
+            timestamp = excluded.timestamp,
+            systolic_bp = excluded.systolic_bp,
+            diastolic_bp = excluded.diastolic_bp,
+            bp_position = excluded.bp_position,
+            height_cm = excluded.height_cm,
+            weight_kg = excluded.weight_kg,
+            bmi = excluded.bmi,
+            waist_circumference_cm = excluded.waist_circumference_cm,
+            heart_rate = excluded.heart_rate,
+            pulse_rate = excluded.pulse_rate,
+            oxygen_saturation = excluded.oxygen_saturation,
+            respiratory_rate = excluded.respiratory_rate,
+            temperature_celsius = excluded.temperature_celsius,
+            pain_level = excluded.pain_level,
+            metadata = excluded.metadata,
+            updated_at = excluded.updated_at,
+            local_server_last_modified_at = excluded.local_server_last_modified_at"#,
+        rusqlite::params![
+            id,
+            payload.patient_id,
+            payload.visit_id,
+            payload.timestamp,
+            payload.systolic_bp,
+            payload.diastolic_bp,
+            payload.bp_position,
+            payload.height_cm,
+            payload.weight_kg,
+            payload.bmi,
+            payload.waist_circumference_cm,
+            payload.heart_rate,
+            payload.pulse_rate,
+            payload.oxygen_saturation,
+            payload.respiratory_rate,
+            payload.temperature_celsius,
+            payload.pain_level,
+            payload.recorded_by_user_id,
+            payload.metadata,
+            now,
+            now,
+            now,
+            now,
+            now,
+            now,
+        ],
+    )?;
+
+    Ok(serde_json::json!({ "id": id }))
+}
+
+/// List a patient's vitals, newest first. Absent readings are emitted as explicit
+/// nulls — a missing key reads as "not recorded" and vanishes from the chart — and
+/// the excluded rows are exactly those `handle_update_vitals` refuses.
+pub fn handle_list_vitals(payload: &ListVitalsQuery, conn: &Connection) -> HandlerResult {
+    let mut stmt = conn.prepare(
+        "SELECT id, patient_id, visit_id, timestamp, systolic_bp, diastolic_bp,
+                bp_position, height_cm, weight_kg, bmi, waist_circumference_cm,
+                heart_rate, pulse_rate, oxygen_saturation, respiratory_rate,
+                temperature_celsius, pain_level, recorded_by_user_id, metadata,
+                is_deleted, created_at, updated_at, deleted_at
+         FROM patient_vitals
+         WHERE patient_id = ?1 AND is_deleted = 0 AND local_server_deleted_at IS NULL
+         ORDER BY timestamp DESC",
+    )?;
+
+    let rows = stmt.query_map(rusqlite::params![payload.patient_id], |row| {
+        let metadata: String = row.get(18)?;
+        Ok(serde_json::json!({
+            "id": row.get::<_, String>(0)?,
+            "patient_id": row.get::<_, String>(1)?,
+            "visit_id": row.get::<_, Option<String>>(2)?,
+            "timestamp": row.get::<_, i64>(3)?,
+            "systolic_bp": row.get::<_, Option<f64>>(4)?,
+            "diastolic_bp": row.get::<_, Option<f64>>(5)?,
+            "bp_position": row.get::<_, Option<String>>(6)?,
+            "height_cm": row.get::<_, Option<f64>>(7)?,
+            "weight_kg": row.get::<_, Option<f64>>(8)?,
+            "bmi": row.get::<_, Option<f64>>(9)?,
+            "waist_circumference_cm": row.get::<_, Option<f64>>(10)?,
+            "heart_rate": row.get::<_, Option<f64>>(11)?,
+            "pulse_rate": row.get::<_, Option<f64>>(12)?,
+            "oxygen_saturation": row.get::<_, Option<f64>>(13)?,
+            "respiratory_rate": row.get::<_, Option<f64>>(14)?,
+            "temperature_celsius": row.get::<_, Option<f64>>(15)?,
+            "pain_level": row.get::<_, Option<f64>>(16)?,
+            "recorded_by_user_id": row.get::<_, Option<String>>(17)?,
+            // Stored as JSON text, but the client expects an object.
+            "metadata": serde_json::from_str::<serde_json::Value>(&metadata)
+                .unwrap_or_else(|_| serde_json::json!({})),
+            "is_deleted": row.get::<_, i64>(19)? != 0,
+            "created_at": row.get::<_, i64>(20)?,
+            "updated_at": row.get::<_, i64>(21)?,
+            "deleted_at": row.get::<_, Option<i64>>(22)?,
+        }))
+    })?;
+
+    let data: Vec<serde_json::Value> = rows.filter_map(|r| r.ok()).collect();
+    Ok(serde_json::json!({ "data": data }))
 }
 
 #[cfg(test)]
@@ -618,50 +806,12 @@ mod tests {
         .unwrap();
     }
 
-    #[test]
-    fn update_vitals_changes_fields() {
-        let conn = setup_test_db();
-        insert_test_patient(&conn, "p1");
-        insert_test_vitals(&conn, "vit1", "p1");
-
-        let cmd = UpdateVitalsCommand {
-            id: "vit1".to_string(),
-            systolic_bp: Some(120.0),
-            diastolic_bp: Some(80.0),
-            bp_position: Some("sitting".to_string()),
-            height_cm: None,
-            weight_kg: Some(75.5),
-            bmi: None,
-            waist_circumference_cm: None,
-            heart_rate: None,
-            pulse_rate: None,
-            oxygen_saturation: None,
-            respiratory_rate: None,
-            temperature_celsius: None,
-            pain_level: None,
-            metadata: None,
-            updated_at: None,
-        };
-        let result = handle_update_vitals(&cmd, &conn).unwrap();
-        assert_eq!(result["ok"], true);
-
-        // Verify values in DB
-        let bp: f64 = conn
-            .query_row(
-                "SELECT systolic_bp FROM patient_vitals WHERE id = 'vit1'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert!((bp - 120.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn update_vitals_not_found() {
-        let conn = setup_test_db();
-        let cmd = UpdateVitalsCommand {
-            id: "ghost".to_string(),
-            systolic_bp: Some(120.0),
+    /// An update that touches nothing. Tests set only the fields under test, so
+    /// what a case is asserting stays visible.
+    fn empty_update_vitals_cmd(id: &str) -> UpdateVitalsCommand {
+        UpdateVitalsCommand {
+            id: id.to_string(),
+            systolic_bp: None,
             diastolic_bp: None,
             bp_position: None,
             height_cm: None,
@@ -676,8 +826,321 @@ mod tests {
             pain_level: None,
             metadata: None,
             updated_at: None,
+        }
+    }
+
+    fn read_opt_f64(conn: &Connection, col: &str, id: &str) -> Option<f64> {
+        conn.query_row(
+            &format!("SELECT {col} FROM patient_vitals WHERE id = ?1"),
+            rusqlite::params![id],
+            |r| r.get::<_, Option<f64>>(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn update_vitals_changes_fields() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_vitals(&conn, "vit1", "p1");
+
+        let cmd = UpdateVitalsCommand {
+            systolic_bp: Some(Some(120.0)),
+            diastolic_bp: Some(Some(80.0)),
+            bp_position: Some(Some("sitting".to_string())),
+            weight_kg: Some(Some(75.5)),
+            ..empty_update_vitals_cmd("vit1")
+        };
+        let result = handle_update_vitals(&cmd, &conn).unwrap();
+        assert_eq!(result["ok"], true);
+
+        assert_eq!(read_opt_f64(&conn, "systolic_bp", "vit1"), Some(120.0));
+    }
+
+    #[test]
+    fn update_vitals_not_found() {
+        let conn = setup_test_db();
+        let cmd = UpdateVitalsCommand {
+            systolic_bp: Some(Some(120.0)),
+            ..empty_update_vitals_cmd("ghost")
         };
         assert!(handle_update_vitals(&cmd, &conn).is_err());
+    }
+
+    /// An explicit null must clear the reading. A clinician deleting a mistyped
+    /// value has to see it gone — dropping the clear leaves the wrong number in
+    /// the record while reporting success.
+    #[test]
+    fn update_vitals_explicit_null_clears_the_value() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_vitals(&conn, "vit1", "p1");
+
+        handle_update_vitals(
+            &UpdateVitalsCommand {
+                systolic_bp: Some(Some(120.0)),
+                ..empty_update_vitals_cmd("vit1")
+            },
+            &conn,
+        )
+        .unwrap();
+        assert_eq!(read_opt_f64(&conn, "systolic_bp", "vit1"), Some(120.0));
+
+        handle_update_vitals(
+            &UpdateVitalsCommand {
+                systolic_bp: Some(None),
+                ..empty_update_vitals_cmd("vit1")
+            },
+            &conn,
+        )
+        .unwrap();
+        assert_eq!(read_opt_f64(&conn, "systolic_bp", "vit1"), None);
+    }
+
+    /// An omitted field is not a clear — the stored reading survives.
+    #[test]
+    fn update_vitals_absent_field_leaves_value_untouched() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_vitals(&conn, "vit1", "p1");
+
+        handle_update_vitals(
+            &UpdateVitalsCommand {
+                systolic_bp: Some(Some(120.0)),
+                diastolic_bp: Some(Some(80.0)),
+                ..empty_update_vitals_cmd("vit1")
+            },
+            &conn,
+        )
+        .unwrap();
+
+        // Only diastolic is mentioned; systolic must be left alone.
+        handle_update_vitals(
+            &UpdateVitalsCommand {
+                diastolic_bp: Some(Some(85.0)),
+                ..empty_update_vitals_cmd("vit1")
+            },
+            &conn,
+        )
+        .unwrap();
+
+        assert_eq!(read_opt_f64(&conn, "systolic_bp", "vit1"), Some(120.0));
+        assert_eq!(read_opt_f64(&conn, "diastolic_bp", "vit1"), Some(85.0));
+    }
+
+    /// The wire-format half of the same contract: the JSON the mobile client
+    /// actually sends must deserialize into the three distinct states, since
+    /// that is where a plain `Option` silently collapses null into absent.
+    #[test]
+    fn update_vitals_payload_distinguishes_absent_from_null() {
+        let absent: UpdateVitalsCommand =
+            serde_json::from_value(serde_json::json!({ "id": "vit1" })).unwrap();
+        assert_eq!(absent.systolic_bp, None);
+
+        let cleared: UpdateVitalsCommand =
+            serde_json::from_value(serde_json::json!({ "id": "vit1", "systolic_bp": null }))
+                .unwrap();
+        assert_eq!(cleared.systolic_bp, Some(None));
+
+        let set: UpdateVitalsCommand =
+            serde_json::from_value(serde_json::json!({ "id": "vit1", "systolic_bp": 118.0 }))
+                .unwrap();
+        assert_eq!(set.systolic_bp, Some(Some(118.0)));
+    }
+
+    fn make_create_vitals_cmd(id: Option<&str>, patient_id: &str) -> CreateVitalsCommand {
+        CreateVitalsCommand {
+            id: id.map(|s| s.to_string()),
+            patient_id: patient_id.to_string(),
+            visit_id: None,
+            timestamp: 2000,
+            systolic_bp: Some(120.0),
+            diastolic_bp: Some(80.0),
+            bp_position: Some("sitting".to_string()),
+            height_cm: None,
+            weight_kg: None,
+            bmi: None,
+            waist_circumference_cm: None,
+            heart_rate: None,
+            pulse_rate: Some(72.0),
+            oxygen_saturation: None,
+            respiratory_rate: None,
+            temperature_celsius: None,
+            pain_level: None,
+            recorded_by_user_id: Some("user-1".to_string()),
+            metadata: "{}".to_string(),
+        }
+    }
+
+    #[test]
+    fn create_vitals_inserts_and_is_readable_by_list() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+
+        let result = handle_create_vitals(&make_create_vitals_cmd(None, "p1"), &conn).unwrap();
+        let id = result["id"].as_str().unwrap();
+        assert!(!id.is_empty());
+
+        let listed = handle_list_vitals(
+            &ListVitalsQuery {
+                patient_id: "p1".to_string(),
+            },
+            &conn,
+        )
+        .unwrap();
+        let data = listed["data"].as_array().unwrap();
+
+        assert_eq!(data.len(), 1);
+        assert_eq!(data[0]["id"], id);
+        assert_eq!(data[0]["systolic_bp"], 120.0);
+        assert_eq!(data[0]["pulse_rate"], 72.0);
+        assert_eq!(data[0]["recorded_by_user_id"], "user-1");
+    }
+
+    #[test]
+    fn create_vitals_with_repeated_id_does_not_duplicate_the_reading() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+
+        handle_create_vitals(&make_create_vitals_cmd(Some("vit1"), "p1"), &conn).unwrap();
+        let mut retry = make_create_vitals_cmd(Some("vit1"), "p1");
+        retry.systolic_bp = Some(135.0);
+        handle_create_vitals(&retry, &conn).unwrap();
+
+        let listed = handle_list_vitals(
+            &ListVitalsQuery {
+                patient_id: "p1".to_string(),
+            },
+            &conn,
+        )
+        .unwrap();
+        let data = listed["data"].as_array().unwrap();
+
+        assert_eq!(data.len(), 1);
+        assert_eq!(data[0]["systolic_bp"], 135.0);
+    }
+
+    #[test]
+    fn list_vitals_returns_patient_rows_newest_first() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_vitals(&conn, "older", "p1");
+        insert_test_vitals(&conn, "newer", "p1");
+        conn.execute(
+            "UPDATE patient_vitals SET timestamp = 5000 WHERE id = 'newer'",
+            [],
+        )
+        .unwrap();
+
+        let query = ListVitalsQuery {
+            patient_id: "p1".to_string(),
+        };
+        let result = handle_list_vitals(&query, &conn).unwrap();
+        let data = result["data"].as_array().unwrap();
+
+        assert_eq!(data.len(), 2);
+        assert_eq!(data[0]["id"], "newer");
+        assert_eq!(data[1]["id"], "older");
+    }
+
+    #[test]
+    fn list_vitals_excludes_other_patients_and_deleted_rows() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_patient(&conn, "p2");
+        insert_test_vitals(&conn, "mine", "p1");
+        insert_test_vitals(&conn, "theirs", "p2");
+        insert_test_vitals(&conn, "soft_deleted", "p1");
+        insert_test_vitals(&conn, "hub_deleted", "p1");
+        conn.execute(
+            "UPDATE patient_vitals SET is_deleted = 1 WHERE id = 'soft_deleted'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE patient_vitals SET local_server_deleted_at = 1 WHERE id = 'hub_deleted'",
+            [],
+        )
+        .unwrap();
+
+        let query = ListVitalsQuery {
+            patient_id: "p1".to_string(),
+        };
+        let result = handle_list_vitals(&query, &conn).unwrap();
+        let data = result["data"].as_array().unwrap();
+
+        assert_eq!(data.len(), 1);
+        assert_eq!(data[0]["id"], "mine");
+    }
+
+    #[test]
+    fn list_vitals_returns_empty_for_unknown_patient() {
+        let conn = setup_test_db();
+        let query = ListVitalsQuery {
+            patient_id: "ghost".to_string(),
+        };
+        let result = handle_list_vitals(&query, &conn).unwrap();
+        assert_eq!(result["data"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn list_vitals_emits_every_field_the_client_decodes() {
+        // A missing key reads as "not recorded", so absent readings must arrive
+        // as explicit nulls.
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_vitals(&conn, "vit1", "p1");
+        conn.execute(
+            "UPDATE patient_vitals SET systolic_bp = 120, bp_position = 'sitting',
+                 metadata = '{\"source\":\"mobile\"}' WHERE id = 'vit1'",
+            [],
+        )
+        .unwrap();
+
+        let query = ListVitalsQuery {
+            patient_id: "p1".to_string(),
+        };
+        let result = handle_list_vitals(&query, &conn).unwrap();
+        let row = &result["data"][0];
+
+        for key in [
+            "id",
+            "patient_id",
+            "visit_id",
+            "timestamp",
+            "systolic_bp",
+            "diastolic_bp",
+            "bp_position",
+            "height_cm",
+            "weight_kg",
+            "bmi",
+            "waist_circumference_cm",
+            "heart_rate",
+            "pulse_rate",
+            "oxygen_saturation",
+            "respiratory_rate",
+            "temperature_celsius",
+            "pain_level",
+            "recorded_by_user_id",
+            "metadata",
+            "is_deleted",
+            "created_at",
+            "updated_at",
+            "deleted_at",
+        ] {
+            assert!(
+                row.get(key).is_some(),
+                "field '{}' missing from vitals.list payload",
+                key
+            );
+        }
+
+        assert_eq!(row["systolic_bp"], 120.0);
+        assert!(row["diastolic_bp"].is_null());
+        assert_eq!(row["bp_position"], "sitting");
+        // stored as JSON text, but must decode as an object
+        assert_eq!(row["metadata"]["source"], "mobile");
+        assert_eq!(row["is_deleted"], false);
     }
 
     use proptest::prelude::*;

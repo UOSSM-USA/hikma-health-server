@@ -197,6 +197,131 @@ describe("FieldLogicPanel — multiple AND-ed visibility conditions", () => {
   });
 });
 
+describe("FieldLogicPanel — OR connector", () => {
+  const orRule = {
+    or: [
+      { ">=": [{ var: "form.age" }, 18] },
+      { "==": [{ var: "form.consent" }, true] },
+    ],
+  };
+
+  it("opens an OR group in Simple mode with both rows", () => {
+    render(
+      <FieldLogicPanel
+        form={sampleForm}
+        fieldId="this-field"
+        initial={{ visibleIf: orRule }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.queryByText(/authored in Advanced mode/i)).toBeNull();
+    expect(screen.getByTestId("condition-row-0")).toBeDefined();
+    expect(screen.getByTestId("condition-row-1")).toBeDefined();
+    // The separator between rows reads the connector, not a hardcoded "and".
+    expect(screen.getByTestId("condition-separator-1").textContent).toBe("or");
+  });
+
+  it("saves an unedited OR rule unchanged", () => {
+    const onSave = vi.fn();
+    render(
+      <FieldLogicPanel
+        form={sampleForm}
+        fieldId="this-field"
+        initial={{ visibleIf: orRule }}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    fireEvent.click(screen.getByRole("button", { name: /Save visibility/i }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0]?.[0].visibleIf).toEqual(orRule);
+  });
+
+  it("offers the connector picker only once there are two conditions", () => {
+    render(
+      <FieldLogicPanel
+        form={sampleForm}
+        fieldId="this-field"
+        initial={{ visibleIf: { ">=": [{ var: "form.age" }, 18] } }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.queryByTestId("rule-connector")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Add condition/i }));
+    expect(screen.getByTestId("rule-connector")).toBeDefined();
+  });
+});
+
+describe("FieldLogicPanel — membership leaf on a field with no option list", () => {
+  // `decompileEqGroup` is field-blind, so a same-field `or`-of-`==` collapses to
+  // EqualsAny even on a free-text field. That rule is a valid "is one of", but
+  // Simple mode has only an option picker to offer — which would render empty
+  // and falsely claim the values can never match. It belongs in Advanced.
+  const orOfEq = {
+    or: [
+      { "==": [{ var: "form.notes" }, "a"] },
+      { "==": [{ var: "form.notes" }, "b"] },
+    ],
+  };
+
+  it("keeps it in Advanced rather than offering an empty option picker", () => {
+    render(
+      <FieldLogicPanel
+        form={textForm}
+        fieldId="this-field"
+        initial={{ visibleIf: orOfEq }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.getByText(/authored in Advanced mode/i)).toBeDefined();
+    expect(screen.queryByTestId("rule-options")).toBeNull();
+    // The values match at runtime — never tell the author otherwise.
+    expect(screen.queryByTestId("rule-option-stale")).toBeNull();
+  });
+
+  it("still opens in Simple when the field is option-backed but emptied", () => {
+    // Options deleted from an option-backed field is the genuine stale case,
+    // and stays in Simple so the author can see and drop the orphaned tokens.
+    const emptied: LogicField[] = [
+      {
+        id: "langs",
+        displayName: "Languages",
+        kind: "primitive",
+        primitiveKind: "string",
+        multiValue: true,
+        options: [],
+      },
+      {
+        id: "this-field",
+        displayName: "Current",
+        kind: "primitive",
+        primitiveKind: "string",
+      },
+    ];
+    render(
+      <FieldLogicPanel
+        form={emptied}
+        fieldId="this-field"
+        initial={{
+          visibleIf: {
+            or: [
+              { in: ["en", { var: "form.langs" }] },
+              { in: ["sw", { var: "form.langs" }] },
+            ],
+          },
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.queryByText(/authored in Advanced mode/i)).toBeNull();
+    expect(screen.getByTestId("rule-option-stale")).toBeDefined();
+  });
+});
+
 describe("FieldLogicPanel — simple mode field-reference guard", () => {
   it("blocks save when the form has no other primitive fields to reference", () => {
     const onSave = vi.fn();
@@ -286,10 +411,12 @@ describe("FieldLogicPanel — validators section", () => {
     openPanel();
     expect(screen.getByText("Validator 1")).toBeDefined();
     expect(
-      (screen.getByDisplayValue("Must be adult with consent") as HTMLInputElement),
+      screen.getByDisplayValue(
+        "Must be adult with consent",
+      ) as HTMLInputElement,
     ).toBeDefined();
     expect(
-      (screen.getByDisplayValue("adult_consent") as HTMLInputElement),
+      screen.getByDisplayValue("adult_consent") as HTMLInputElement,
     ).toBeDefined();
   });
 
@@ -335,9 +462,11 @@ describe("FieldLogicPanel — validators section", () => {
     fireEvent.change(messageInput, { target: { value: "Required" } });
 
     expect(
-      (screen.getByRole("button", {
-        name: /Save validators/i,
-      }) as HTMLButtonElement).disabled,
+      (
+        screen.getByRole("button", {
+          name: /Save validators/i,
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
   });
 
@@ -367,9 +496,11 @@ describe("FieldLogicPanel — validators section", () => {
     expect(screen.getByText(/Unknown operator/i)).toBeDefined();
 
     expect(
-      (screen.getByRole("button", {
-        name: /Save validators/i,
-      }) as HTMLButtonElement).disabled,
+      (
+        screen.getByRole("button", {
+          name: /Save validators/i,
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
   });
 
@@ -394,10 +525,9 @@ describe("FieldLogicPanel — validators section", () => {
       ),
       { target: { value: "Adults only" } },
     );
-    fireEvent.change(
-      screen.getByPlaceholderText(/machine-readable/i),
-      { target: { value: "adult_required" } },
-    );
+    fireEvent.change(screen.getByPlaceholderText(/machine-readable/i), {
+      target: { value: "adult_required" },
+    });
 
     const rule = { ">=": [{ var: "form.age" }, 18] };
     fireEvent.change(
@@ -446,14 +576,10 @@ describe("FieldLogicPanel — validators section", () => {
     );
     openPanel();
     expect(screen.getByText("Validator 1")).toBeDefined();
-    fireEvent.click(
-      screen.getByRole("button", { name: /Remove validator/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Remove validator/i }));
     expect(screen.queryByText("Validator 1")).toBeNull();
     // Empty draft list is a legitimate state — Save should be enabled.
-    fireEvent.click(
-      screen.getByRole("button", { name: /Save validators/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Save validators/i }));
     expect(onSave).toHaveBeenCalledTimes(1);
     // Empty array maps to undefined so the field's `validators` slot is
     // cleared rather than stored as `[]`.
@@ -475,7 +601,7 @@ describe("FieldLogicPanel — validators section", () => {
           validators: [
             {
               id: "v1",
-              rule: { "==": [{ var: "form.age" }, "" ] },
+              rule: { "==": [{ var: "form.age" }, ""] },
               message: "Required",
             },
           ],
@@ -510,9 +636,7 @@ describe("FieldLogicPanel — validators section", () => {
     openPanel();
     // The "Validators" label still renders (via the disabled-state
     // placeholder), but the actual editor (and its Add button) does not.
-    expect(
-      screen.queryByRole("button", { name: /Add validator/i }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add validator/i })).toBeNull();
   });
 });
 
@@ -946,9 +1070,7 @@ describe("AdvancedRuleEditor — validation gating", () => {
       target: { value: JSON.stringify(rule) },
     });
     expect(screen.getByText("Valid")).toBeDefined();
-    fireEvent.click(
-      screen.getByRole("button", { name: /Save visibility/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Save visibility/i }));
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave).toHaveBeenCalledWith(rule);
   });
@@ -965,9 +1087,7 @@ describe("AdvancedRuleEditor — validation gating", () => {
       target: { value: "" },
     });
     expect(screen.getByText(/Empty/i)).toBeDefined();
-    fireEvent.click(
-      screen.getByRole("button", { name: /Save visibility/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Save visibility/i }));
     expect(onSave).toHaveBeenCalledWith(undefined);
   });
 });
@@ -987,9 +1107,7 @@ describe("syncTextFromSimple", () => {
       rule: { "==": [{ var: "form.age" }, 18] },
       isValid: true,
     };
-    expect(syncTextFromSimple(state)).toBe(
-      JSON.stringify(state.rule, null, 2),
-    );
+    expect(syncTextFromSimple(state)).toBe(JSON.stringify(state.rule, null, 2));
   });
 
   it("returns the empty string for a valid 'Always' template (rule is undefined)", () => {
@@ -1013,7 +1131,7 @@ describe("syncTemplateFromAdvanced", () => {
       kind: "ok",
       parsed: { "==": [{ var: "form.age" }, 18] },
     };
-    const result = syncTemplateFromAdvanced(status, true, true);
+    const result = syncTemplateFromAdvanced(status, true, true, []);
     expect(result).toEqual({
       TAG: "Conditions",
       connector: "and",
@@ -1031,7 +1149,7 @@ describe("syncTemplateFromAdvanced", () => {
         ],
       },
     };
-    expect(syncTemplateFromAdvanced(status, true, true)).toEqual({
+    expect(syncTemplateFromAdvanced(status, true, true, [])).toEqual({
       TAG: "Conditions",
       connector: "and",
       conditions: [
@@ -1053,7 +1171,7 @@ describe("syncTemplateFromAdvanced", () => {
         ],
       },
     };
-    expect(syncTemplateFromAdvanced(status, false, false)).toBeNull();
+    expect(syncTemplateFromAdvanced(status, false, false, [])).toBeNull();
   });
 
   it("returns null on a malformed JSON status (skip-sync)", () => {
@@ -1061,7 +1179,7 @@ describe("syncTemplateFromAdvanced", () => {
       kind: "parseError",
       message: "Unexpected token",
     };
-    expect(syncTemplateFromAdvanced(status, true, true)).toBeNull();
+    expect(syncTemplateFromAdvanced(status, true, true, [])).toBeNull();
   });
 
   it("returns null on a non-template rule (preserves the simple draft)", () => {
@@ -1072,12 +1190,12 @@ describe("syncTemplateFromAdvanced", () => {
       kind: "ok",
       parsed: { if: [{ ">=": [{ var: "form.age" }, 18] }, true, false] },
     };
-    expect(syncTemplateFromAdvanced(status, true, true)).toBeNull();
+    expect(syncTemplateFromAdvanced(status, true, true, [])).toBeNull();
   });
 
   it("snaps to 'Always' on empty advanced JSON when the section allows it", () => {
     const status: ValidationStatus = { kind: "empty" };
-    expect(syncTemplateFromAdvanced(status, true, true)).toBe("Always");
+    expect(syncTemplateFromAdvanced(status, true, true, [])).toBe("Always");
   });
 
   it("returns null on empty advanced JSON when the section disallows 'Always'", () => {
@@ -1085,7 +1203,7 @@ describe("syncTemplateFromAdvanced", () => {
     // empty advanced textarea can't promote the simple side to "Always".
     // Keep the existing simple draft.
     const status: ValidationStatus = { kind: "empty" };
-    expect(syncTemplateFromAdvanced(status, false, false)).toBeNull();
+    expect(syncTemplateFromAdvanced(status, false, false, [])).toBeNull();
   });
 });
 
@@ -1102,7 +1220,12 @@ const multiForm: LogicField[] = [
       { value: "ar", label: "Arabic" },
     ],
   },
-  { id: "this-field", displayName: "Current", kind: "primitive", primitiveKind: "string" },
+  {
+    id: "this-field",
+    displayName: "Current",
+    kind: "primitive",
+    primitiveKind: "string",
+  },
 ];
 
 describe("FieldLogicPanel — multi-select membership", () => {
@@ -1145,6 +1268,217 @@ describe("FieldLogicPanel — multi-select membership", () => {
     expect(screen.getByText("Swahili")).toBeDefined();
     expect(screen.getByText("Arabic")).toBeDefined();
   });
+
+  // A rule outlives the option it names: rename or delete "fr" and the stored
+  // token still compiles but can never match. It gets its own row so it isn't
+  // invisible while Save stays enabled.
+  it("surfaces a multi-pick token the field no longer offers", () => {
+    render(
+      <FieldLogicPanel
+        form={multiForm}
+        fieldId="this-field"
+        initial={{
+          visibleIf: {
+            or: [
+              { in: ["en", { var: "form.langs" }] },
+              { in: ["fr", { var: "form.langs" }] },
+            ],
+          },
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    // Rendered as its own checked row, so unchecking is how it's dropped.
+    expect(screen.getByTestId("rule-option-fr")).toBeDefined();
+    expect(screen.getByTestId("rule-option-stale")).toBeDefined();
+  });
+
+  it("leaves a fully-resolvable multi-pick unmarked", () => {
+    render(
+      <FieldLogicPanel
+        form={multiForm}
+        fieldId="this-field"
+        initial={{
+          visibleIf: {
+            or: [
+              { in: ["en", { var: "form.langs" }] },
+              { in: ["sw", { var: "form.langs" }] },
+            ],
+          },
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.queryByTestId("rule-option-stale")).toBeNull();
+  });
+
+  // `unknownOptionTokens` stays silent on a field with no options, but the
+  // widget knows more: tokens present against zero options is unambiguous.
+  it("surfaces stored tokens when every option has been deleted", () => {
+    const emptied: LogicField[] = [
+      {
+        id: "langs",
+        displayName: "Languages",
+        kind: "primitive",
+        primitiveKind: "string",
+        multiValue: true,
+        options: [],
+      },
+      {
+        id: "this-field",
+        displayName: "Current",
+        kind: "primitive",
+        primitiveKind: "string",
+      },
+    ];
+    render(
+      <FieldLogicPanel
+        form={emptied}
+        fieldId="this-field"
+        initial={{
+          visibleIf: {
+            or: [
+              { in: ["en", { var: "form.langs" }] },
+              { in: ["sw", { var: "form.langs" }] },
+            ],
+          },
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.getByTestId("rule-option-stale")).toBeDefined();
+  });
+
+  it("surfaces a single stored token when every option has been deleted", () => {
+    const emptied: LogicField[] = [
+      {
+        id: "langs",
+        displayName: "Languages",
+        kind: "primitive",
+        primitiveKind: "string",
+        multiValue: true,
+        options: [],
+      },
+      {
+        id: "this-field",
+        displayName: "Current",
+        kind: "primitive",
+        primitiveKind: "string",
+      },
+    ];
+    render(
+      <FieldLogicPanel
+        form={emptied}
+        fieldId="this-field"
+        initial={{ visibleIf: { in: ["en", { var: "form.langs" }] } }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.getByTestId("rule-option-stale")).toBeDefined();
+  });
+
+  it("surfaces a single-pick token the field no longer offers", () => {
+    render(
+      <FieldLogicPanel
+        form={multiForm}
+        fieldId="this-field"
+        initial={{ visibleIf: { in: ["fr", { var: "form.langs" }] } }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.getByTestId("rule-option-stale")).toBeDefined();
+    // The trigger shows the token, not the "Pick an option" placeholder.
+    expect(screen.getByTestId("rule-option").textContent).toMatch(/fr/);
+  });
+});
+
+// A single-valued option field (registration `select`, event single-select).
+// It gets the same membership rows as a checkbox, but they are stored as
+// equality — `in` would substring-match against the single stored string.
+const selectForm: LogicField[] = [
+  {
+    id: "city",
+    displayName: "City",
+    kind: "primitive",
+    primitiveKind: "string",
+    options: [
+      { value: "dar", label: "Dar es Salaam" },
+      { value: "arusha", label: "Arusha" },
+    ],
+  },
+  {
+    id: "this-field",
+    displayName: "Current",
+    kind: "primitive",
+    primitiveKind: "string",
+  },
+];
+
+describe("FieldLogicPanel — single-valued option fields", () => {
+  it("seeds an option picker for a stored `==` rule instead of a free-text box", () => {
+    render(
+      <FieldLogicPanel
+        form={selectForm}
+        fieldId="this-field"
+        initial={{ visibleIf: { "==": [{ var: "form.city" }, "dar"] } }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.queryByText(/authored in Advanced mode/i)).toBeNull();
+    expect(screen.getByTestId("rule-option")).toBeDefined();
+  });
+
+  it("seeds the multi-option picker for a stored `or`-of-`==` rule", () => {
+    render(
+      <FieldLogicPanel
+        form={selectForm}
+        fieldId="this-field"
+        initial={{
+          visibleIf: {
+            or: [
+              { "==": [{ var: "form.city" }, "dar"] },
+              { "==": [{ var: "form.city" }, "arusha"] },
+            ],
+          },
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.queryByText(/authored in Advanced mode/i)).toBeNull();
+    expect(screen.getByTestId("rule-options")).toBeDefined();
+    expect(screen.getByText("Dar es Salaam")).toBeDefined();
+    expect(screen.getByText("Arusha")).toBeDefined();
+  });
+
+  // The validator section renders a single ConditionRow with no add/remove,
+  // a separate branch from the visibility list — it needs its own coverage.
+  it("seeds an option picker in the single-row validator section", () => {
+    render(
+      <FieldLogicPanel
+        form={selectForm}
+        fieldId="this-field"
+        initial={{
+          validators: [
+            {
+              id: "v1",
+              rule: { "==": [{ var: "form.city" }, "dar"] },
+              message: "Must be in Dar",
+            },
+          ],
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Logic & Validation"));
+    expect(screen.getByTestId("rule-option")).toBeDefined();
+  });
 });
 
 const textForm: LogicField[] = [
@@ -1155,7 +1489,12 @@ const textForm: LogicField[] = [
     primitiveKind: "string",
     freeText: true,
   },
-  { id: "this-field", displayName: "Current", kind: "primitive", primitiveKind: "string" },
+  {
+    id: "this-field",
+    displayName: "Current",
+    kind: "primitive",
+    primitiveKind: "string",
+  },
 ];
 
 describe("FieldLogicPanel — length validators", () => {
@@ -1182,9 +1521,9 @@ describe("FieldLogicPanel — length validators", () => {
     expect(screen.getByText("Validator 1")).toBeDefined();
     // A single length leaf decompiles to Simple mode (no Radix Tabs switch
     // needed), so the character-count input renders populated.
-    expect((screen.getByTestId("rule-length-value") as HTMLInputElement).value).toBe(
-      "10",
-    );
+    expect(
+      (screen.getByTestId("rule-length-value") as HTMLInputElement).value,
+    ).toBe("10");
     expect(
       screen.getByDisplayValue("Notes must be longer than 10 characters"),
     ).toBeDefined();

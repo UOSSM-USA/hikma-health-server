@@ -229,10 +229,13 @@ const en = {
     description: "View and manage your vital history",
     newEntry: "New Entry",
     noRecordedVitals: "No recorded vitals for this patient.",
+    editEntry: "Edit",
   },
   vitalForm: {
     title: "Vital Form",
+    editTitle: "Edit Vitals",
     description: "Fill out your vital information",
+    loadingEntry: "Loading vitals entry…",
   },
   appointmentsList: {
     title: "Appointments List",

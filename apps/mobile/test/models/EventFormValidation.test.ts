@@ -263,35 +263,65 @@ describe("EventForm.getMissingRequiredFields", () => {
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual(["lab_report"])
   })
 
-  it("flags a required file field when fileId is undefined", () => {
+  it("flags a required file field when files is undefined", () => {
     const ctx: EventForm.RequiredFieldContext = {
       ...emptyCtx,
       formFields: [
         makeField({ name: "lab_report", required: true, fieldType: "file", inputType: "file" }),
       ],
-      fileUploads: { lab_report: { fileId: undefined } },
+      fileUploads: { lab_report: { files: undefined } },
     }
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual(["lab_report"])
   })
 
-  it("flags a required file field when fileId is empty string", () => {
+  it("flags a required file field when files is empty", () => {
     const ctx: EventForm.RequiredFieldContext = {
       ...emptyCtx,
       formFields: [
         makeField({ name: "lab_report", required: true, fieldType: "file", inputType: "file" }),
       ],
-      fileUploads: { lab_report: { fileId: "" } },
+      fileUploads: { lab_report: { files: [] } },
     }
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual(["lab_report"])
   })
 
-  it("passes a required file field when fileId is present", () => {
+  it("passes a required file field when a file is attached", () => {
     const ctx: EventForm.RequiredFieldContext = {
       ...emptyCtx,
       formFields: [
         makeField({ name: "lab_report", required: true, fieldType: "file", inputType: "file" }),
       ],
-      fileUploads: { lab_report: { fileId: "abc-123" } },
+      fileUploads: { lab_report: { files: [{ id: "abc-123" }] } },
+    }
+    expect(EventForm.getMissingRequiredFields(ctx)).toEqual([])
+  })
+
+  it("flags a multi-file field holding fewer files than minItems", () => {
+    const field = makeField({
+      name: "lab_report",
+      required: true,
+      fieldType: "file",
+      inputType: "file",
+    })
+    const ctx: EventForm.RequiredFieldContext = {
+      ...emptyCtx,
+      formFields: [{ ...field, multiple: true, minItems: 2, maxItems: 5 }],
+      fileUploads: { lab_report: { files: [{ id: "abc-123" }] } },
+    }
+    expect(EventForm.getMissingRequiredFields(ctx)).toEqual(["lab_report"])
+  })
+
+  it("passes a multi-file field once minItems is satisfied", () => {
+    const field = makeField({
+      name: "lab_report",
+      required: true,
+      fieldType: "file",
+      inputType: "file",
+    })
+    const ctx: EventForm.RequiredFieldContext = {
+      ...emptyCtx,
+      formFields: [{ ...field, multiple: true, minItems: 2, maxItems: 5 }],
+      fileUploads: { lab_report: { files: [{ id: "abc-123" }, { id: "def-456" }] } },
     }
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual([])
   })
@@ -355,7 +385,7 @@ describe("EventForm.getMissingRequiredFields", () => {
       },
       diagnoses: [{ code: "J06", desc: "Acute upper respiratory infection" }],
       medicines: [], // missing
-      fileUploads: { xray: { fileId: "file-001" } },
+      fileUploads: { xray: { files: [{ id: "file-001" }] } },
     }
 
     expect(EventForm.getMissingRequiredFields(ctx)).toEqual(["Medications"])
@@ -612,7 +642,7 @@ describe("EventForm.getMissingRequiredFields — property-based", () => {
     )
   })
 
-  it("required file field: missing iff fileId is falsy", () => {
+  it("required file field: missing iff no file is attached", () => {
     const arbFileField = fc.record({
       id: fc.uuid(),
       name: arbFieldName,
@@ -623,22 +653,21 @@ describe("EventForm.getMissingRequiredFields — property-based", () => {
       required: fc.constant(true),
     })
 
-    const arbFileId = fc.oneof(
-      fc.constant(undefined),
-      fc.constant(""),
-      fc.string({ minLength: 1 }).filter((s) => s.trim().length > 0),
+    const arbFiles = fc.array(
+      fc.record({ id: fc.string({ minLength: 1 }).filter((s) => s.trim().length > 0) }),
+      { maxLength: 4 },
     )
 
     fc.assert(
-      fc.property(arbFileField, arbFileId, (field, fileId) => {
+      fc.property(arbFileField, arbFiles, (field, files) => {
         const result = EventForm.getMissingRequiredFields({
           formFields: [field],
           data: {},
           diagnoses: [],
           medicines: [],
-          fileUploads: { [field.name]: { fileId } },
+          fileUploads: { [field.name]: { files } },
         })
-        if (!fileId) {
+        if (files.length === 0) {
           expect(result).toEqual([field.name])
         } else {
           expect(result).toEqual([])

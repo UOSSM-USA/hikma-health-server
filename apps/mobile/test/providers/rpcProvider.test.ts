@@ -21,6 +21,7 @@ jest.mock("../../app/providers/transformers/eventTransformers", () => ({
 jest.mock("../../app/providers/transformers/vitalsTransformers", () => ({
   vitalsFromServer: jest.fn((s: any) => ({ ...s, _transformed: true })),
   createVitalsToServer: jest.fn((d: any) => ({ ...d, _server: true })),
+  updateVitalsToServer: jest.fn((d: any) => ({ ...d, _server: true })),
 }))
 jest.mock("../../app/providers/transformers/problemTransformers", () => ({
   problemFromServer: jest.fn((s: any) => ({ ...s, _transformed: true })),

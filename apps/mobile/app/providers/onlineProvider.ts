@@ -28,7 +28,11 @@ import {
 import type { ServerProblem } from "./transformers/problemTransformers"
 import { visitFromServer, createVisitToServer } from "./transformers/visitTransformers"
 import type { ServerVisit } from "./transformers/visitTransformers"
-import { vitalsFromServer, createVitalsToServer } from "./transformers/vitalsTransformers"
+import {
+  vitalsFromServer,
+  createVitalsToServer,
+  updateVitalsToServer,
+} from "./transformers/vitalsTransformers"
 import type { ServerVitals } from "./transformers/vitalsTransformers"
 import { trpcMutate } from "./trpcClient"
 import type { DataProvider, PaginatedResult, DataError } from "../../types/data"
@@ -38,7 +42,7 @@ import type { CreatePatientInput, GetPatientsParams } from "../../types/patient"
 import type { UpdatePatientInput } from "../../types/patient"
 import type { CreateProblemInput, UpdateProblemInput } from "../../types/problem"
 import type { CreateVisitInput } from "../../types/visit"
-import type { CreateVitalsInput } from "../../types/vitals"
+import type { CreateVitalsInput, UpdateVitalsInput } from "../../types/vitals"
 import { Logger } from "@hikmahealth/js-utils"
 
 /** Map HTTP error to DataError */
@@ -182,6 +186,16 @@ export function createOnlineProvider(httpClient: HttpClient): DataProvider {
         const body = createVitalsToServer(data)
         const response = await httpClient.post<{ success: boolean; id: string }>(
           "/api/vitals",
+          body,
+        )
+        if (!response.ok) return err(toDataError(response.error))
+        return ok({ id: response.data.id })
+      },
+
+      async update(id: string, data: UpdateVitalsInput) {
+        const body = updateVitalsToServer(data)
+        const response = await httpClient.put<{ success: boolean; id: string }>(
+          `/api/vitals/${id}`,
           body,
         )
         if (!response.ok) return err(toDataError(response.error))

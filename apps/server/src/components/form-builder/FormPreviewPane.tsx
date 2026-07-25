@@ -112,7 +112,7 @@ export function FormPreviewPane({
     // silently dropping the rule.
     const seededForm: Record<string, unknown> = { ...previewValues };
     for (const field of fields) {
-      if (field._tag === "date") {
+      if (field.fieldType === "date") {
         const v = seededForm[field.id];
         if (v instanceof Date) seededForm[field.id] = formatDateYMD(v);
       }
@@ -122,7 +122,7 @@ export function FormPreviewPane({
       // separator this pane writes keeps the two in agreement at the rule
       // boundary even though the delimiters themselves differ. Without it,
       // `in` substring-matches the joined blob and `some`/`all` collapse it.
-      if (field._tag === "options" && field.multi) {
+      if (field.fieldType === "options" && field.multi) {
         const v = seededForm[field.id];
         seededForm[field.id] = Array.isArray(v)
           ? v
@@ -132,9 +132,9 @@ export function FormPreviewPane({
         continue;
       }
       if (seededForm[field.id] !== undefined) continue;
-      if (field._tag === "diagnosis" || field._tag === "medicine") {
+      if (field.fieldType === "diagnosis" || field.fieldType === "medicine") {
         seededForm[field.id] = [];
-      } else if (field._tag === "file") {
+      } else if (field.fieldType === "file") {
         seededForm[field.id] = null;
       }
     }
@@ -189,8 +189,8 @@ export function FormPreviewPane({
         // bypass this — they don't have a computedValue slot.
         if (
           ruleEvaluation &&
-          field._tag !== "text" &&
-          field._tag !== "separator" &&
+          field.fieldType !== "text" &&
+          field.fieldType !== "separator" &&
           hasComputed(ruleEvaluation, field.id)
         ) {
           const computed = getComputed(ruleEvaluation, field.id);
@@ -199,7 +199,7 @@ export function FormPreviewPane({
               key={field.id}
               fieldId={field.id}
               fieldName={field.name ?? ""}
-              fieldTag={field._tag}
+              fieldTag={field.fieldType}
               errors={errs}
             >
               <div className="space-y-1">
@@ -228,7 +228,7 @@ export function FormPreviewPane({
             key={field.id}
             fieldId={field.id}
             fieldName={field.name ?? ""}
-            fieldTag={field._tag}
+            fieldTag={field.fieldType}
             errors={errs}
           >
             {renderEditable(field, {
@@ -285,7 +285,7 @@ type EditableRenderOpts = {
 
 function renderEditable(field: FieldData, opts: EditableRenderOpts) {
   const { value, required, onChange } = opts;
-  switch (field._tag) {
+  switch (field.fieldType) {
     case "free-text":
       return (
         <Input
@@ -335,9 +335,7 @@ function renderEditable(field: FieldData, opts: EditableRenderOpts) {
       );
     case "options": {
       const data = (field.options ?? []) as (
-        | string
-        | SelectOption
-        | RadioOption
+        string | SelectOption | RadioOption
       )[];
       if (field.inputType === "radio") {
         return (

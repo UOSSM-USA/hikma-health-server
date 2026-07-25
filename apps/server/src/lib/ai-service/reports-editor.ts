@@ -32,6 +32,7 @@ import { uuidv7 } from "uuidv7";
 import type { TableMeta } from "@tanstack/react-table";
 import { z } from "zod";
 import { sql, type TableMetadata } from "kysely";
+import { adminMiddleware } from "@/middleware/auth";
 
 // ── AI Response Types (snake_case from the AI service) ─────
 
@@ -270,6 +271,7 @@ export const fetchAllComponentData = createServerFn({ method: "POST" })
     (data: { components: reportComponent[]; startAt: string; endAt: string }) =>
       data,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<ComponentData[]> => {
     return fetchAllComponentDataInternal(
       data.components,

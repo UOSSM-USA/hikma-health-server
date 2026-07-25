@@ -294,43 +294,61 @@ describe("toSchema — encode all FieldData TaggedClass variants", () => {
   });
 });
 
-describe("Fields.hasUnits / Fields.getUnits", () => {
-  const freeTextWithUnits: EventForm.HHField = {
-    id: "f",
-    name: "Dose",
-    description: "",
-    required: false,
-    fieldType: "free-text",
-    inputType: "text",
-    length: "short",
-    units: ["mg", "g", "mg"],
-  };
-
-  const dateField: EventForm.HHField = {
-    id: "d",
-    name: "DOB",
-    description: "",
-    required: true,
-    fieldType: "date",
-    inputType: "date",
-  };
-
-  it("hasUnits is true for fields carrying a units property", () => {
-    expect(EventForm.Fields.hasUnits(freeTextWithUnits)).toBe(true);
-  });
-
-  it("hasUnits is false for fields without a units property", () => {
-    expect(EventForm.Fields.hasUnits(dateField)).toBe(false);
-  });
-
-  it("getUnits deduplicates units in source order", () => {
-    expect(EventForm.Fields.getUnits(freeTextWithUnits)).toEqual(["mg", "g"]);
-  });
-
-  it("getUnits returns [] for fields without units", () => {
-    expect(EventForm.Fields.getUnits(dateField)).toEqual([]);
-  });
-});
+// ==========================================================================
+// TOMBSTONE — commented out 2026-07-26 · DELETE AFTER 2027-01-26
+//
+// Retired with `EventForm.Fields` and the plain `HHField` type in
+// `models/event-form.ts`. These four were the only remaining references to
+// either, in the whole repo — the functions had no production callers.
+//
+// Coverage is not lost, it moved: `packages/hh-forms`' `EventForm.getUnitsOpt`
+// is the live replacement and `packages/hh-forms/__tests__/event-form.test.ts`
+// tests the same behaviours, including the source-order dedup asserted below.
+//
+// Worth noting on the way out: the `freeTextWithUnits` fixture below is exactly
+// the shape that would have caught the 2026-07-26 `fieldType` regression — a
+// `fieldType: "free-text"` literal against the union member that lost its
+// discriminant. It didn't, because vitest strips types rather than checking
+// them. That is the gap, not this fixture.
+// ==========================================================================
+//
+// describe("Fields.hasUnits / Fields.getUnits", () => {
+//   const freeTextWithUnits: EventForm.HHField = {
+//     id: "f",
+//     name: "Dose",
+//     description: "",
+//     required: false,
+//     fieldType: "free-text",
+//     inputType: "text",
+//     length: "short",
+//     units: ["mg", "g", "mg"],
+//   };
+//
+//   const dateField: EventForm.HHField = {
+//     id: "d",
+//     name: "DOB",
+//     description: "",
+//     required: true,
+//     fieldType: "date",
+//     inputType: "date",
+//   };
+//
+//   it("hasUnits is true for fields carrying a units property", () => {
+//     expect(EventForm.Fields.hasUnits(freeTextWithUnits)).toBe(true);
+//   });
+//
+//   it("hasUnits is false for fields without a units property", () => {
+//     expect(EventForm.Fields.hasUnits(dateField)).toBe(false);
+//   });
+//
+//   it("getUnits deduplicates units in source order", () => {
+//     expect(EventForm.Fields.getUnits(freeTextWithUnits)).toEqual(["mg", "g"]);
+//   });
+//
+//   it("getUnits returns [] for fields without units", () => {
+//     expect(EventForm.Fields.getUnits(dateField)).toEqual([]);
+//   });
+// });
 
 describe("FieldOptionSchema id is optional", () => {
   const decodeOpt = Schema.decodeUnknownEither(EventForm.FieldOptionSchema);

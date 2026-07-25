@@ -227,6 +227,39 @@ namespace PatientVital {
     );
 
     /**
+     * Resolve the clinic that governs a vitals record, for authorization.
+     * `primaryClinicId` is null for legacy patients with none set.
+     *
+     * @param vitalsId - The vitals record ID
+     * @returns The owning patient and its primary clinic, or null if no such record
+     */
+    export const getClinicScope = createServerOnlyFn(
+      async (
+        vitalsId: string,
+      ): Promise<{
+        patientId: string;
+        primaryClinicId: string | null;
+      } | null> => {
+        const row = await db
+          .selectFrom(Table.name)
+          .innerJoin("patients", "patients.id", `${Table.name}.patient_id`)
+          .select([
+            `${Table.name}.patient_id as patient_id`,
+            "patients.primary_clinic_id as primary_clinic_id",
+          ])
+          .where(`${Table.name}.id`, "=", vitalsId)
+          .where(`${Table.name}.is_deleted`, "=", false)
+          .executeTakeFirst();
+
+        if (!row) return null;
+        return {
+          patientId: row.patient_id,
+          primaryClinicId: row.primary_clinic_id ?? null,
+        };
+      },
+    );
+
+    /**
      * Get all vitals for a patient
      * @param patientId - The patient ID
      * @returns {Promise<EncodedT[]>} - List of vital records

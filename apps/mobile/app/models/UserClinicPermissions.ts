@@ -421,6 +421,7 @@ namespace UserClinicPermissions {
       "prescription:dispense": requirePermission("canDispenseMedications"),
 
       "vitals:create": requirePermission("canEditRecords"),
+      "vitals:edit": requirePermission("canEditRecords"),
 
       "diagnosis:create": requirePermission("canEditRecords"),
       "diagnosis:edit": requirePermission("canEditRecords"),

@@ -4,6 +4,7 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { superAdminMiddleware } from "@/middleware/auth";
 import Clinic from "@/models/clinic";
 import {
   Table,
@@ -28,12 +29,14 @@ import { Logger } from "@hikmahealth/js-utils";
 
 const deleteClinic = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string }) => data)
+  .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return Clinic.softDelete(data.id);
   });
 
 export const archiveClinic = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string; isArchived: boolean }) => data)
+  .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return Clinic.API.setArchivedStatus(data.id, data.isArchived);
   });

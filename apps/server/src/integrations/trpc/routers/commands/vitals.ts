@@ -3,11 +3,16 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { authedProcedure, createTRPCRouter } from "../../init";
+import {
+  authedProcedure,
+  createTRPCRouter,
+  requireClinicPermission,
+} from "../../init";
 import db from "@/db";
 import { sql } from "kysely";
 import { flexTimestampOptional } from "@/lib/rpc-utils";
 import { logAuditEvent } from "@/lib/server-functions/audit";
+import PatientVital from "@/models/patient-vital";
 import * as Sentry from "@sentry/tanstackstart-react";
 
 export const vitalsCommandRouter = createTRPCRouter({
@@ -34,8 +39,22 @@ export const vitalsCommandRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      const { id, updated_at, metadata, ...numericFields } = input;
+
+      // Scope comes from the stored patient, never from the caller — otherwise
+      // any authenticated user could edit any patient's vitals by id.
+      const scope = await PatientVital.API.getClinicScope(id);
+      if (!scope) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Vitals record not found",
+        });
+      }
+      // Legacy patients have no primary clinic; require the permission on at
+      // least one clinic rather than failing open.
+      requireClinicPermission(ctx, "can_edit_records", scope.primaryClinicId);
+
       try {
-        const { id, updated_at, metadata, ...numericFields } = input;
         const updateSet: Record<string, unknown> = {};
 
         // Apply numeric fields that were explicitly provided
@@ -46,9 +65,7 @@ export const vitalsCommandRouter = createTRPCRouter({
         }
 
         if (metadata !== undefined) {
-          updateSet.metadata = metadata
-            ? sql`${metadata}::jsonb`
-            : null;
+          updateSet.metadata = metadata ? sql`${metadata}::jsonb` : null;
         }
 
         updateSet.updated_at = sql`now()::timestamp with time zone`;

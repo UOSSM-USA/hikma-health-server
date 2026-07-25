@@ -23,9 +23,11 @@ import { getEventForms } from "@/lib/server-functions/event-forms";
 import { getAllClinics } from "@/lib/server-functions/clinics";
 import { Result } from "@/lib/result";
 import { Logger } from "@hikmahealth/js-utils";
+import { superAdminMiddleware } from "@/middleware/auth";
 
 const deleteForm = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
+  .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return EventForm.API.softDelete(data.id);
   });
@@ -34,6 +36,7 @@ const toggleFormDetail = createServerFn({ method: "POST" })
   .inputValidator(
     (d: { id: string; field: "snapshot" | "editable"; value: boolean }) => d,
   )
+  .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     switch (data.field) {
       case "snapshot":

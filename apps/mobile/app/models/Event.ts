@@ -12,6 +12,16 @@ import { Logger } from "@hikmahealth/js-utils"
 import { isValidUUID } from "@/utils/misc"
 
 namespace Event {
+  /**
+   * One uploaded file on a file field. `id` is the resource id — the sole
+   * authorization key; `fileName` and `mimetype` are display metadata only.
+   */
+  export type Attachment = {
+    id: string
+    fileName: string | null
+    mimetype: string | null
+  }
+
   export type FormDataItem =
     | {
         inputType: string
@@ -19,10 +29,9 @@ namespace Event {
         name: string
         value: string | number | Date | any[]
         fieldId: string
-        // File fields only, and absent on older events. `value` stays the
-        // resource id — the authz key; these are for display.
-        fileName?: string
-        mimetype?: string
+        // File fields only. `value` holds the resource ids — the authz key;
+        // `attachments` carries display metadata keyed by that id.
+        attachments?: Attachment[]
       }
     | {
         inputType: string
@@ -65,6 +74,46 @@ namespace Event {
   }
 
   /**
+   * Read the attachments off a file field's `form_data` entry.
+   *
+   * `value` holds the resource ids and is the authority on which files the
+   * field has; `attachments` supplies display metadata, joined by id. An id
+   * with no matching metadata record yields null name and mimetype, which the
+   * viewer renders as a generic attachment.
+   *
+   * Total by construction: any absent, empty, or non-array `value` reads as no
+   * attachments, so callers never branch on shape.
+   */
+  export const readAttachments = (field: Partial<FormDataItem>): Attachment[] => {
+    const { value } = field
+    if (!Array.isArray(value)) return []
+
+    const metadataById = new Map<string, Attachment>()
+    const attachments = (field as { attachments?: Attachment[] }).attachments
+    if (Array.isArray(attachments)) {
+      for (const entry of attachments) {
+        if (entry && typeof entry.id === "string") metadataById.set(entry.id, entry)
+      }
+    }
+
+    // Deduped: `value` is a set of resource ids. A repeat carries no meaning
+    // downstream and would collide as a render key.
+    const seen = new Set<string>()
+    const attached: Attachment[] = []
+    for (const id of value) {
+      if (typeof id !== "string" || id.length === 0) continue
+      if (seen.has(id)) continue
+      seen.add(id)
+      attached.push({
+        id,
+        fileName: metadataById.get(id)?.fileName ?? null,
+        mimetype: metadataById.get(id)?.mimetype ?? null,
+      })
+    }
+    return attached
+  }
+
+  /**
    * Get the display for the event, based on the event type, for the formatted dynamic fields of formData
    * THIS IS ONLY USED FOR PRINTING OUT A HTML BASED REPORT
    * @param {Event} event - The event object
@@ -100,14 +149,15 @@ namespace Event {
           })
         }
       } else if (inputType === "file") {
-        // The report references the attachment by name rather than embedding the
-        // bytes. The filename is user-supplied and interpolated into HTML.
-        const fileName = (field as { fileName?: string }).fileName ?? "file"
-        const safeName = fileName
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-        display += `<div>[Attachment: ${safeName}]</div>`
+        // The report references each attachment by name rather than embedding
+        // the bytes. Filenames are user-supplied and interpolated into HTML.
+        readAttachments(field).forEach((attachment) => {
+          const safeName = (attachment.fileName ?? "file")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+          display += `<div>[Attachment: ${safeName}]</div>`
+        })
       } else if (fieldType !== "diagnosis" && inputType !== "input-group") {
         display += `<div>${value}</div>`
       }

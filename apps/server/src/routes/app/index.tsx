@@ -6,11 +6,14 @@ import { Users, FileText, Activity, ClipboardList } from "lucide-react";
 import { createServerFn } from "@tanstack/react-start";
 import db from "@/db";
 import { sql } from "kysely";
+import { adminMiddleware } from "@/middleware/auth";
 
 const getSummaryStats = createServerFn({
   method: "GET",
-}).handler(async () => {
-  const query = sql`
+})
+  .middleware([adminMiddleware])
+  .handler(async () => {
+    const query = sql`
       SELECT
         (SELECT count(*) FROM users WHERE is_deleted = FALSE) as user_count,
         (SELECT count(*) FROM patients WHERE is_deleted = FALSE) as patient_count,
@@ -18,21 +21,22 @@ const getSummaryStats = createServerFn({
         (SELECT count(*) FROM event_forms WHERE is_deleted = FALSE) as form_count
     `.compile(db);
 
-  const result = await db.executeQuery<{
-    user_count: number;
-    patient_count: number;
-    visit_count: number;
-    form_count: number;
-  }>(query);
+    const result = await db.executeQuery<{
+      user_count: number;
+      patient_count: number;
+      visit_count: number;
+      form_count: number;
+    }>(query);
 
-  const { user_count, patient_count, visit_count, form_count } = result.rows[0];
-  return {
-    clinicUsers: user_count,
-    totalPatients: patient_count,
-    totalVisits: visit_count,
-    totalForms: form_count,
-  };
-});
+    const { user_count, patient_count, visit_count, form_count } =
+      result.rows[0];
+    return {
+      clinicUsers: user_count,
+      totalPatients: patient_count,
+      totalVisits: visit_count,
+      totalForms: form_count,
+    };
+  });
 
 export const Route = createFileRoute("/app/")({
   beforeLoad: async ({ location }) => {},

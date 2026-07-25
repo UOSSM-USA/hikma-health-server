@@ -30,6 +30,31 @@ where
 }
 
 // ============================================================================
+// double_option — distinguish "field absent" from "field set to null"
+// ============================================================================
+
+/// Deserializes into `Option<Option<T>>` so a partial-update payload can tell
+/// **absent** from **explicitly null**:
+///
+/// - field missing      → `None`         → leave the column alone
+/// - field is `null`    → `Some(None)`   → write SQL NULL (clear the value)
+/// - field is a value   → `Some(Some(v))`→ write the value
+///
+/// A plain `Option<T>` cannot express this: serde collapses both missing and
+/// `null` to `None`, so a client clearing a reading is indistinguishable from
+/// one not mentioning it, and the clear gets silently dropped.
+///
+/// Requires `#[serde(default)]` alongside it — `deserialize_with` only runs when
+/// the key is present, and `default` supplies the absent case.
+pub fn double_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(deserializer).map(Some)
+}
+
+// ============================================================================
 // flexible_timestamp — i64 millis from various inputs
 // ============================================================================
 

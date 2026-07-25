@@ -54,9 +54,11 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { superAdminMiddleware } from "@/middleware/auth";
 
 const saveForm = createServerFn({ method: "POST" })
   .inputValidator((data: PatientRegistrationForm.EncodedT) => data)
+  .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return await PatientRegistrationForm.upsertPatientRegistrationForm(data);
   });

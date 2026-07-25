@@ -129,7 +129,7 @@ describe("EventForm.buildRuleScope", () => {
     expect(scope.form["med"]).toBe(medicines)
   })
 
-  it("file fields receive the uploaded fileId (or null when not uploaded)", () => {
+  it("file fields receive the uploaded resource ids (empty when nothing attached)", () => {
     const scope = EventForm.buildRuleScope({
       ...emptyScopeInput(),
       formFields: [
@@ -139,13 +139,13 @@ describe("EventForm.buildRuleScope", () => {
       ],
       // fileUploads is keyed by **raw** name (matches the screen's setter).
       fileUploads: {
-        scan: { fileId: "file-123" },
-        "x-ray": { fileId: null },
+        scan: { files: [{ id: "file-123" }, { id: "file-456" }] },
+        "x-ray": { files: [] },
       },
     })
-    expect(scope.form["f1"]).toBe("file-123")
-    expect(scope.form["f2"]).toBeNull()
-    expect(scope.form["f3"]).toBeNull()
+    expect(scope.form["f1"]).toEqual(["file-123", "file-456"])
+    expect(scope.form["f2"]).toEqual([])
+    expect(scope.form["f3"]).toEqual([])
   })
 
   it("does not include display-only fields even when watched values exist for them", () => {

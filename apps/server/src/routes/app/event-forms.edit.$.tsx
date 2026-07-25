@@ -42,9 +42,11 @@ import { getAllClinics } from "@/lib/server-functions/clinics";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Logger } from "@hikmahealth/js-utils";
+import { adminMiddleware, superAdminMiddleware } from "@/middleware/auth";
 
 const getFormById = createServerFn({ method: "GET" })
   .inputValidator((data: { id: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const res = await EventForm.API.getById(data.id);
 
@@ -89,6 +91,7 @@ const saveForm = createServerFn({ method: "POST" })
   .inputValidator(
     (d: { form: EventForm.EncodedT; updateFormId: null | string }) => d,
   )
+  .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     const { updateFormId, form } = data;
 
@@ -205,8 +208,7 @@ function RouteComponent() {
         let cleanedOptions = field.options.map(
           (
             option:
-              | { label: string; value: string; __isNew__?: boolean }
-              | string,
+              { label: string; value: string; __isNew__?: boolean } | string,
           ) => {
             Logger.log({ option }); // Object { label: "Damas", value: "Damas", __isNew__: true }
             if (typeof option === "string") {

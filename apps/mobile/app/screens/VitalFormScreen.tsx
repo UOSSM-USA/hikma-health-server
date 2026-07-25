@@ -1,4 +1,4 @@
-import { FC, useState, useMemo } from "react"
+import { FC, useState, useMemo, useEffect, useRef } from "react"
 import { ViewStyle, TextStyle, ScrollView, Alert } from "react-native"
 import { useSelector } from "@xstate/react"
 import { Option } from "effect"
@@ -13,6 +13,16 @@ import { Radio } from "@/components/Toggle/Radio"
 import { View } from "@/components/View"
 import { usePermissionGuard } from "@/hooks/usePermissionGuard"
 import { useCreateVitals } from "@/hooks/useCreateVitals"
+import { usePatientVitals } from "@/hooks/usePatientVitals"
+import { useUpdateVitals } from "@/hooks/useUpdateVitals"
+import { translate } from "@/i18n/translate"
+import {
+  computeBmi,
+  emptyVitalsState,
+  toFormState,
+  toMeasurements,
+  type VitalsState,
+} from "@/lib/vital-form-state"
 import PatientVitals from "@/models/PatientVitals"
 import { PatientStackScreenProps } from "@/navigators/PatientNavigator"
 import { providerStore } from "@/store/provider"
@@ -21,60 +31,44 @@ import { Logger } from "@hikmahealth/js-utils"
 
 interface VitalFormScreenProps extends PatientStackScreenProps<"VitalForm"> {}
 
-interface VitalsState {
-  systolicBp: string
-  diastolicBp: string
-  bpPosition: "sitting" | "standing" | "lying" | ""
-  pulseRate: string
-  temperature: string
-  temperatureUnit: "celsius" | "fahrenheit"
-  oxygenSaturation: string
-  respiratoryRate: string
-  painLevel: string
-  waistCircumference: string
-  heightCm: string
-  weightKg: string
-}
-
 export const VitalFormScreen: FC<VitalFormScreenProps> = ({ route, navigation }) => {
-  const { patientId } = route.params
+  const { patientId, vitalId } = route.params
+  const editingId = typeof vitalId === "string" && vitalId.length > 0 ? vitalId : null
+  const isEditing = editingId !== null
   const providerId = useSelector(providerStore, (state) => state.context.id)
   const { can } = usePermissionGuard()
   const createVitalsMutation = useCreateVitals()
+  const updateVitalsMutation = useUpdateVitals()
 
-  const [vitals, setVitals] = useState<VitalsState>({
-    systolicBp: "",
-    diastolicBp: "",
-    bpPosition: "",
-    pulseRate: "",
-    temperature: "",
-    // setting to empty to show it was not interacted with
-    // @ts-ignore
-    temperatureUnit: "",
-    oxygenSaturation: "",
-    respiratoryRate: "",
-    painLevel: "",
-    waistCircumference: "",
-    heightCm: "",
-    weightKg: "",
-  })
+  // Only loaded when editing; the create flow has nothing to prefill from.
+  const existingVitals = usePatientVitals(isEditing ? patientId : "")
+  const existingVital = useMemo(
+    () => existingVitals.find((vital) => vital.id === editingId),
+    [existingVitals, editingId],
+  )
+
+  const [vitals, setVitals] = useState<VitalsState>(emptyVitalsState)
+
+  // Seed once per record: the offline subscription re-emits on every write to
+  // the table, and re-seeding would discard what the user has typed.
+  const seededId = useRef<string | null>(null)
+  useEffect(() => {
+    if (!existingVital) return
+    if (seededId.current === existingVital.id) return
+    seededId.current = existingVital.id
+    setVitals(toFormState(existingVital))
+  }, [existingVital])
 
   const [errors, setErrors] = useState<Partial<Record<keyof VitalsState, string>>>({})
 
-  // Calculate BMI when height and weight are available
-  const bmi = useMemo(() => {
-    const height = parseFloat(vitals.heightCm)
-    const weight = parseFloat(vitals.weightKg)
-    if (height > 0 && weight > 0) {
-      const heightInMeters = height / 100
-      return (weight / (heightInMeters * heightInMeters)).toFixed(1)
-    }
-    return null
-  }, [vitals.heightCm, vitals.weightKg])
+  const bmi = useMemo(
+    () => computeBmi(vitals, existingVital ? existingVital.bmi : Option.none()),
+    [vitals, existingVital],
+  )
 
   const updateVital = (
     key: keyof VitalsState,
-    value: string | "sitting" | "standing" | "lying" | "celsius" | "fahrenheit",
+    value: string | PatientVitals.BPPosition | "celsius" | "fahrenheit",
   ) => {
     setVitals((prev) => ({ ...prev, [key]: value }))
     // Clear error when user starts typing
@@ -181,74 +175,65 @@ export const VitalFormScreen: FC<VitalFormScreenProps> = ({ route, navigation })
   }
 
   const save = async () => {
-    if (!can("vitals:create")) {
-      return Toast.show("You do not have permission to record vitals", {
-        duration: Toast.durations.SHORT,
-        position: Toast.positions.BOTTOM,
-      })
+    if (!can(isEditing ? "vitals:edit" : "vitals:create")) {
+      return Toast.show(
+        isEditing
+          ? "You do not have permission to edit vitals"
+          : "You do not have permission to record vitals",
+        {
+          duration: Toast.durations.SHORT,
+          position: Toast.positions.BOTTOM,
+        },
+      )
     }
     if (!validateVitals()) {
       Alert.alert("Validation Error", "Please correct the errors before saving")
       return
     }
 
-    // Convert temperature to celsius if needed
-    let temperatureCelsius: number | null = null
-    if (vitals.temperature) {
-      const temp = parseFloat(vitals.temperature)
-      if (vitals.temperatureUnit === "fahrenheit") {
-        temperatureCelsius = ((temp - 32) * 5) / 9
-      } else {
-        temperatureCelsius = temp
-      }
-    }
-
-    const vitalData: Omit<PatientVitals.T, "id" | "createdAt" | "updatedAt" | "deletedAt"> = {
-      patientId: patientId,
-      visitId: Option.none(), // TODO: Pass visitId if available from route params
-      timestamp: new Date(),
-      systolicBp: vitals.systolicBp ? Option.some(parseFloat(vitals.systolicBp)) : Option.none(),
-      diastolicBp: vitals.diastolicBp ? Option.some(parseFloat(vitals.diastolicBp)) : Option.none(),
-      bpPosition: vitals.bpPosition
-        ? Option.some(vitals.bpPosition as PatientVitals.BPPosition)
-        : Option.none(),
-      pulseRate: vitals.pulseRate ? Option.some(parseFloat(vitals.pulseRate)) : Option.none(),
-      temperatureCelsius: temperatureCelsius ? Option.some(temperatureCelsius) : Option.none(),
-      oxygenSaturation: vitals.oxygenSaturation
-        ? Option.some(parseFloat(vitals.oxygenSaturation))
-        : Option.none(),
-      respiratoryRate: vitals.respiratoryRate
-        ? Option.some(parseFloat(vitals.respiratoryRate))
-        : Option.none(),
-      painLevel: vitals.painLevel ? Option.some(parseFloat(vitals.painLevel)) : Option.none(),
-      waistCircumferenceCm: vitals.waistCircumference
-        ? Option.some(parseFloat(vitals.waistCircumference))
-        : Option.none(),
-      heightCm: vitals.heightCm ? Option.some(parseFloat(vitals.heightCm)) : Option.none(),
-      weightKg: vitals.weightKg ? Option.some(parseFloat(vitals.weightKg)) : Option.none(),
-      bmi: bmi ? Option.some(parseFloat(bmi)) : Option.none(),
-      heartRate: Option.none(), // Not collected in this form
-      recordedByUserId: Option.some(providerId), // TODO: Get from current user context
-      metadata: {},
-      isDeleted: false,
-    }
+    const measurements = toMeasurements(vitals, bmi)
 
     try {
-      await createVitalsMutation.mutateAsync(vitalData)
+      if (editingId) {
+        await updateVitalsMutation.mutateAsync({ id: editingId, data: measurements })
+      } else {
+        const vitalData: Omit<PatientVitals.T, "id" | "createdAt" | "updatedAt" | "deletedAt"> = {
+          ...measurements,
+          patientId: patientId,
+          visitId: Option.none(), // TODO: Pass visitId if available from route params
+          timestamp: new Date(),
+          heartRate: Option.none(), // Not collected in this form
+          recordedByUserId: Option.some(providerId), // TODO: Get from current user context
+          metadata: {},
+          isDeleted: false,
+        }
+        await createVitalsMutation.mutateAsync(vitalData)
+      }
 
-      Alert.alert("Success", "Vitals saved successfully", [
-        { text: "OK", onPress: () => navigation.goBack() },
-      ])
+      Alert.alert(
+        "Success",
+        isEditing ? "Vitals updated successfully" : "Vitals saved successfully",
+        [{ text: "OK", onPress: () => navigation.goBack() }],
+      )
     } catch (error) {
       Logger.error({ msg: "Error saving vitals:", error })
       Alert.alert("Error", "Failed to save vitals. Please try again.")
     }
   }
 
+  // Saving before the entry loads would overwrite it with a blank form.
+  const isEntryPending = isEditing && !existingVital
+
   return (
     <Screen style={$root} preset="scroll">
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={$section}>
+          {isEntryPending && (
+            <View mb={spacing.md}>
+              <Text text={translate("vitalForm:loadingEntry")} size="xs" />
+            </View>
+          )}
+
           {/* Blood Pressure Section */}
           <View mb={0}>
             <Text text="Blood Pressure" preset="formLabel" style={$label} />
@@ -295,6 +280,11 @@ export const VitalFormScreen: FC<VitalFormScreenProps> = ({ route, navigation })
                 label="Lying"
                 value={vitals.bpPosition === "lying"}
                 onPress={() => updateVital("bpPosition", "lying")}
+              />
+              <Radio
+                label="Other"
+                value={vitals.bpPosition === "other"}
+                onPress={() => updateVital("bpPosition", "other")}
               />
               {errors.bpPosition && <Text text={errors.bpPosition} size="xs" style={$errorText} />}
             </View>
@@ -437,7 +427,13 @@ export const VitalFormScreen: FC<VitalFormScreenProps> = ({ route, navigation })
               onPress={() => navigation.goBack()}
               style={$button}
             />
-            <Button text="Save" preset="filled" onPress={save} style={$button} />
+            <Button
+              text="Save"
+              preset="filled"
+              onPress={save}
+              disabled={isEntryPending}
+              style={$button}
+            />
           </View>
         </View>
       </ScrollView>

@@ -13,7 +13,7 @@ import { ok, err } from "../../types/data"
 import type { CreatePatientInput, UpdatePatientInput, GetPatientsParams } from "../../types/patient"
 import type { CreateVisitInput } from "../../types/visit"
 import type { CreateEventInput, UpdateEventInput } from "../../types/event"
-import type { CreateVitalsInput } from "../../types/vitals"
+import type { CreateVitalsInput, UpdateVitalsInput } from "../../types/vitals"
 import type { CreateProblemInput, UpdateProblemInput } from "../../types/problem"
 
 import {
@@ -28,7 +28,12 @@ import {
   createEventToServer,
   updateEventToServer,
 } from "./transformers/eventTransformers"
-import { vitalsFromServer, createVitalsToServer } from "./transformers/vitalsTransformers"
+import {
+  vitalsFromServer,
+  createVitalsToServer,
+  updateVitalsToServer,
+  type ServerVitals,
+} from "./transformers/vitalsTransformers"
 import {
   problemFromServer,
   createProblemToServer,
@@ -220,20 +225,28 @@ export function createRpcProvider(getTransport: () => Promise<RpcTransport>): Da
     vitals: {
       async getByPatient(patientId: string) {
         const transport = await getTransport()
-        const result = await transport.sendQuery<any[]>("vitals.list", {
+        const result = await transport.sendQuery<{ data: ServerVitals[] }>("vitals.list", {
           patient_id: patientId,
         })
         if (!result.ok) return err(toDataError(result.error))
-        return ok(result.data.map(vitalsFromServer))
+        return ok(result.data.data.map(vitalsFromServer))
       },
 
       async create(data: CreateVitalsInput) {
         const transport = await getTransport()
         const body = createVitalsToServer(data)
-        const result = await transport.sendCommand<{ success: boolean; id: string }>(
-          "vitals.create",
-          body,
-        )
+        const result = await transport.sendCommand<{ id: string }>("vitals.create", body)
+        if (!result.ok) return err(toDataError(result.error))
+        return ok({ id: result.data.id })
+      },
+
+      async update(id: string, data: UpdateVitalsInput) {
+        const transport = await getTransport()
+        const body = updateVitalsToServer(data)
+        const result = await transport.sendCommand<{ ok: boolean; id: string }>("vitals.update", {
+          ...body,
+          id,
+        })
         if (!result.ok) return err(toDataError(result.error))
         return ok({ id: result.data.id })
       },

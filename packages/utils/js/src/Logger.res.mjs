@@ -23,6 +23,29 @@ let info = isProduction ? noop : prim => {
     console.info(prim);
   };
 
+function log$1(prim) {
+  console.log(prim);
+}
+
+function warn$1(prim) {
+  console.warn(prim);
+}
+
+function error$1(prim) {
+  console.error(prim);
+}
+
+function info$1(prim) {
+  console.info(prim);
+}
+
+let Production = {
+  log: log$1,
+  warn: warn$1,
+  error: error$1,
+  info: info$1
+};
+
 export {
   noop,
   isProduction,
@@ -30,5 +53,6 @@ export {
   warn,
   error,
   info,
+  Production,
 }
 /* isProduction Not a pure module */

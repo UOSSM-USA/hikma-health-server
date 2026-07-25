@@ -517,7 +517,133 @@ describe("PatientVitals.DB", () => {
     const latest = await PatientVitals.DB.getLatestForPatient("nonexistent-patient")
     expect(Option.isNone(latest)).toBe(true)
   })
+
+  it("update changes provided fields, clears none values and leaves the rest alone", async () => {
+    const vitalsId = await PatientVitals.DB.create({
+      patientId,
+      visitId: Option.none(),
+      timestamp: new Date("2024-06-01T10:00:00Z"),
+      systolicBp: Option.some(120),
+      diastolicBp: Option.some(80),
+      bpPosition: Option.some("sitting" as const),
+      heightCm: Option.some(175),
+      weightKg: Option.some(70),
+      bmi: Option.some(22.9),
+      waistCircumferenceCm: Option.none(),
+      heartRate: Option.some(72),
+      pulseRate: Option.none(),
+      oxygenSaturation: Option.some(98),
+      respiratoryRate: Option.some(16),
+      temperatureCelsius: Option.some(36.6),
+      painLevel: Option.some(4),
+      recordedByUserId: Option.some("user-1"),
+      metadata: { source: "mobile" },
+      isDeleted: false,
+    })
+
+    await PatientVitals.DB.update(vitalsId, {
+      systolicBp: Option.some(135),
+      painLevel: Option.none(),
+    })
+
+    const [updated] = await PatientVitals.DB.getAllForPatient(patientId)
+    expect(Option.getOrNull(updated.systolicBp)).toBe(135)
+    expect(Option.isNone(updated.painLevel)).toBe(true)
+    expect(Option.getOrNull(updated.diastolicBp)).toBe(80)
+    expect(Option.getOrNull(updated.oxygenSaturation)).toBe(98)
+    expect(Option.getOrNull(updated.heartRate)).toBe(72)
+    expect(Option.getOrNull(updated.recordedByUserId)).toBe("user-1")
+    expect(updated.metadata).toEqual({ source: "mobile" })
+  })
+
+  it("update advances updated_at so the edit survives the server's sync merge", async () => {
+    // The server upserts a synced row only when its updated_at is newer, so an
+    // edit that leaves the timestamp alone is silently discarded on push.
+    const vitalsId = await createVitals(patientId, { systolicBp: Option.some(120) })
+    const [before] = await PatientVitals.DB.getAllForPatient(patientId)
+
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await PatientVitals.DB.update(vitalsId, { systolicBp: Option.some(130) })
+
+    const [after] = await PatientVitals.DB.getAllForPatient(patientId)
+    expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime())
+  })
+
+  it("update leaves identity and lifecycle fields untouched", async () => {
+    const timestamp = new Date("2024-06-01T10:00:00Z")
+    const vitalsId = await createVitals(patientId, { timestamp })
+    const [before] = await PatientVitals.DB.getAllForPatient(patientId)
+
+    await PatientVitals.DB.update(vitalsId, { pulseRate: Option.some(88) })
+
+    const [after] = await PatientVitals.DB.getAllForPatient(patientId)
+    expect(after.id).toBe(before.id)
+    expect(after.patientId).toBe(patientId)
+    expect(after.timestamp.getTime()).toBe(timestamp.getTime())
+    expect(after.createdAt.getTime()).toBe(before.createdAt.getTime())
+    expect(after.isDeleted).toBe(false)
+  })
+
+  it("concurrent updates to disjoint fields both survive", async () => {
+    // Holds only while update writes just the keys it was given.
+    const vitalsId = await createVitals(patientId)
+
+    await Promise.all([
+      PatientVitals.DB.update(vitalsId, { systolicBp: Option.some(140) }),
+      PatientVitals.DB.update(vitalsId, { pulseRate: Option.some(90) }),
+    ])
+
+    const [updated] = await PatientVitals.DB.getAllForPatient(patientId)
+    expect(Option.getOrNull(updated.systolicBp)).toBe(140)
+    expect(Option.getOrNull(updated.pulseRate)).toBe(90)
+  })
+
+  it("update rejects an unknown id rather than silently succeeding", async () => {
+    await expect(
+      PatientVitals.DB.update("no-such-vitals-id", { systolicBp: Option.some(120) }),
+    ).rejects.toBeDefined()
+  })
+
+  it("update applies to a soft-deleted record, unlike the server command", async () => {
+    // A real divergence: the server scopes its update to `is_deleted = false`,
+    // the local one does not.
+    const vitalsId = await createVitals(patientId, { isDeleted: true })
+
+    await PatientVitals.DB.update(vitalsId, { systolicBp: Option.some(150) })
+
+    const record = await testDb.get("patient_vitals").find(vitalsId)
+    expect(Option.getOrNull(PatientVitals.DB.fromDB(record as never).systolicBp)).toBe(150)
+  })
 })
+
+/** Minimal vitals record for update-focused tests */
+async function createVitals(
+  patientId: string,
+  overrides: Partial<Parameters<typeof PatientVitals.DB.create>[0]> = {},
+): Promise<string> {
+  return PatientVitals.DB.create({
+    patientId,
+    visitId: Option.none(),
+    timestamp: new Date("2024-06-01T10:00:00Z"),
+    systolicBp: Option.none(),
+    diastolicBp: Option.none(),
+    bpPosition: Option.none(),
+    heightCm: Option.none(),
+    weightKg: Option.none(),
+    bmi: Option.none(),
+    waistCircumferenceCm: Option.none(),
+    heartRate: Option.none(),
+    pulseRate: Option.none(),
+    oxygenSaturation: Option.none(),
+    respiratoryRate: Option.none(),
+    temperatureCelsius: Option.none(),
+    painLevel: Option.none(),
+    recordedByUserId: Option.none(),
+    metadata: {},
+    isDeleted: false,
+    ...overrides,
+  })
+}
 
 // PatientProblems.DB integration tests
 
@@ -562,6 +688,34 @@ describe("PatientProblems.DB", () => {
     expect(all[0].problemLabel).toBe("Essential (primary) hypertension")
     expect(all[0].clinicalStatus).toBe("active")
     expect(all[0].verificationStatus).toBe("confirmed")
+  })
+
+  it("update advances updated_at so the live query re-emits the edit", async () => {
+    // useDBPatientProblems watches updated_at rather than each field, so an edit
+    // that leaves it alone would never reach the list on screen.
+    const problemId = await PatientProblems.DB.create({
+      patientId,
+      visitId: Option.none(),
+      problemCodeSystem: "icd10",
+      problemCode: "I10",
+      problemLabel: "Hypertension",
+      clinicalStatus: "active",
+      verificationStatus: "confirmed",
+      severityScore: Option.none(),
+      onsetDate: Option.none(),
+      endDate: Option.none(),
+      recordedByUserId: Option.none(),
+      metadata: {},
+      isDeleted: false,
+    })
+    const [before] = await PatientProblems.DB.getAllForPatient(patientId)
+
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await PatientProblems.DB.update(problemId, { clinicalStatus: "resolved" })
+
+    const [after] = await PatientProblems.DB.getAllForPatient(patientId)
+    expect(after.clinicalStatus).toBe("resolved")
+    expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime())
   })
 
   it("getActiveForPatient filters by active status", async () => {

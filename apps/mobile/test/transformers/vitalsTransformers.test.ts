@@ -3,6 +3,7 @@ import {
   vitalsFromServer,
   vitalsToServer,
   createVitalsToServer,
+  updateVitalsToServer,
   type ServerVitals,
 } from "../../app/providers/transformers/vitalsTransformers"
 import type { CreateVitalsInput } from "../../types/vitals"
@@ -134,6 +135,78 @@ describe("vitalsTransformers", () => {
       expect(result.waist_circumference_cm).toBeUndefined()
       expect(result.heart_rate).toBeUndefined()
       expect(result.is_deleted).toBe(false)
+    })
+  })
+
+  describe("updateVitalsToServer", () => {
+    it("maps only the provided fields to snake_case columns", () => {
+      const result = updateVitalsToServer({
+        systolicBp: Option.some(130),
+        bpPosition: Option.some("standing" as const),
+      })
+
+      expect(result).toEqual({ systolic_bp: 130, bp_position: "standing" })
+    })
+
+    it("sends null for cleared fields and omits absent ones", () => {
+      const result = updateVitalsToServer({
+        painLevel: Option.none(),
+        temperatureCelsius: Option.some(37.2),
+      })
+
+      expect(result.pain_level).toBeNull()
+      expect(result.temperature_celsius).toBe(37.2)
+      expect("weight_kg" in result).toBe(false)
+    })
+
+    it("returns an empty payload for an empty input", () => {
+      expect(updateVitalsToServer({})).toEqual({})
+    })
+
+    it("drops keys outside the update allowlist instead of forwarding them", () => {
+      // The payload must never carry identity or ownership fields to an
+      // endpoint that updates by id alone.
+      const payload = updateVitalsToServer({
+        systolicBp: Option.some(120),
+        id: "other-record",
+        patientId: "other-patient",
+        recordedByUserId: Option.some("other-user"),
+        isDeleted: true,
+        timestamp: new Date(),
+      } as never)
+
+      expect(Object.keys(payload)).toEqual(["systolic_bp"])
+    })
+
+    it("does not pollute Object.prototype from a hostile key", () => {
+      const hostile = JSON.parse('{"__proto__": {"polluted": true}, "systolicBp": null}')
+      updateVitalsToServer(hostile)
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+    })
+
+    it("skips a malformed value rather than crashing or clearing the reading", () => {
+      // Options do not survive JSON round trips, and a caller that hydrated one
+      // from storage must not silently null out the readings.
+      const payload = updateVitalsToServer({
+        systolicBp: null,
+        diastolicBp: 80,
+        painLevel: Option.some(3),
+      } as never)
+
+      expect(payload).toEqual({ pain_level: 3 })
+    })
+
+    it("emits only numbers, strings and nulls — never an unwrapped Option", () => {
+      const payload = updateVitalsToServer({
+        systolicBp: Option.some(120),
+        bpPosition: Option.some("lying" as const),
+        painLevel: Option.none(),
+      })
+
+      for (const value of Object.values(payload)) {
+        expect(["number", "string", "object"]).toContain(typeof value)
+        if (typeof value === "object") expect(value).toBeNull()
+      }
     })
   })
 })

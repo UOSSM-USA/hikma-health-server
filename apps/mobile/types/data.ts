@@ -9,7 +9,7 @@ import type { CreateEventInput, UpdateEventInput } from "./event"
 import type { CreatePatientInput, UpdatePatientInput, GetPatientsParams } from "./patient"
 import type { CreateProblemInput, UpdateProblemInput } from "./problem"
 import type { CreateVisitInput } from "./visit"
-import type { CreateVitalsInput } from "./vitals"
+import type { CreateVitalsInput, UpdateVitalsInput } from "./vitals"
 import Event from "../app/models/Event"
 import Patient from "../app/models/Patient"
 import PatientProblems from "../app/models/PatientProblems"
@@ -118,6 +118,7 @@ export type DataProvider = {
   readonly vitals: {
     getByPatient: (patientId: string) => Promise<Result<PatientVitals.T[]>>
     create: (data: CreateVitalsInput) => Promise<Result<{ id: string }>>
+    update: (id: string, data: UpdateVitalsInput) => Promise<Result<{ id: string }>>
   }
   readonly problems: {
     getByPatient: (patientId: string) => Promise<Result<PatientProblems.T[]>>

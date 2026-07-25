@@ -3,6 +3,7 @@ import { Option } from "effect"
 
 import database from "@/db"
 import PatientVitalsModel from "@/db/model/PatientVitals"
+import type { UpdateVitalsInput } from "../../types/vitals"
 
 namespace PatientVitals {
   export type BPPosition = "sitting" | "standing" | "lying" | "other"
@@ -203,6 +204,63 @@ namespace PatientVitals {
           })
 
         return vitalsRecord.id
+      })
+    }
+
+    /**
+     * Update the measurements on an existing vitals record.
+     * Keys absent from `updates` are left untouched; `Option.none()` clears a value.
+     * @param vitalsId Vitals record ID
+     * @param updates Measurement fields to change
+     * @returns Promise with the updated vitals ID
+     */
+    export const update = async (vitalsId: string, updates: UpdateVitalsInput): Promise<string> => {
+      return await database.write(async () => {
+        const record = await database.get<PatientVitalsModel>("patient_vitals").find(vitalsId)
+
+        const updated = await record.update((vitals) => {
+          if (updates.systolicBp !== undefined) {
+            vitals.systolicBp = Option.getOrUndefined(updates.systolicBp)
+          }
+          if (updates.diastolicBp !== undefined) {
+            vitals.diastolicBp = Option.getOrUndefined(updates.diastolicBp)
+          }
+          if (updates.bpPosition !== undefined) {
+            vitals.bpPosition = Option.getOrUndefined(updates.bpPosition)
+          }
+          if (updates.heightCm !== undefined) {
+            vitals.heightCm = Option.getOrUndefined(updates.heightCm)
+          }
+          if (updates.weightKg !== undefined) {
+            vitals.weightKg = Option.getOrUndefined(updates.weightKg)
+          }
+          if (updates.bmi !== undefined) {
+            vitals.bmi = Option.getOrUndefined(updates.bmi)
+          }
+          if (updates.waistCircumferenceCm !== undefined) {
+            vitals.waistCircumferenceCm = Option.getOrUndefined(updates.waistCircumferenceCm)
+          }
+          if (updates.heartRate !== undefined) {
+            vitals.heartRate = Option.getOrUndefined(updates.heartRate)
+          }
+          if (updates.pulseRate !== undefined) {
+            vitals.pulseRate = Option.getOrUndefined(updates.pulseRate)
+          }
+          if (updates.oxygenSaturation !== undefined) {
+            vitals.oxygenSaturation = Option.getOrUndefined(updates.oxygenSaturation)
+          }
+          if (updates.respiratoryRate !== undefined) {
+            vitals.respiratoryRate = Option.getOrUndefined(updates.respiratoryRate)
+          }
+          if (updates.temperatureCelsius !== undefined) {
+            vitals.temperatureCelsius = Option.getOrUndefined(updates.temperatureCelsius)
+          }
+          if (updates.painLevel !== undefined) {
+            vitals.painLevel = Option.getOrUndefined(updates.painLevel)
+          }
+        })
+
+        return updated.id
       })
     }
 

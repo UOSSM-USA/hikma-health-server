@@ -386,8 +386,8 @@ reports.post("/update-component", async (c) => {
     }
 
     if (compiled.compile_error) {
-      // @ts-ignore
-      Logger.error("PRQL compilation failure after retries:", {
+      Logger.error({
+        msg: "PRQL compilation failure after retries:",
         title: compiled.title,
         error: compiled.compile_error,
       });

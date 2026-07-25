@@ -13,6 +13,7 @@ import {
 } from "./builders";
 import { logAuditEvent } from "./audit";
 import { Result } from "@/lib/result";
+import { adminMiddleware } from "@/middleware/auth";
 
 /**
  * Get all events by form id with pagination
@@ -22,6 +23,7 @@ export const getEventsByFormId = createServerFn({ method: "GET" })
   .inputValidator(
     (data: { form_id: string; limit?: number; offset?: number }) => data,
   )
+  .middleware([adminMiddleware])
   .handler(
     async ({
       data,

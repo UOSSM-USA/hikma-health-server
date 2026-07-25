@@ -29,8 +29,6 @@ import {
 import { AdvancedRuleInput } from "./AdvancedRuleInput";
 import { RuleEditor } from "./RuleEditor";
 
-// RULE SECTIONS
-//
 // Visibility and requiredIf share one editing surface — a RuleEditor
 // plus a Save button gated on validity. Everything that differs between
 // them is data, carried by a descriptor; the component itself is
@@ -94,8 +92,14 @@ export function RuleSection({
         initialRule,
         descriptor.allowAlways,
         descriptor.allowMultiple,
+        referenceableFields,
       ),
-    [initialRule, descriptor.allowAlways, descriptor.allowMultiple],
+    [
+      initialRule,
+      descriptor.allowAlways,
+      descriptor.allowMultiple,
+      referenceableFields,
+    ],
   );
 
   const [current, setCurrent] = useState<RuleState>(() =>
@@ -130,13 +134,10 @@ export function RuleSection({
   );
 }
 
-// COMPUTED VALUE
-//
-// Single rule, advanced-mode JSON only for v1. When set, the field
-// becomes read-only on mobile and its value is the JSONLogic eval
-// result, with a writeback short-circuit (no re-set if the value is
-// structurally equal). An empty/undefined rule means "field is normal
-// editable input".
+// Computed value: single rule, advanced-mode JSON only for v1. When set, the
+// field becomes read-only on mobile and its value is the JSONLogic eval result,
+// with a writeback short-circuit (no re-set if the value is structurally equal).
+// An empty/undefined rule means "field is normal editable input".
 
 export type ComputedValueSectionProps = {
   initialRule: JsonLogicRule | undefined;
@@ -161,9 +162,9 @@ export function ComputedValueSection({
   return (
     <section className="space-y-2" data-testid="computed-value-section">
       <p className="text-xs text-muted-foreground">
-        When set, the field is read-only on the device and its value
-        is the JSONLogic rule's evaluation. Leave empty to keep the
-        field as a normal editable input.
+        When set, the field is read-only on the device and its value is the
+        JSONLogic rule's evaluation. Leave empty to keep the field as a normal
+        editable input.
       </p>
 
       <AdvancedRuleInput
@@ -185,10 +186,6 @@ export function ComputedValueSection({
     </section>
   );
 }
-
-// VALIDATORS
-//
-// A list of {id, rule, message, code?} rows.
 
 export type ValidatorsSectionProps = {
   /**
@@ -220,8 +217,7 @@ function toDraft(v: Validator): ValidatorDraft {
   return {
     id: v.id,
     rule: v.rule,
-    ruleIsValid:
-      v.rule !== undefined && validateRule(v.rule).TAG === "Ok",
+    ruleIsValid: v.rule !== undefined && validateRule(v.rule).TAG === "Ok",
     message: v.message,
     code: v.code ?? "",
   };
@@ -281,9 +277,8 @@ export function ValidatorsSection({
   return (
     <section className="space-y-3" data-testid="validators-section">
       <p className="text-xs text-muted-foreground">
-        Each validator's rule must evaluate to a truthy value for the
-        field to be considered valid; otherwise the message is shown to
-        the user.
+        Each validator's rule must evaluate to a truthy value for the field to
+        be considered valid; otherwise the message is shown to the user.
       </p>
 
       {drafts.length === 0 && (
@@ -445,9 +440,8 @@ function StuckInAdvancedAdvisory() {
         This rule was authored in Advanced mode.
       </p>
       <p className="mt-1 text-xs">
-        The Simple editor can't represent the current rule. Edit it in
-        the Advanced tab below, or clear it there to start over in
-        Simple mode.
+        The Simple editor can't represent the current rule. Edit it in the
+        Advanced tab below, or clear it there to start over in Simple mode.
       </p>
     </div>
   );

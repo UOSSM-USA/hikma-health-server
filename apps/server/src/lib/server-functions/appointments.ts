@@ -1,17 +1,18 @@
 import { createServerFn } from "@tanstack/react-start";
 import Appointment from "@/models/appointment";
 import type User from "@/models/user";
+import { adminMiddleware } from "@/middleware/auth";
 
 /**
  * Get all appointments
  * @returns {Promise<Appointment.EncodedT[]>} - The list of appointments
  */
-export const getAllAppointments = createServerFn({ method: "GET" }).handler(
-  async (): Promise<Appointment.EncodedT[]> => {
+export const getAllAppointments = createServerFn({ method: "GET" })
+  .middleware([adminMiddleware])
+  .handler(async (): Promise<Appointment.EncodedT[]> => {
     const res = await Appointment.API.getAll();
     return res;
-  },
-);
+  });
 
 /**
  * Get an appointment by ID
@@ -20,6 +21,7 @@ export const getAllAppointments = createServerFn({ method: "GET" }).handler(
  */
 export const getAppointmentById = createServerFn({ method: "GET" })
   .inputValidator((data: { id: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<Appointment.EncodedT | null> => {
     const res = await Appointment.API.getById(data.id);
 
@@ -33,6 +35,7 @@ export const getAppointmentById = createServerFn({ method: "GET" })
  */
 export const getAppointmentsByPatientId = createServerFn({ method: "GET" })
   .inputValidator((data: { patientId: string }) => data)
+  .middleware([adminMiddleware])
   .handler(
     async ({
       data,
@@ -67,19 +70,21 @@ export const getAppointmentsByPatientId = createServerFn({ method: "GET" })
  */
 export const getAllAppointmentsWithDetails = createServerFn({
   method: "GET",
-}).handler(
-  async (): Promise<
-    {
-      appointment: Appointment.EncodedT;
-      patient: Patient.EncodedT;
-      clinic: Clinic.EncodedT;
-      provider: User.EncodedT | null;
-    }[]
-  > => {
-    const res = await Appointment.API.getAllWithDetails();
-    return res;
-  },
-);
+})
+  .middleware([adminMiddleware])
+  .handler(
+    async (): Promise<
+      {
+        appointment: Appointment.EncodedT;
+        patient: Patient.EncodedT;
+        clinic: Clinic.EncodedT;
+        provider: User.EncodedT | null;
+      }[]
+    > => {
+      const res = await Appointment.API.getAllWithDetails();
+      return res;
+    },
+  );
 
 /**
  * Toggle the status of an appointment
@@ -89,6 +94,7 @@ export const getAllAppointmentsWithDetails = createServerFn({
  */
 export const toggleAppointmentStatus = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string; status: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<void> => {
     await Appointment.API.toggleStatus(data.id, data.status);
   });

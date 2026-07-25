@@ -42,6 +42,7 @@ import type Patient from "@/models/patient";
 import If from "@/components/if";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Logger } from "@hikmahealth/js-utils";
+import { adminMiddleware } from "@/middleware/auth";
 
 const saveAppointment = createServerFn({ method: "POST" })
   .inputValidator(
@@ -51,6 +52,7 @@ const saveAppointment = createServerFn({ method: "POST" })
       currentUserName: string;
     }) => data,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const { appointment, id, currentUserName } = data;
     Logger.log({ appointment, id, currentUserName });

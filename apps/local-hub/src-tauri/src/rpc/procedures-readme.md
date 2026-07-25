@@ -410,6 +410,48 @@ Updates an existing visit's mutable fields.
 
 ---
 
+### vitals.create
+
+Records a new vitals entry for a patient and returns its id. Upserts on `id`, so
+resending a request with the same `id` updates that entry instead of leaving a
+duplicate reading behind. Omit `id` and the hub generates one.
+
+**Authentication**: JWT required
+
+**Data**:
+```json
+{
+  "id": "string (optional)",
+  "patient_id": "string",
+  "visit_id": "string | null",
+  "timestamp": "i64 | ISO-8601 string",
+  "systolic_bp": "f64 | null",
+  "diastolic_bp": "f64 | null",
+  "bp_position": "string | null",
+  "height_cm": "f64 | null",
+  "weight_kg": "f64 | null",
+  "bmi": "f64 | null",
+  "waist_circumference_cm": "f64 | null",
+  "heart_rate": "f64 | null",
+  "pulse_rate": "f64 | null",
+  "oxygen_saturation": "f64 | null",
+  "respiratory_rate": "f64 | null",
+  "temperature_celsius": "f64 | null",
+  "pain_level": "f64 | null",
+  "recorded_by_user_id": "string | null",
+  "metadata": "object or JSON string"
+}
+```
+
+**Returns**:
+```json
+{ "id": "string" }
+```
+
+**Tables modified**: `patient_vitals`
+
+---
+
 ### vitals.update
 
 Updates a patient vitals record. Only provided fields are changed.
@@ -444,6 +486,58 @@ Updates a patient vitals record. Only provided fields are changed.
 ```
 
 **Tables modified**: `patient_vitals`
+
+---
+
+### vitals.list
+
+Retrieves all vitals records for a patient, newest first. Excludes soft-deleted
+rows, so every returned record is one `vitals.update` will accept.
+
+**Authentication**: JWT required
+
+**Params**:
+```json
+{
+  "patient_id": "string"
+}
+```
+
+**Returns**:
+```json
+{
+  "data": [
+    {
+      "id": "string",
+      "patient_id": "string",
+      "visit_id": "string | null",
+      "timestamp": "i64",
+      "systolic_bp": "f64 | null",
+      "diastolic_bp": "f64 | null",
+      "bp_position": "string | null",
+      "height_cm": "f64 | null",
+      "weight_kg": "f64 | null",
+      "bmi": "f64 | null",
+      "waist_circumference_cm": "f64 | null",
+      "heart_rate": "f64 | null",
+      "pulse_rate": "f64 | null",
+      "oxygen_saturation": "f64 | null",
+      "respiratory_rate": "f64 | null",
+      "temperature_celsius": "f64 | null",
+      "pain_level": "f64 | null",
+      "recorded_by_user_id": "string | null",
+      "metadata": "object",
+      "is_deleted": "boolean",
+      "created_at": "i64",
+      "updated_at": "i64",
+      "deleted_at": "i64 | null"
+    }
+  ]
+}
+```
+
+Every field is always present; an unrecorded reading is an explicit `null`. Note
+that `metadata` is returned as a parsed object here, not as JSON text.
 
 ---
 

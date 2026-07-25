@@ -1,30 +1,35 @@
-import { FC } from "react"
+import { FC, useCallback } from "react"
 import { Pressable, ViewStyle, TextStyle } from "react-native"
-import { PlusIcon } from "lucide-react-native"
+import { PencilIcon, PlusIcon } from "lucide-react-native"
 
 import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
 import { View } from "@/components/View"
-import { useDBVitals } from "@/hooks/useDBVitals"
-import { useDataAccess } from "@/providers/DataAccessProvider"
-import { useProviderVitals } from "@/hooks/useProviderVitals"
+import { usePatientVitals } from "@/hooks/usePatientVitals"
+import { usePermissionGuard } from "@/hooks/usePermissionGuard"
 import { translate } from "@/i18n/translate"
 import PatientVitals from "@/models/PatientVitals"
 import { PatientStackScreenProps } from "@/navigators/PatientNavigator"
 import { colors } from "@/theme/colors"
-// import { useNavigation } from "@react-navigation/native"
 
 interface VitalHistoryScreenProps extends PatientStackScreenProps<"VitalHistory"> {}
 
 export const VitalHistoryScreen: FC<VitalHistoryScreenProps> = ({ navigation, route }) => {
   const { patientId } = route.params
-  const { isOnline } = useDataAccess()
-  const offlineVitals = useDBVitals(patientId)
-  const onlineVitalsQuery = useProviderVitals(isOnline ? patientId : null)
-  const patientVitals = isOnline ? (onlineVitalsQuery.data ?? []) : offlineVitals
+  const patientVitals = usePatientVitals(patientId)
+  const { can } = usePermissionGuard()
+  const canEdit = can("vitals:edit")
+
   const openEventForm = () => {
     navigation.navigate("VitalForm", { patientId })
   }
+
+  const editVital = useCallback(
+    (vitalId: string) => {
+      navigation.navigate("VitalForm", { patientId, vitalId })
+    },
+    [navigation, patientId],
+  )
 
   return (
     <>
@@ -39,7 +44,13 @@ export const VitalHistoryScreen: FC<VitalHistoryScreenProps> = ({ navigation, ro
               <Text text={translate("vitalHistory:noRecordedVitals")} color={colors.textDim} />
             </View>
           ) : (
-            patientVitals.map((vital) => <VitalEntry key={vital.id} vital={vital} />)
+            patientVitals.map((vital) => (
+              <VitalEntry
+                key={vital.id}
+                vital={vital}
+                onEdit={canEdit ? () => editVital(vital.id) : undefined}
+              />
+            ))
           )}
         </View>
       </Screen>
@@ -51,11 +62,8 @@ export const VitalHistoryScreen: FC<VitalHistoryScreenProps> = ({ navigation, ro
   )
 }
 
-/**
- * Vital historical entry
- *
- */
-function VitalEntry({ vital }: { vital: PatientVitals.DB.T | PatientVitals.T }) {
+/** One recorded entry. `onEdit` is absent when the provider cannot edit vitals. */
+function VitalEntry({ vital, onEdit }: { vital: PatientVitals.T; onEdit?: () => void }) {
   const formattedDate = new Date(vital.timestamp).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -99,8 +107,20 @@ function VitalEntry({ vital }: { vital: PatientVitals.DB.T | PatientVitals.T }) 
   return (
     <View p={12} mb={12} style={$vitalEntryCard}>
       {/* Date Header */}
-      <View mb={8}>
+      <View mb={8} direction="row" justifyContent="space-between" alignItems="center">
         <Text text={formattedDate} size="xs" style={$dateText} />
+        {onEdit && (
+          <Pressable
+            onPress={onEdit}
+            style={$editButton}
+            accessibilityRole="button"
+            accessibilityLabel={translate("vitalHistory:editEntry")}
+            hitSlop={8}
+          >
+            <PencilIcon color={colors.palette.primary500} size={14} />
+            <Text text={translate("vitalHistory:editEntry")} size="xs" style={$editButtonText} />
+          </Pressable>
+        )}
       </View>
 
       {/* Vital Readings Grid */}
@@ -257,6 +277,16 @@ const $vitalEntryCard: ViewStyle = {
 
 const $dateText: TextStyle = {
   color: colors.textDim,
+}
+
+const $editButton: ViewStyle = {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 4,
+}
+
+const $editButtonText: TextStyle = {
+  color: colors.palette.primary500,
 }
 
 const $labelText: TextStyle = {

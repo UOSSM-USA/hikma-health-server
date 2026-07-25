@@ -232,10 +232,13 @@ const es: ENTranslations = {
     description: "Ver y gestionar tu historial de signos vitales",
     newEntry: "Nueva Entrada",
     noRecordedVitals: "No hay signos vitales registrados para este paciente.",
+    editEntry: "Editar",
   },
   vitalForm: {
     title: "Formulario de Signos Vitales",
+    editTitle: "Editar Signos Vitales",
     description: "Completa tu información de signos vitales",
+    loadingEntry: "Cargando registro de signos vitales…",
   },
   appointmentsList: {
     title: "Lista de Citas",

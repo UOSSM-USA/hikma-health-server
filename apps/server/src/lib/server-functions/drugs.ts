@@ -2,11 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
 import DrugCatalogue from "@/models/drug-catalogue";
 import * as Sentry from "@sentry/tanstackstart-react";
+import { adminMiddleware, superAdminMiddleware } from "@/middleware/auth";
 
 export const saveDrug = createServerFn({ method: "POST" })
   .inputValidator(
     (data: { drug: Partial<DrugCatalogue.ApiDrug>; isEdit: boolean }) => data,
   )
+  .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan({ name: "Save drug to catalogue" }, async () => {
       const result = await Effect.runPromise(
@@ -23,6 +25,7 @@ export const saveDrug = createServerFn({ method: "POST" })
 
 export const getDrugById = createServerFn({ method: "GET" })
   .inputValidator((data: { id: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan({ name: "Get drug by id" }, async () => {
       const result = await Effect.runPromise(
@@ -41,6 +44,7 @@ export const getAllDrugs = createServerFn({ method: "GET" })
   .inputValidator(
     (params: { limit?: number; offset?: number; isActive?: boolean }) => params,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan(
       { name: "Get all drugs from catalogue" },
@@ -72,6 +76,7 @@ export const searchDrugs = createServerFn({ method: "GET" })
   .inputValidator(
     (params: { searchTerm: string; limit?: number; offset?: number }) => params,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan({ name: "Search drugs in catalogue" }, async () => {
       const result = await Effect.runPromise(
@@ -91,8 +96,9 @@ export const searchDrugs = createServerFn({ method: "GET" })
   });
 
 // Server function to get drug stats
-export const getDrugStats = createServerFn({ method: "GET" }).handler(
-  async () => {
+export const getDrugStats = createServerFn({ method: "GET" })
+  .middleware([adminMiddleware])
+  .handler(async () => {
     return Sentry.startSpan({ name: "Get drug catalogue stats" }, async () => {
       const stats = await Effect.runPromise(
         DrugCatalogue.API.getStats().pipe(
@@ -109,5 +115,4 @@ export const getDrugStats = createServerFn({ method: "GET" }).handler(
       );
       return stats;
     });
-  },
-);
+  });

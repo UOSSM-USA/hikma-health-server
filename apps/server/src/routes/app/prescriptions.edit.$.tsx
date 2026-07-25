@@ -43,6 +43,7 @@ import {
   type PrescriptionItemValues,
 } from "@/components/prescription-form";
 import { Logger } from "@hikmahealth/js-utils";
+import { adminMiddleware } from "@/middleware/auth";
 
 // Create a save prescription server function
 const savePrescription = createServerFn({ method: "POST" })
@@ -55,6 +56,7 @@ const savePrescription = createServerFn({ method: "POST" })
       currentClinicId: string;
     }) => data,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const { prescription, items, id, currentUserName, currentClinicId } = data;
 
@@ -72,6 +74,7 @@ const savePrescription = createServerFn({ method: "POST" })
 // Get prescription by ID server function
 const getPrescriptionById = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const { id } = data;
     const res = await db

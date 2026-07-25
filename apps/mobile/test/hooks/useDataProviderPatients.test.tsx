@@ -90,6 +90,7 @@ const mockProvider: DataProvider = {
   vitals: {
     getByPatient: jest.fn().mockResolvedValue(ok([])),
     create: jest.fn().mockResolvedValue(ok({ id: "vt1" })),
+    update: jest.fn().mockResolvedValue(ok({ id: "vt1" })),
   },
   problems: {
     getByPatient: jest.fn().mockResolvedValue(ok([])),

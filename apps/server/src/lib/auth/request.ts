@@ -10,10 +10,6 @@ export const getCookieToken = createServerOnlyFn(() => {
   return token;
 });
 
-export const getToken = createServerFn({ method: "GET" }).handler(async () => {
-  return getCookie("token");
-});
-
 export const userRoleTokenHasCapability = createServerOnlyFn(
   async (capabilities: (typeof User.CapabilitySchema.Type)[]) => {
     const token = getCookie("token");

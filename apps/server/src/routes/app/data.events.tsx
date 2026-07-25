@@ -1,6 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { FileText } from "lucide-react";
-import { attachmentKind } from "@/lib/attachment-kind";
+import {
+  type Attachment,
+  attachmentKind,
+  readAttachments,
+} from "@/lib/attachment-kind";
 import { getEventForms } from "@/lib/server-functions/event-forms";
 import { SelectInput } from "@/components/select-input";
 import { Fragment, useEffect, useState } from "react";
@@ -239,21 +243,9 @@ function RouteComponent() {
                     if (column.fieldType === "file") {
                       return (
                         <TableCell key={column.id}>
-                          <AttachmentCell
+                          <AttachmentCellList
                             eventId={event.id}
-                            resourceId={
-                              typeof field?.value === "string" ? field.value : ""
-                            }
-                            fileName={
-                              typeof field?.fileName === "string"
-                                ? field.fileName
-                                : null
-                            }
-                            mimetype={
-                              typeof field?.mimetype === "string"
-                                ? field.mimetype
-                                : null
-                            }
+                            attachments={readAttachments(field)}
                           />
                         </TableCell>
                       );
@@ -334,6 +326,44 @@ function RouteComponent() {
  * per-clinic guard may 404 an image for a clinic this admin cannot view — hence
  * the fallback to an icon + filename link on load error.
  */
+/**
+ * Cap on attachments rendered per cell. Each image issues an authenticated byte
+ * fetch on render, so an oversized `value` array would turn one table row into
+ * hundreds of requests for every viewer. `form_data` is unvalidated jsonb, so
+ * the bound cannot be assumed upstream.
+ */
+const ATTACHMENT_CELL_RENDER_MAX = 12;
+
+function AttachmentCellList({
+  eventId,
+  attachments,
+}: {
+  eventId: string;
+  attachments: Attachment[];
+}) {
+  const shown = attachments.slice(0, ATTACHMENT_CELL_RENDER_MAX);
+  const hidden = attachments.length - shown.length;
+
+  return (
+    <div className="flex flex-col gap-1">
+      {shown.map((attachment) => (
+        <AttachmentCell
+          key={attachment.id}
+          eventId={eventId}
+          resourceId={attachment.id}
+          fileName={attachment.fileName}
+          mimetype={attachment.mimetype}
+        />
+      ))}
+      {hidden > 0 ? (
+        <span className="text-muted-foreground text-xs">
+          +{hidden} more not shown
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function AttachmentCell({
   eventId,
   resourceId,

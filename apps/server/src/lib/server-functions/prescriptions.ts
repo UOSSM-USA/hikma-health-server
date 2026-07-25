@@ -7,17 +7,18 @@ import { userRoleTokenHasCapability } from "../auth/request";
 import type { Pagination } from "./builders";
 import * as Sentry from "@sentry/tanstackstart-react";
 import { Result } from "@/lib/result";
+import { adminMiddleware } from "@/middleware/auth";
 
 /**
  * Get all prescriptions
  * @returns {Promise<Prescription.EncodedT[]>} - The list of prescriptions
  */
-const getAllPrescriptions = createServerFn({ method: "GET" }).handler(
-  async (): Promise<Prescription.EncodedT[]> => {
+const getAllPrescriptions = createServerFn({ method: "GET" })
+  .middleware([adminMiddleware])
+  .handler(async (): Promise<Prescription.EncodedT[]> => {
     const res = await Prescription.API.getAll();
     return res;
-  },
-);
+  });
 
 /**
  * Get all prescriptions with their patients, clinics, and providers information
@@ -25,19 +26,21 @@ const getAllPrescriptions = createServerFn({ method: "GET" }).handler(
  */
 const getAllPrescriptionsWithDetails = createServerFn({
   method: "GET",
-}).handler(
-  async (): Promise<
-    {
-      prescription: Prescription.EncodedT;
-      patient: Patient.EncodedT;
-      clinic: Clinic.EncodedT;
-      provider: User.EncodedT;
-    }[]
-  > => {
-    const res = await Prescription.API.getAllWithDetails();
-    return res;
-  },
-);
+})
+  .middleware([adminMiddleware])
+  .handler(
+    async (): Promise<
+      {
+        prescription: Prescription.EncodedT;
+        patient: Patient.EncodedT;
+        clinic: Clinic.EncodedT;
+        provider: User.EncodedT;
+      }[]
+    > => {
+      const res = await Prescription.API.getAllWithDetails();
+      return res;
+    },
+  );
 
 /**
  * Toggle the status of a prescription
@@ -47,6 +50,7 @@ const getAllPrescriptionsWithDetails = createServerFn({
  */
 const togglePrescriptionStatus = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string; status: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<void> => {
     await Prescription.API.toggleStatus(data.id, data.status);
   });
@@ -86,7 +90,10 @@ const getPatientPrescriptions = createServerFn({ method: "GET" })
           includeCount: true,
         });
 
-        return Result.ok({ items: result.items, pagination: result.pagination });
+        return Result.ok({
+          items: result.items,
+          pagination: result.pagination,
+        });
       } catch (error) {
         Sentry.captureException(error);
         return Result.err({

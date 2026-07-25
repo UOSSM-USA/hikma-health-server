@@ -1,5 +1,6 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ActivityIndicator, Alert, TextStyle, ViewStyle } from "react-native"
+import { ActivityIndicator, Alert, Pressable, TextStyle, ViewStyle } from "react-native"
+import { useCameraPermissions } from "expo-camera"
 import * as DocumentPicker from "expo-document-picker"
 import * as FileSystem from "expo-file-system/legacy"
 import {
@@ -14,7 +15,7 @@ import { useSelector } from "@xstate/react"
 import { isValid } from "date-fns"
 import { Option } from "effect"
 import { sortBy } from "es-toolkit/compat"
-import { LucideAlertCircle } from "lucide-react-native"
+import { LucideAlertCircle, LucideX } from "lucide-react-native"
 import { Controller, useForm, useFormState, useWatch } from "react-hook-form"
 import DropDownPicker from "react-native-dropdown-picker"
 import Toast from "react-native-root-toast"
@@ -25,6 +26,7 @@ import Peer from "@/models/Peer"
 
 import { usePermissionGuard } from "@/hooks/usePermissionGuard"
 import { Button } from "@/components/Button"
+import { CameraCaptureModal } from "@/components/CameraCaptureModal"
 import { DatePickerButton } from "@/components/DatePicker"
 import { DiagnosisEditor, DiagnosisPickerButton } from "@/components/DiagnosisEditor"
 import { If } from "@/components/If"
@@ -81,20 +83,29 @@ type ModalState =
   | { activeModal: "medication"; medication: Prescription.MedicationEntry }
   | { activeModal: "diagnoses" }
 
-// File upload state type
+/** Per-field upload state. `files` is the record of what is attached. */
 type FileUploadState = {
   isUploading: boolean
-  isComplete: boolean
-  fileName: string | null
-  fileId: string | null
-  mimetype: string | null
+  files: Event.Attachment[]
   error: string | null
+}
+
+/** A file chosen from the picker or captured by the camera, ready to upload. */
+type PickedFile = {
+  uri: string
+  name: string
+  mimeType: string | undefined
+  size: number | null
 }
 
 // Mirrors the server's allowlist. The server re-checks the leading bytes, so this
 // only keeps the picker from offering files that would be rejected on upload.
 const FORM_FILE_MIMETYPES = ["image/png", "image/jpeg", "application/pdf"]
 const FORM_FILE_SIZE_LIMIT_BYTES = 50 * 1024 * 1024
+
+// expo-camera writes JPEG; takePictureAsync reports neither type nor name.
+const CAMERA_CAPTURE_MIMETYPE = "image/jpeg"
+const CAMERA_CAPTURE_QUALITY = 0.7
 
 const uploadErrorMessage = (status: number): string => {
   if (status === 401) return "Your session has expired. Please sign in again."
@@ -107,12 +118,26 @@ const uploadErrorMessage = (status: number): string => {
 
 const idleFileUploadState: FileUploadState = {
   isUploading: false,
-  isComplete: false,
-  fileName: null,
-  fileId: null,
-  mimetype: null,
+  files: [],
   error: null,
 }
+
+/**
+ * Name for a camera capture. Generated rather than taken from the device so a
+ * filename can never carry patient-identifying information.
+ */
+const cameraCaptureFileName = (): string =>
+  `photo-${new Date().toISOString().replace(/[:.]/g, "-")}.jpg`
+
+/**
+ * Drop a cached upload copy. Best-effort: failing to delete must never surface
+ * as an upload failure, but it must always be attempted — a captured photograph
+ * is PHI and nothing else reaps the app cache.
+ */
+const discardCachedFile = (uri: string): Promise<void> =>
+  FileSystem.deleteAsync(uri, { idempotent: true }).catch((error: unknown) => {
+    Logger.warn({ msg: "Could not delete cached upload", error })
+  })
 
 /**
 Hook to manage multiple open pickers by Id
@@ -199,8 +224,19 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
   const [diagnoses, setDiagnoses] = useState<ICDEntry.T[]>([])
   const [medicines, setMedicines] = useState<Prescription.MedicationEntry[]>([])
 
-  // File upload states for each field
+  // File upload states for each field, keyed by raw field name
   const [fileUploads, setFileUploads] = useState<Record<string, FileUploadState>>({})
+  const [captureFieldId, setCaptureFieldId] = useState<string | null>(null)
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions()
+
+  const setFileUploadState = useCallback(
+    (fieldName: string, update: (prev: FileUploadState) => FileUploadState) =>
+      setFileUploads((prev) => ({
+        ...prev,
+        [fieldName]: update(prev[fieldName] ?? idleFileUploadState),
+      })),
+    [],
+  )
 
   const { form, state: formState, isLoading } = useEventForm(formId, visitId, patientId, eventId)
   const { isOpen, openDialogue, closeDialogue } = useOpenDialogue()
@@ -315,6 +351,20 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
     }
   }, [ruleEvaluation, form, setValue, getValues])
 
+  // Mirror attached resource ids into RHF so a file field participates in
+  // touched/dirty tracking like every other input. Submit reads `fileUploads`,
+  // not this — the mirror exists for the form-state machinery only.
+  useEffect(() => {
+    if (!form) return
+    for (const field of form.formFields) {
+      if (field.inputType !== "file") continue
+      const name = sanitizeFieldName(field.name)
+      const ids = (fileUploads[field.name]?.files ?? []).map((file) => file.id)
+      if (computedValuesEqual(getValues(name), ids)) continue
+      setValue(name as never, ids as never)
+    }
+  }, [fileUploads, form, setValue, getValues])
+
   const previouslyHiddenIds = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (!form || !ruleEvaluation) return
@@ -413,11 +463,17 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
         } else if (field.fieldType === "medicine") {
           const medicineValue = Array.isArray(field?.value) ? field.value : []
           setMedicines(medicineValue as Prescription.MedicationEntry[])
+        } else if (field.inputType === "file") {
+          // Submit writes whatever `fileUploads` holds, so an unseeded file
+          // field would save an empty id list and unlink the patient's
+          // attachments.
+          const files = Event.readAttachments(field)
+          setFileUploadState(field.name, () => ({ ...idleFileUploadState, files }))
         }
         setValue(sanitizeFieldName(field.name), field.value)
       })
     }
-  }, [formState, form])
+  }, [formState, form, setFileUploadState])
 
   const [loading, setLoading] = useState(false)
 
@@ -524,24 +580,26 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
     )
     const formData = visibleFields
       .map((field) => {
-        const base = {
+        if (field.inputType !== "file") {
+          return {
+            fieldId: field.id,
+            fieldType: field.fieldType,
+            value: data[field.name] || "",
+            inputType: field.inputType,
+            name: field.name,
+          }
+        }
+        // `value` holds the resource ids and is the sole authz key; the
+        // parallel `attachments` records are display metadata, keyed by id so
+        // they cannot drift out of alignment with it.
+        const files = fileUploads[field.name]?.files ?? []
+        return {
           fieldId: field.id,
           fieldType: field.fieldType,
-          value:
-            field.inputType === "file"
-              ? fileUploads[field.name]?.fileId || ""
-              : data[field.name] || "",
+          value: files.map((file) => file.id),
           inputType: field.inputType,
           name: field.name,
-        }
-        if (field.inputType !== "file") return base
-        // Display metadata for the viewer; `value` (the resource id) stays the
-        // sole authz key. Absent on events created before this was added.
-        const upload = fileUploads[field.name]
-        return {
-          ...base,
-          fileName: upload?.fileName ?? undefined,
-          mimetype: upload?.mimetype ?? undefined,
+          attachments: files,
         }
       })
       .filter(
@@ -740,55 +798,44 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
     return []
   }, [form?.formFields])
 
+  const captureField = useMemo(
+    () => form?.formFields.find((field) => field.id === captureFieldId) ?? null,
+    [form?.formFields, captureFieldId],
+  )
+
+  /** How many more files this field will accept. */
+  const remainingFileSlots = (field: EventForm.FieldItem): number => {
+    const { maxItems } = EventForm.fileFieldLimits(field)
+    return Math.max(0, maxItems - (fileUploads[field.name]?.files.length ?? 0))
+  }
+
   /**
-   * Pick and upload a file, storing the resource id as the field's value. The id
-   * is generated on the device so a retry carrying identical bytes resolves to the
-   * same resource rather than creating a duplicate.
+   * Upload one file and return its resource record. The id is generated on the
+   * device so a retry carrying identical bytes resolves to the same resource
+   * rather than creating a duplicate.
    *
    * Filenames are not logged: they can carry patient-identifying information.
    */
-  const handleFileUpload = async (field: { id: string; name: string }) => {
-    const fieldName = field.name
-    const setState = (state: FileUploadState) =>
-      setFileUploads((prev) => ({ ...prev, [fieldName]: state }))
+  const uploadFormFile = async (
+    field: { id: string },
+    file: PickedFile,
+  ): Promise<Event.Attachment> => {
+    if (file.size !== null && file.size > FORM_FILE_SIZE_LIMIT_BYTES) {
+      throw new Error(uploadErrorMessage(413))
+    }
+
+    const clinicId = Option.getOrNull(provider.clinic_id)
+    if (!clinicId) throw new Error("No clinic is assigned to this account.")
+
+    const authorization = await getProviderAuthHeader()
+    if (!authorization) throw new Error("Not signed in. Please sign in again.")
+
+    const apiUrl = await Peer.getActiveUrl()
+    if (!apiUrl) throw new Error("No server URL configured")
+
+    const resourceId = uuidv7()
 
     try {
-      setState({ ...idleFileUploadState, isUploading: true })
-
-      const picked = await DocumentPicker.getDocumentAsync({
-        type: FORM_FILE_MIMETYPES,
-        copyToCacheDirectory: true,
-      })
-
-      if (picked.canceled) {
-        setState(idleFileUploadState)
-        return
-      }
-
-      const file = picked.assets[0]
-      if (!file) {
-        setState(idleFileUploadState)
-        return
-      }
-
-      if (typeof file.size === "number" && file.size > FORM_FILE_SIZE_LIMIT_BYTES) {
-        const message = uploadErrorMessage(413)
-        setState({ ...idleFileUploadState, error: message })
-        Alert.alert("Upload Error", message)
-        return
-      }
-
-      const clinicId = Option.getOrNull(provider.clinic_id)
-      if (!clinicId) throw new Error("No clinic is assigned to this account.")
-
-      const authorization = await getProviderAuthHeader()
-      if (!authorization) throw new Error("Not signed in. Please sign in again.")
-
-      const apiUrl = await Peer.getActiveUrl()
-      if (!apiUrl) throw new Error("No server URL configured")
-
-      const resourceId = uuidv7()
-
       // Not fetch + FormData: Expo replaces the global fetch, and its FormData
       // serializer rejects React Native's `{ uri, name, type }` file part with
       // "Unsupported FormDataPart implementation". uploadAsync also streams from
@@ -819,23 +866,136 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
         id: string
         mimetype: string | null
       }
-      setState({
-        isUploading: false,
-        isComplete: true,
-        fileName: file.name,
-        fileId: id,
-        mimetype: mimetype ?? null,
-        error: null,
-      })
-      setValue(sanitizeFieldName(fieldName) as never, id as never)
+
+      return { id, fileName: file.name, mimetype: mimetype ?? null }
+    } finally {
+      // Runs on failure too: a captured photograph is PHI and nothing retries
+      // from this uri, so the cache copy is dead either way.
+      await discardCachedFile(file.uri)
+    }
+  }
+
+  /**
+   * Upload files one at a time, appending each success to the field.
+   *
+   * Sequential rather than concurrent: on a weak clinic connection a partial
+   * failure then leaves the already-uploaded files attached and the error names
+   * the file that failed, instead of an ambiguous half-finished batch.
+   */
+  const uploadFilesToField = async (field: EventForm.FieldItem, files: PickedFile[]) => {
+    // Capacity is enforced here rather than at each call site so no caller can
+    // push a field past `maxItems`, however it acquired the files.
+    const admitted = files.slice(0, remainingFileSlots(field))
+    if (admitted.length === 0) return
+    const fieldName = field.name
+
+    setFileUploadState(fieldName, (prev) => ({ ...prev, isUploading: true, error: null }))
+    try {
+      for (const file of admitted) {
+        const attachment = await uploadFormFile(field, file)
+        setFileUploadState(fieldName, (prev) => ({
+          ...prev,
+          files: [...prev.files, attachment],
+        }))
+      }
+      setFileUploadState(fieldName, (prev) => ({ ...prev, isUploading: false }))
     } catch (error: unknown) {
       Logger.error({ msg: "File upload failed", error })
       Sentry.captureException(error)
 
       const message = error instanceof Error ? error.message : "Failed to upload file"
-      setState({ ...idleFileUploadState, error: message })
+      setFileUploadState(fieldName, (prev) => ({ ...prev, isUploading: false, error: message }))
       Alert.alert("Upload Error", message)
     }
+  }
+
+  /**
+   * Detach a file from the field. The uploaded resource is left on the server;
+   * nothing references it, and reaping orphans is the server's job.
+   */
+  const removeAttachedFile = (fieldName: string, attachmentId: string) =>
+    setFileUploadState(fieldName, (prev) => ({
+      ...prev,
+      error: null,
+      files: prev.files.filter((file) => file.id !== attachmentId),
+    }))
+
+  const handleChooseFile = async (field: EventForm.FieldItem) => {
+    const remaining = remainingFileSlots(field)
+    if (remaining <= 0) return
+
+    let picked: DocumentPicker.DocumentPickerResult
+    try {
+      picked = await DocumentPicker.getDocumentAsync({
+        type: FORM_FILE_MIMETYPES,
+        copyToCacheDirectory: true,
+        multiple: remaining > 1,
+      })
+    } catch (error: unknown) {
+      // A picker that fails to open must say so; silently doing nothing reads
+      // as an unresponsive button.
+      Logger.error({ msg: "File picker failed", error })
+      Sentry.captureException(error)
+      Alert.alert("Upload Error", "Could not open the file picker. Please try again.")
+      return
+    }
+    if (picked.canceled) return
+
+    if (picked.assets.length > remaining) {
+      Toast.show(`Only ${remaining} more file(s) can be attached here.`, {
+        duration: Toast.durations.SHORT,
+        position: Toast.positions.BOTTOM,
+      })
+    }
+
+    await uploadFilesToField(
+      field,
+      picked.assets.map((asset) => ({
+        uri: asset.uri,
+        name: asset.name,
+        mimeType: asset.mimeType,
+        size: typeof asset.size === "number" ? asset.size : null,
+      })),
+    )
+  }
+
+  const handleTakePhoto = async (field: EventForm.FieldItem) => {
+    if (remainingFileSlots(field) <= 0) return
+
+    const permission = cameraPermission?.granted
+      ? cameraPermission
+      : await requestCameraPermission()
+    if (!permission?.granted) {
+      Alert.alert("Camera", "Camera permission is required to take a photo.")
+      return
+    }
+
+    setCaptureFieldId(field.id)
+  }
+
+  const handlePhotoCaptured = async (uri: string) => {
+    const field = captureField
+    setCaptureFieldId(null)
+    if (!field) {
+      // Nothing will upload this capture, so it must not linger in the cache.
+      await discardCachedFile(uri)
+      return
+    }
+
+    // An unreadable capture still uploads: the server re-checks size and type,
+    // so a missing local size only skips the early client-side rejection.
+    const size = await FileSystem.getInfoAsync(uri)
+      .then((info) => (info.exists && typeof info.size === "number" ? info.size : null))
+      .catch(() => null)
+
+    await uploadFilesToField(field, [
+      {
+        uri,
+        name: cameraCaptureFileName(),
+        mimeType: CAMERA_CAPTURE_MIMETYPE,
+        size,
+      },
+    ])
   }
 
   if (isLoading) return <Text>Loading...</Text>
@@ -1060,61 +1220,81 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
 
                 <If condition={field.inputType === "file"}>
                   <Controller
-                    render={() => (
-                      <View gap={4}>
-                        <Text
-                          text={resolved?.fieldNames[field.id] ?? field.name}
-                          preset="formLabel"
-                        />
-                        {getFieldDescription(field) ? (
+                    render={() => {
+                      const upload = fileUploads[field.name]
+                      const attachedFiles = upload?.files ?? []
+                      const isAtCapacity = remainingFileSlots(field) <= 0
+                      return (
+                        <View gap={4}>
                           <Text
-                            text={getFieldDescription(field)}
-                            size="xs"
-                            color={colors.textDim}
+                            text={resolved?.fieldNames[field.id] ?? field.name}
+                            preset="formLabel"
+                            withAsterisk={field.required}
                           />
-                        ) : null}
-                        <View>
-                          {fileUploads[field.name]?.isUploading ? (
-                            <View
-                              direction="row"
-                              alignItems="center"
-                              gap={8}
-                              style={$inputWrapperStyle as unknown as ViewStyle}
-                            >
-                              <ActivityIndicator size="small" color={colors.palette.primary400} />
-                              <Text text="Uploading..." />
-                            </View>
-                          ) : fileUploads[field.name]?.isComplete ? (
-                            <View
-                              direction="row"
-                              alignItems="center"
-                              justifyContent="space-between"
-                            >
-                              <Text text={fileUploads[field.name]?.fileName || "File uploaded"} />
-                              <Button
-                                text="Replace"
-                                style={$fileButtonStyle}
-                                preset="default"
-                                onPress={() => handleFileUpload(field)}
-                              />
-                            </View>
-                          ) : (
-                            <Button
-                              text="Select File"
-                              preset="default"
-                              style={$fileButtonStyle}
-                              onPress={() => handleFileUpload(field)}
-                            />
-                          )}
-                          {fileUploads[field.name]?.error && (
+                          {getFieldDescription(field) ? (
                             <Text
-                              text={fileUploads[field.name]?.error || ""}
-                              color={colors.error}
+                              text={getFieldDescription(field)}
+                              size="xs"
+                              color={colors.textDim}
                             />
-                          )}
+                          ) : null}
+                          <View gap={4}>
+                            {attachedFiles.map((file) => (
+                              <View
+                                key={file.id}
+                                direction="row"
+                                alignItems="center"
+                                justifyContent="space-between"
+                                gap={8}
+                              >
+                                <Text text={file.fileName || "File uploaded"} />
+                                <Pressable
+                                  onPress={() => removeAttachedFile(field.name, file.id)}
+                                  hitSlop={12}
+                                  accessibilityLabel={`Remove ${file.fileName || "file"}`}
+                                >
+                                  <LucideX size={18} color={colors.textDim} />
+                                </Pressable>
+                              </View>
+                            ))}
+                            {upload?.isUploading ? (
+                              <View
+                                direction="row"
+                                alignItems="center"
+                                gap={8}
+                                style={$inputWrapperStyle as unknown as ViewStyle}
+                              >
+                                <ActivityIndicator
+                                  size="small"
+                                  color={colors.palette.primary400}
+                                />
+                                <Text text="Uploading..." />
+                              </View>
+                            ) : (
+                              <View direction="row" gap={8}>
+                                <Button
+                                  text="Take Photo"
+                                  preset="default"
+                                  disabled={isAtCapacity}
+                                  style={$fileButtonStyle}
+                                  onPress={() => handleTakePhoto(field)}
+                                />
+                                <Button
+                                  text="Choose File"
+                                  preset="default"
+                                  disabled={isAtCapacity}
+                                  style={$fileButtonStyle}
+                                  onPress={() => handleChooseFile(field)}
+                                />
+                              </View>
+                            )}
+                            {upload?.error && (
+                              <Text text={upload.error} color={colors.error} />
+                            )}
+                          </View>
                         </View>
-                      </View>
-                    )}
+                      )
+                    }}
                     name={sanitizeFieldName(field.name) as never}
                     control={control}
                   />
@@ -1277,6 +1457,14 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
           </If>
         </BottomSheetScrollView>
       </BottomSheetModal>
+
+      <CameraCaptureModal
+        visible={captureField !== null}
+        label={captureField ? (resolved?.fieldNames[captureField.id] ?? captureField.name) : undefined}
+        quality={CAMERA_CAPTURE_QUALITY}
+        onCapture={handlePhotoCaptured}
+        onClose={() => setCaptureFieldId(null)}
+      />
     </BottomSheetModalProvider>
   )
 }

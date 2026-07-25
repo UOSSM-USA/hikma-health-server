@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import db from "@/db";
 import Clinic from "@/models/clinic";
 import { Logger } from "@hikmahealth/js-utils";
+import { adminMiddleware, superAdminMiddleware } from "@/middleware/auth";
 
 // Define the form schema
 const formSchema = z.object({
@@ -39,6 +40,7 @@ type FormValues = z.infer<typeof formSchema>;
 // Server function to get a clinic by ID
 const getClinicById = createServerFn({ method: "GET" })
   .inputValidator((data: { id: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const clinic = await db
       .selectFrom("clinics")
@@ -61,6 +63,7 @@ const saveClinic = createServerFn({ method: "POST" })
       address?: string | null;
     }) => data,
   )
+  .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return await Clinic.save({
       id: data.id,
@@ -161,10 +164,7 @@ function RouteComponent() {
                 <FormItem>
                   <FormLabel>Country</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Enter country (optional)"
-                      {...field}
-                    />
+                    <Input placeholder="Enter country (optional)" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -190,10 +190,7 @@ function RouteComponent() {
                 <FormItem>
                   <FormLabel>Address</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Enter address (optional)"
-                      {...field}
-                    />
+                    <Input placeholder="Enter address (optional)" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

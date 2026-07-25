@@ -69,7 +69,7 @@ export type PatientNavigatorParamList = {
   VisitEventsList: { patientId: string; visitId: string | null; visitTimestamp?: number }
   PatientRecordEditor: { editPatientId?: string }
   VitalHistory: { patientId: string }
-  VitalForm: { patientId: string }
+  VitalForm: { patientId: string; vitalId?: string }
   DiagnosisHistory: { patientId: string }
   DiagnosisSearch: { patientId: string }
   PatientDiagnosisEditor: { problemId: string }
@@ -169,7 +169,11 @@ export const PatientNavigator = () => {
       />
       <Stack.Screen
         name="VitalForm"
-        options={{ title: translate("vitalForm:title") }}
+        options={({ route }) => ({
+          title: route.params.vitalId
+            ? translate("vitalForm:editTitle")
+            : translate("vitalForm:title"),
+        })}
         component={VitalFormScreen}
       />
 

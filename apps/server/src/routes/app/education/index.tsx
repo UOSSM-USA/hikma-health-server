@@ -1,7 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { LucideTrash, LucidePencil, LucidePlus, LucideGlobe, LucideLock } from "lucide-react";
+import {
+  LucideTrash,
+  LucidePencil,
+  LucidePlus,
+  LucideGlobe,
+  LucideLock,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -17,11 +23,13 @@ import { format } from "date-fns";
 import db from "@/db";
 import { sql } from "kysely";
 import type EducationContent from "@/models/education-content";
+import { adminMiddleware } from "@/middleware/auth";
 
 type ContentRow = EducationContent.Serialized;
 
-const getEducationContent = createServerFn({ method: "GET" }).handler(
-  async (): Promise<ContentRow[]> => {
+const getEducationContent = createServerFn({ method: "GET" })
+  .middleware([adminMiddleware])
+  .handler(async (): Promise<ContentRow[]> => {
     const rows = await db
       .selectFrom("education_content")
       .selectAll()
@@ -29,11 +37,11 @@ const getEducationContent = createServerFn({ method: "GET" }).handler(
       .orderBy("updated_at", "desc")
       .execute();
     return rows as unknown as ContentRow[];
-  },
-);
+  });
 
 const deleteEducationContent = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string }) => data)
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     await db
       .updateTable("education_content")
@@ -57,7 +65,9 @@ function RouteComponent() {
   const [contentList, setContentList] = useState<ContentRow[]>(initialContent);
 
   const handleDelete = async (id: string, title: string) => {
-    const confirmed = confirm(`Delete "${title}"? This action cannot be undone.`);
+    const confirmed = confirm(
+      `Delete "${title}"? This action cannot be undone.`,
+    );
     if (!confirmed) return;
 
     try {
@@ -121,7 +131,9 @@ function RouteComponent() {
                   </TableCell>
                   <TableCell className="px-4">
                     <Badge
-                      variant={item.status === "published" ? "default" : "secondary"}
+                      variant={
+                        item.status === "published" ? "default" : "secondary"
+                      }
                     >
                       {item.status}
                     </Badge>

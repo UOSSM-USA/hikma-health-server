@@ -5,6 +5,7 @@ import DrugBatches from "@/models/drug-batches";
 import { createServerFn } from "@tanstack/react-start";
 import { v1 as uuidV1 } from "uuid";
 import { Result } from "@/lib/result";
+import { adminMiddleware } from "@/middleware/auth";
 
 export const getClinicInventory = createServerFn({ method: "GET" })
   .inputValidator(
@@ -15,6 +16,7 @@ export const getClinicInventory = createServerFn({ method: "GET" })
       offset?: number;
     }) => params,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan(
       { name: "Get clinic inventory with drug info" },
@@ -51,6 +53,7 @@ export const getClinicInventory = createServerFn({ method: "GET" })
 
 export const getClinicInventoryById = createServerFn({ method: "GET" })
   .inputValidator((params: { id: string }) => params)
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan(
       { name: "Get clinic inventory item by ID" },
@@ -80,6 +83,7 @@ export const getBatchesByDrug = createServerFn({ method: "GET" })
       includeQuarantined?: boolean;
     }) => params,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan({ name: "Get batches for drug" }, async () => {
       try {
@@ -116,6 +120,7 @@ export const saveClinicInventory = createServerFn({ method: "POST" })
       isNew: boolean;
     }) => data,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan(
       { name: "Save clinic inventory item" },
@@ -184,6 +189,7 @@ export const createDrugBatch = createServerFn({ method: "POST" })
       notes?: string;
     }) => data,
   )
+  .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan({ name: "Create drug batch" }, async () => {
       // TODO: this should be a transaction

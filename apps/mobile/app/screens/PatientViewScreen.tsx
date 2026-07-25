@@ -77,7 +77,8 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
     Option.fromNullable(language),
   )
 
-  const { appointments } = usePatientAppointments(patientId)
+  const { appointments: allAppointments } = usePatientAppointments(patientId)
+  const appointments = allAppointments.filter((apt) => apt.status?.toLowerCase() !== "cancelled")
   const { can } = usePermissionGuard()
 
   // const createNewAppointment = () => {

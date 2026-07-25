@@ -4,14 +4,14 @@
 
 import { Option } from "effect"
 import PatientVitals from "@/models/PatientVitals"
-import type { CreateVitalsInput } from "../../../types/vitals"
+import type { CreateVitalsInput, UpdateVitalsInput } from "../../../types/vitals"
 
 /** Server-side vitals shape (snake_case) */
 export type ServerVitals = {
   id: string
   patient_id: string
   visit_id: string | null
-  timestamp: string
+  timestamp: string | number
   systolic_bp: number | null
   diastolic_bp: number | null
   bp_position: string | null
@@ -28,9 +28,9 @@ export type ServerVitals = {
   recorded_by_user_id: string | null
   metadata: Record<string, any>
   is_deleted: boolean
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
+  created_at: string | number
+  updated_at: string | number
+  deleted_at: string | number | null
 }
 
 /** Server vitals -> domain PatientVitals.T */
@@ -89,6 +89,43 @@ export function vitalsToServer(v: PatientVitals.T): ServerVitals {
     updated_at: v.updatedAt.toISOString(),
     deleted_at: Option.getOrNull(v.deletedAt)?.toISOString() ?? null,
   }
+}
+
+/** The only fields an update may change, mapped to their server columns. */
+const UPDATE_COLUMNS = {
+  systolicBp: "systolic_bp",
+  diastolicBp: "diastolic_bp",
+  bpPosition: "bp_position",
+  heightCm: "height_cm",
+  weightKg: "weight_kg",
+  bmi: "bmi",
+  waistCircumferenceCm: "waist_circumference_cm",
+  heartRate: "heart_rate",
+  pulseRate: "pulse_rate",
+  oxygenSaturation: "oxygen_saturation",
+  respiratoryRate: "respiratory_rate",
+  temperatureCelsius: "temperature_celsius",
+  painLevel: "pain_level",
+} as const satisfies Record<keyof UpdateVitalsInput, string>
+
+/**
+ * Absent keys are omitted so the server leaves those columns alone, while an
+ * `Option.none()` becomes an explicit `null` clear.
+ */
+export function updateVitalsToServer(
+  input: UpdateVitalsInput,
+): Record<string, number | string | null> {
+  const payload: Record<string, number | string | null> = {}
+
+  for (const [key, column] of Object.entries(UPDATE_COLUMNS)) {
+    const value = input[key as keyof UpdateVitalsInput]
+    // A non-Option carries no instruction, so treat it as absent rather than
+    // guessing — a malformed caller must never clear a reading.
+    if (!Option.isOption(value)) continue
+    payload[column] = Option.getOrNull(value as Option.Option<number | string>)
+  }
+
+  return payload
 }
 
 /** CreateVitalsInput -> server payload for POST /api/vitals */

@@ -28,8 +28,11 @@ import {
   conditionsOf,
   defaultConditionFor,
   defaultConditionForKind,
+  displayKindOf,
+  isScalarOptionField,
   primitiveFieldsOf,
   templateFromConditions,
+  unknownOptionTokens,
   type VisibilityKind,
 } from "./rule-model";
 
@@ -56,12 +59,14 @@ export function SimpleRuleInput({
   const primitiveFields = primitiveFieldsOf(referenceableFields);
 
   const conditions = conditionsOf(template);
-  // Only AND is surfaced today; preserve whatever connector the template
-  // carries so a future OR editor doesn't lose it.
-  const connector: Connector = template === "Always" ? "and" : template.connector;
+  const connector: Connector =
+    template === "Always" ? "and" : template.connector;
 
   const emit = (next: VisibilityCondition[]) =>
     onTemplateChange(templateFromConditions(next, connector, allowAlways));
+
+  const setConnector = (next: Connector) =>
+    onTemplateChange(templateFromConditions(conditions, next, allowAlways));
 
   const updateCondition = (index: number, c: VisibilityCondition) =>
     emit(conditions.map((existing, i) => (i === index ? c : existing)));
@@ -93,12 +98,34 @@ export function SimpleRuleInput({
         </p>
       )}
 
+      {/* One condition reads the same either way. */}
+      {conditions.length > 1 && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Match</Label>
+          <Select
+            value={connector}
+            onValueChange={(v) => setConnector(v as Connector)}
+          >
+            <SelectTrigger size="sm" data-testid="rule-connector">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="and">all of these conditions</SelectItem>
+              <SelectItem value="or">any of these conditions</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {conditions.map((c, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: ConditionRow is fully controlled by the template (no internal state), so a positional key stays correct across add/remove.
         <div key={i} className="space-y-2">
           {i > 0 && (
-            <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
-              and
+            <p
+              className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground"
+              data-testid={`condition-separator-${i}`}
+            >
+              {connector}
             </p>
           )}
           <div
@@ -141,7 +168,31 @@ export function SimpleRuleInput({
   );
 }
 
-// One leaf condition: kind dropdown + field picker + (for comparisons) the
+// The option token a single-pick row shows, across both the membership leaf and
+// the equality leaf a scalar option field compiles to.
+const optionValueOf = (condition: VisibilityCondition): string => {
+  if (
+    condition.TAG === "IncludesOption" ||
+    condition.TAG === "ExcludesOption"
+  ) {
+    return condition.value;
+  }
+  if (condition.TAG === "Comparison" && typeof condition.value === "string") {
+    return condition.value;
+  }
+  return "";
+};
+
+const optionValuesOf = (
+  condition: VisibilityCondition,
+): ReadonlyArray<string> =>
+  condition.TAG === "IncludesAny" ||
+  condition.TAG === "IncludesAll" ||
+  condition.TAG === "EqualsAny"
+    ? condition.values
+    : [];
+
+// One leaf condition: field picker + kind dropdown + (for comparisons) the
 // operator/value inputs. Shared by the single-condition (validator) layout
 // and each row of the multi-condition list.
 function ConditionRow({
@@ -156,12 +207,13 @@ function ConditionRow({
   onChange: (c: VisibilityCondition) => void;
 }) {
   const field = primitiveFields.find((f) => f.id === condition.fieldId);
-  const kinds = conditionKindsFor(field);
+  const kind = displayKindOf(condition, field);
+  const kinds = conditionKindsFor(field, condition);
 
-  const onKindChange = (kind: ConditionKind) => {
+  const onKindChange = (nextKind: ConditionKind) => {
     // The model fills kind-specific defaults (comparison operator, first
     // option, etc.); the field id is preserved via `field`.
-    onChange(defaultConditionForKind(kind, field));
+    onChange(defaultConditionForKind(nextKind, field));
   };
 
   // Changing the field can invalidate the current kind (scalar ⇄ multi) or
@@ -170,8 +222,14 @@ function ConditionRow({
   const onFieldChange = (newFieldId: string) => {
     const newField = primitiveFields.find((f) => f.id === newFieldId);
     const nextKinds = conditionKindsFor(newField);
-    if (!nextKinds.includes(condition.TAG)) {
+    if (!nextKinds.includes(kind)) {
       onChange(defaultConditionForKind(nextKinds[0], newField));
+      return;
+    }
+    // The same display kind compiles differently per arity, so option-backed
+    // kinds are rebuilt from the new field's options.
+    if (isScalarOptionField(newField) || newField?.multiValue) {
+      onChange(defaultConditionForKind(kind, newField));
       return;
     }
     if (condition.TAG === "Comparison" || condition.TAG === "LengthCompare") {
@@ -183,15 +241,40 @@ function ConditionRow({
       return;
     }
     // Membership kinds carry field-specific option tokens — reset them.
-    onChange(defaultConditionForKind(condition.TAG, newField));
+    onChange(defaultConditionForKind(kind, newField));
+  };
+
+  // Both pickers serve membership leaves and the equality leaves a scalar option
+  // field compiles to, so they write through these rather than one leaf shape.
+  const setOptionValue = (value: string) => {
+    if (condition.TAG === "Comparison") onChange({ ...condition, value });
+    else if (condition.TAG === "IncludesOption")
+      onChange({ ...condition, value });
+    else if (condition.TAG === "ExcludesOption")
+      onChange({ ...condition, value });
+  };
+
+  const setOptionValues = (values: string[]) => {
+    if (condition.TAG === "IncludesAny") onChange({ ...condition, values });
+    else if (condition.TAG === "IncludesAll")
+      onChange({ ...condition, values });
+    else if (condition.TAG === "EqualsAny") onChange({ ...condition, values });
   };
 
   return (
     <div className="space-y-3">
+      {/* Field first: the kind list below depends on which field is picked, so
+          the reverse order hides the membership kinds behind an unmade choice. */}
+      <FieldPickerRow
+        fields={primitiveFields}
+        fieldId={condition.fieldId}
+        onChange={onFieldChange}
+      />
+
       <div className="space-y-1.5">
         <Label className="text-xs">When</Label>
         <Select
-          value={condition.TAG}
+          value={kind}
           onValueChange={(v) => onKindChange(v as ConditionKind)}
         >
           <SelectTrigger size="sm" data-testid="rule-when-kind">
@@ -207,13 +290,10 @@ function ConditionRow({
         </Select>
       </div>
 
-      <FieldPickerRow
-        fields={primitiveFields}
-        fieldId={condition.fieldId}
-        onChange={onFieldChange}
-      />
-
-      {condition.TAG === "Comparison" && (
+      {/* On an option field `==`/`!=` present as includes/excludes below, so the
+          operator picker and raw value box are left to free-form fields — and to
+          a legacy `>`-style rule on an option field. */}
+      {kind === "Comparison" && condition.TAG === "Comparison" && (
         <ComparisonInputs
           op={condition.op}
           value={condition.value as string | number | boolean | null}
@@ -232,20 +312,19 @@ function ConditionRow({
         />
       )}
 
-      {(condition.TAG === "IncludesOption" ||
-        condition.TAG === "ExcludesOption") && (
+      {(kind === "IncludesOption" || kind === "ExcludesOption") && (
         <OptionSelect
           options={field?.options ?? []}
-          value={condition.value}
-          onChange={(value) => onChange({ ...condition, value })}
+          value={optionValueOf(condition)}
+          onChange={setOptionValue}
         />
       )}
 
-      {(condition.TAG === "IncludesAny" || condition.TAG === "IncludesAll") && (
+      {(kind === "IncludesAny" || kind === "IncludesAll") && (
         <MultiOptionSelect
           options={field?.options ?? []}
-          values={condition.values}
-          onChange={(values) => onChange({ ...condition, values })}
+          values={optionValuesOf(condition)}
+          onChange={setOptionValues}
         />
       )}
     </div>
@@ -262,12 +341,20 @@ function OptionSelect({
   onChange: (v: string) => void;
 }) {
   if (options.length === 0) {
+    // `unknownOptionTokens` stays silent here on purpose, but the widget knows
+    // more: a token against zero options is stranded, not merely unloaded.
     return (
-      <p className="text-xs text-muted-foreground">
-        This field has no options to choose from.
-      </p>
+      <div className="space-y-1.5">
+        <p className="text-xs text-muted-foreground">
+          This field has no options to choose from.
+        </p>
+        {value !== "" && <StaleOptionWarning tokens={[value]} />}
+      </div>
     );
   }
+  // With no item matching the stored token the trigger falls back to the
+  // placeholder, so a stale rule reads as "nothing picked".
+  const [stale] = unknownOptionTokens([value], options);
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">Option</Label>
@@ -281,9 +368,29 @@ function OptionSelect({
               {o.label}
             </SelectItem>
           ))}
+          {stale !== undefined && (
+            <SelectItem value={stale}>{stale} — no longer an option</SelectItem>
+          )}
         </SelectContent>
       </Select>
+      {stale !== undefined && <StaleOptionWarning tokens={[stale]} />}
     </div>
+  );
+}
+
+// Shown when a rule names an option that has since been renamed or removed. The
+// rule still saves and compiles, so this prompts a re-pick rather than blocking.
+function StaleOptionWarning({ tokens }: { tokens: ReadonlyArray<string> }) {
+  return (
+    <p
+      className="text-[0.7rem] text-destructive"
+      data-testid="rule-option-stale"
+    >
+      {tokens.length === 1
+        ? `"${tokens[0]}" is no longer an option on this field, so this rule can never match.`
+        : `${tokens.map((t) => `"${t}"`).join(", ")} are no longer options on this field, so this rule can never match.`}{" "}
+      Pick a current option, or remove the condition.
+    </p>
   );
 }
 
@@ -297,14 +404,24 @@ function MultiOptionSelect({
   onChange: (values: string[]) => void;
 }) {
   if (options.length === 0) {
+    // As in OptionSelect: stranded tokens would otherwise be invisible behind
+    // this placeholder.
     return (
-      <p className="text-xs text-muted-foreground">
-        This field has no options to choose from.
-      </p>
+      <div className="space-y-1.5">
+        <p className="text-xs text-muted-foreground">
+          This field has no options to choose from.
+        </p>
+        {values.length > 0 && <StaleOptionWarning tokens={values} />}
+      </div>
     );
   }
   const toggle = (v: string) =>
-    onChange(values.includes(v) ? values.filter((x) => x !== v) : [...values, v]);
+    onChange(
+      values.includes(v) ? values.filter((x) => x !== v) : [...values, v],
+    );
+  // A stale token matches no option row, so it gets its own checked row —
+  // unchecking is how the author drops it.
+  const stale = unknownOptionTokens(values, options);
   return (
     <div className="space-y-1.5" data-testid="rule-options">
       <Label className="text-xs">Options</Label>
@@ -319,7 +436,18 @@ function MultiOptionSelect({
             data-testid={`rule-option-${o.value}`}
           />
         ))}
+        {stale.map((t) => (
+          <Checkbox
+            key={t}
+            size="sm"
+            label={`${t} — no longer an option`}
+            checked
+            onCheckedChange={() => toggle(t)}
+            data-testid={`rule-option-${t}`}
+          />
+        ))}
       </div>
+      {stale.length > 0 && <StaleOptionWarning tokens={stale} />}
       <p className="text-[0.7rem] text-muted-foreground">Pick at least two.</p>
     </div>
   );

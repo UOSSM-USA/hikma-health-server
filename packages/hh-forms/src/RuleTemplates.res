@@ -102,6 +102,11 @@ type visibilityCondition =
   | ExcludesOption({fieldId: string, value: string})
   | IncludesAny({fieldId: string, values: array<string>})
   | IncludesAll({fieldId: string, values: array<string>})
+  // "Is one of" over a SINGLE-valued option field. Compiles to `or`-of-`==`,
+  // never `in`: the evaluator's `in` falls back to substring matching when the
+  // haystack is a string (JsonLogic_Eval.evalIn), so `in` on a scalar select
+  // would match "opt1" against a stored "opt10". Equality is exact.
+  | EqualsAny({fieldId: string, values: array<string>})
   // Character-length comparison over a free-text field. Compiles to
   // `{<op>: [{length: [{var: [form.<id>, ""]}]}, <n>]}`. The var default ("")
   // coerces a missing/empty value to length 0 instead of an eval error, so an
@@ -109,9 +114,10 @@ type visibilityCondition =
   // otherwise pass silently (see Rules.computeValidatorErrors).
   | LengthCompare({fieldId: string, op: comparisonOp, value: float})
 
-// How a list of conditions combines. Only `#and` is surfaced in the UI
-// today; `#or` is defined now so the type and serializer are ready for a
-// later OR/mixed-logic editor with no structural change.
+// How a list of conditions combines. Both are authorable via the editor's
+// AND/OR picker; a single condition canonically reports `#and`. Mixed logic
+// (an AND of ORs) is out of scope — one flat list under one connector, and
+// nested groups stay in advanced mode.
 @genType
 type connector = [#"and" | #"or"]
 
@@ -173,6 +179,11 @@ let compileCondition = (c: visibilityCondition): JSON.t => {
     JSON.Object(Dict.fromArray([("in", JSON.Array([JSON.String(value), varRef(fieldId)]))]))
   let inGroup = (op, fieldId, values) =>
     JSON.Object(Dict.fromArray([(op, JSON.Array(values->Array.map(v => inRule(fieldId, v))))]))
+  // `{"==": [{var: form.<id>}, <option>]}` — exact equality on a scalar field.
+  let eqRule = (fieldId, value) =>
+    JSON.Object(Dict.fromArray([("==", JSON.Array([varRef(fieldId), JSON.String(value)]))]))
+  let eqGroup = (fieldId, values) =>
+    JSON.Object(Dict.fromArray([("or", JSON.Array(values->Array.map(v => eqRule(fieldId, v))))]))
   // `{length: {var: [form.<id>, ""]}}` — the field's value length. The `length`
   // operand is a single rule (not array-wrapped, else it measures the wrapper);
   // the var default coerces a missing value to "" so length is 0, never an error.
@@ -199,6 +210,7 @@ let compileCondition = (c: visibilityCondition): JSON.t => {
     JSON.Object(Dict.fromArray([("!", inRule(fieldId, value))]))
   | IncludesAny({fieldId, values}) => inGroup("or", fieldId, values)
   | IncludesAll({fieldId, values}) => inGroup("and", fieldId, values)
+  | EqualsAny({fieldId, values}) => eqGroup(fieldId, values)
   | LengthCompare({fieldId, op, value}) =>
     JSON.Object(Dict.fromArray([((op :> string), JSON.Array([lengthOfField(fieldId), JSON.Number(value)]))]))
   }
@@ -301,6 +313,55 @@ let decompileInGroup = (op: string, items: array<JSON.t>): option<visibilityCond
     }
   }
 
+// Read an equality leaf `{"==": [{var: "form.<id>"}, <string>]}` — the var-first
+// order compileCondition emits for scalar option fields. Only string literals
+// qualify; a numeric or boolean rhs is a plain Comparison.
+let decompileEqLeaf = (rule: JSON.t): option<(string, string)> =>
+  switch rule {
+  | Object(obj) =>
+    switch Dict.keysToArray(obj) {
+    | ["=="] =>
+      switch obj->Dict.get("==")->Option.getUnsafe {
+      | Array(args) if Array.length(args) === 2 =>
+        switch (isFormVar(args->Array.getUnsafe(0)), args->Array.getUnsafe(1)) {
+        | (Some(fieldId), String(value)) => Some((fieldId, value))
+        | _ => None
+        }
+      | _ => None
+      }
+    | _ => None
+    }
+  | _ => None
+  }
+
+// Collapse `{or: [==, ==, …]}` into an EqualsAny leaf, iff every member is an
+// equality leaf over the SAME field and there are ≥2. Mirrors decompileInGroup.
+let decompileEqGroup = (items: array<JSON.t>): option<visibilityCondition> =>
+  if Array.length(items) < 2 {
+    None
+  } else {
+    let fieldId = ref(None)
+    let values = []
+    let ok = ref(true)
+    let i = ref(0)
+    while ok.contents && i.contents < Array.length(items) {
+      switch decompileEqLeaf(items->Array.getUnsafe(i.contents)) {
+      | Some((f, v)) =>
+        switch fieldId.contents {
+        | None => fieldId := Some(f)
+        | Some(existing) => if !String.equal(existing, f) { ok := false }
+        }
+        Array.push(values, v)
+      | None => ok := false
+      }
+      i := i.contents + 1
+    }
+    switch (ok.contents, fieldId.contents) {
+    | (true, Some(f)) => Some(EqualsAny({fieldId: f, values}))
+    | _ => None
+    }
+  }
+
 // Read a form field id from either `{var: "form.<id>"}` or the defaulted
 // `{var: ["form.<id>", <default>]}` form (the latter is what LengthCompare
 // emits). Rebuilds a bare-var object from the array head and reuses isFormVar.
@@ -379,7 +440,13 @@ let decompileCondition = (rule: JSON.t): option<visibilityCondition> =>
           })
         | "or" =>
           switch arg {
-          | Array(items) => decompileInGroup("or", items)
+          // Membership group first, then the scalar `or`-of-`==` group. A mixed
+          // list matches neither and falls through to the group path.
+          | Array(items) =>
+            switch decompileInGroup("or", items) {
+            | Some(c) => Some(c)
+            | None => decompileEqGroup(items)
+            }
           | _ => None
           }
         | "and" =>

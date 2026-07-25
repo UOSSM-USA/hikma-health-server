@@ -271,7 +271,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       process.exit(0);
     })
     .catch((error) => {
-      Logger.error("\nFatal error:", error);
+      Logger.error({ msg: "\nFatal error:", error });
       process.exit(1);
     });
 }

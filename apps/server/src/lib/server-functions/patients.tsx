@@ -15,6 +15,7 @@ import {
   buildPatientAttributeInsertValues,
 } from "./builders";
 import { logAuditEvent } from "./audit";
+import { adminMiddleware } from "@/middleware/auth";
 
 type Pagination = {
   offset: number;
@@ -113,15 +114,13 @@ export const searchPatients = createServerFn({ method: "GET" })
         const offset = data.offset || 0;
         const limit = data.limit || 10;
 
-        const hasTextQuery =
-          data.searchQuery && data.searchQuery.trim() !== "";
+        const hasTextQuery = data.searchQuery && data.searchQuery.trim() !== "";
         const hasDateFilters =
           data.registrationDateStart ||
           data.registrationDateEnd ||
           data.visitsDateStart ||
           data.visitsDateEnd;
-        const hasClinicFilter =
-          data.clinicIds && data.clinicIds.length > 0;
+        const hasClinicFilter = data.clinicIds && data.clinicIds.length > 0;
 
         // If no filters at all, use getAllWithAttributes for better performance
         if (!hasTextQuery && !hasDateFilters && !hasClinicFilter) {
@@ -162,6 +161,7 @@ export const getPatientById = createServerFn({
   method: "GET",
 })
   .inputValidator((data: { id: string }) => data)
+  .middleware([adminMiddleware])
   .handler(
     async ({
       data,
