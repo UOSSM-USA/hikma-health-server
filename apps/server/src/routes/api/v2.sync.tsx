@@ -180,6 +180,18 @@ const authenticateRequest = createServerOnlyFn(
 
       const encodedCredentials = authHeader.split(" ")[1];
 
+      // `peerType` is caller-supplied. Hub peers receive a wider entity set
+      // (users, devices, device pin codes) and are exempt from user-level
+      // clinic scoping, so the claim is only honoured for callers presenting a
+      // device API key. A user-credential login claiming sync_hub is rejected.
+      if (peerType === Device.DEVICE_TYPE.SYNC_HUB && !isBearerToken) {
+        return Result.err({
+          _tag: "PermissionDenied",
+          permission: "Connection to server Refused",
+          message: "sync_hub peer type requires device API key authentication",
+        });
+      }
+
       // if the sync is coming from a sync_hub, then we must validate that its a valid device
       if (isBearerToken && peerType === Device.DEVICE_TYPE.SYNC_HUB) {
         // token is the secret API Key that we can validate with the server to make sure its valid.

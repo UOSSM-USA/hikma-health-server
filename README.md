@@ -193,9 +193,15 @@ script targets a single app's dependency closure — unrelated apps are skipped.
 ### Server
 
 ```bash
-pnpm run server:build        # install deps + build the server (and its workspace deps)
-pnpm run server:start        # run migrations, recovery, then start the built server
+pnpm run server:install-build  # install deps + build the server (and its workspace deps)
+pnpm run server:build          # build only — assumes deps are already installed
+pnpm run server:start          # run migrations, recovery, then start the built server
 ```
+
+`server:build` deliberately does not install: deploy platforms run their own
+`pnpm install` first, and a second one would rewrite `node_modules` underneath
+the running build. Use `server:install-build` (or `just build-server`) locally
+when you also want the install.
 
 The `start` recipe runs idempotent Kysely migrations and the
 `user_permissions_recovery` script before booting, so a single command is

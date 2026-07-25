@@ -6,7 +6,7 @@
     "lint:fix": "oxlint --fix",
     "init-install": "pnpm install -w",
     "server:install-build": "just build-server",
-    "server:build": "just build-server",
+    "server:build": "just build-server-only",
     "server:start": "just start-server",
     "aiproxy:build": "just build-aiproxy",
     "aiproxy:start": "just start-aiproxy",

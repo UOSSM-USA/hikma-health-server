@@ -3,12 +3,24 @@
 install-server:
     pnpm install --filter "hikma-health-server..."
 
-build-server: install-server build-utils-js build-database build-hh-forms
+# Build the server against an already-installed tree. Backs the
+# `server:build` npm script, which is what deploy platforms (render.yaml,
+# .do/*.yaml) call after their own `pnpm install` — a second install here
+# would rewrite node_modules underneath the live `pnpm run` → `just` process
+# tree that is executing out of it. Reaching this recipe at all means an
+# install already happened: `just` itself comes from the root `rust-just`
+# devDependency.
+
+# Build the server. Assumes dependencies are already installed.
+build-server-only: build-utils-js build-database build-hh-forms
     #!/usr/bin/env bash
     set -euo pipefail
     ENV_ARGS="-f .env"
     [ -f apps/server/.env ] && ENV_ARGS="$ENV_ARGS -f apps/server/.env"
     pnpm exec dotenvx run $ENV_ARGS -- pnpm --filter hikma-health-server run build
+
+# Install then build — the local entry point.
+build-server: install-server build-server-only
 
 # Runs migrate → recovery-permissions → start-only on every start, on every
 # platform. Migrate is idempotent; failure at any step aborts boot loudly.

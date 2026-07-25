@@ -227,8 +227,7 @@ export async function applyRemoteChanges(changes: SyncDatabaseChangeSet): Promis
  * Returns a changeset with:
  *   created: records with _status = "created"
  *   updated: records with _status = "updated"
- *   deleted: records with _status = "deleted" (IDs only in WatermelonDB,
- *            but we return full raws for hub RPC compatibility)
+ *   deleted: IDs of records with _status = "deleted"
  */
 export async function fetchLocalChanges(): Promise<SyncDatabaseChangeSet> {
   const changes: SyncDatabaseChangeSet = {}
@@ -247,7 +246,7 @@ export async function fetchLocalChanges(): Promise<SyncDatabaseChangeSet> {
         ;(changes as any)[tableName] = {
           created: createdRecords.map((r) => ({ ...r._raw })),
           updated: updatedRecords.map((r) => ({ ...r._raw })),
-          deleted: deletedRecords.map((r) => ({ ...r._raw })),
+          deleted: deletedRecords.map((r) => r.id),
         } as SyncTableChangeSet
       }
     } catch (error) {
@@ -349,7 +348,7 @@ async function getTableChangesSince(
   tableName: string,
   timestamp: number,
   idsToExclude: RecordId[],
-): Promise<{ tableName: string; created: DirtyRaw[]; updated: DirtyRaw[]; deleted: DirtyRaw[] }> {
+): Promise<{ tableName: string; created: DirtyRaw[]; updated: DirtyRaw[]; deleted: RecordId[] }> {
   try {
     const collection = db.get(tableName)
 
@@ -387,7 +386,7 @@ async function getTableChangesSince(
       )
       .map((record) => record._raw)
 
-    const deleted = deletedRecords.map((record) => record._raw)
+    const deleted = deletedRecords.map((record) => record.id)
 
     return { tableName, created, updated, deleted }
   } catch (error) {
