@@ -1,9 +1,24 @@
+import { uuidv7 } from "uuidv7"
+
 namespace ICDEntry {
   export type T = {
     code: string
     desc: string
     // desc_ar: string
   }
+
+  /** Marks a code this app minted rather than one from the ICD-11 catalogue. */
+  export const FREE_TEXT_CODE_PREFIX = "0000-"
+
+  /**
+   * A code for a diagnosis a clinician typed rather than picked.
+   *
+   * Unique per diagnosis: the reconcile and delete paths match problems on
+   * this code, so two free-text diagnoses must never collide.
+   *
+   * @returns A new locally-minted diagnosis code
+   */
+  export const freeTextCode = (): string => `${FREE_TEXT_CODE_PREFIX}${uuidv7()}`
 
   /**
 Render out a language appropriate diagnosis string

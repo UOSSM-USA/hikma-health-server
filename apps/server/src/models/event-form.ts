@@ -567,6 +567,10 @@ namespace EventForm {
     {
       inputType: "select";
       options: FieldOption[];
+      // Whether or not to add this entry to the patient's problems list
+      // (conditions/etc). Absent on forms authored before the flag existed,
+      // which the mobile client reads as "do not record".
+      addToProblems?: boolean;
     } & HHFieldBase &
       WithVisibility
   > {

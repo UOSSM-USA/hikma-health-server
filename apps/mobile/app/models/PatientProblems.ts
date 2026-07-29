@@ -3,6 +3,7 @@ import { Option } from "effect"
 
 import database from "@/db"
 import PatientProblemModel from "@/db/model/PatientProblems"
+import { isValidUUID } from "@/utils/misc"
 
 namespace PatientProblems {
   export type ProblemCodeSystem = "icd10cm" | "snomed" | "icd11" | "icd10"
@@ -165,6 +166,65 @@ namespace PatientProblems {
   export namespace DB {
     export type T = PatientProblemModel
 
+    /** Column widths on the server (`problem_code`, `problem_label`). */
+    const PROBLEM_CODE_LENGTH_MAX = 100
+    const PROBLEM_LABEL_LENGTH_MAX = 255
+
+    /**
+     * A problem ready to be written, as plain data. Optional foreign keys are
+     * absent rather than empty — see `prepareCreate`.
+     */
+    export type NewProblem = {
+      patientId: string
+      visitId?: string
+      problemCodeSystem: ProblemCodeSystem
+      problemCode: string
+      problemLabel: string
+      clinicalStatus: ClinicalStatus
+      verificationStatus: VerificationStatus
+      recordedByUserId?: string
+      metadata?: Record<string, any>
+    }
+
+    /**
+     * Build an unsaved problem record for a caller that commits its own
+     * `database.batch`, so a problem lands atomically with the event or visit
+     * that produced it.
+     *
+     * `visit_id` and `recorded_by_user_id` are `uuid` columns server-side, so a
+     * non-UUID id is dropped rather than written: `""` reaches PostgreSQL as an
+     * invalid uuid and fails the whole sync push, not just this record. Code
+     * and label are clamped to their column widths for the same reason.
+     *
+     * @param problem Problem data to write
+     * @returns The prepared record, to be passed to `database.batch`
+     * @throws If `patientId` is not a valid UUID
+     */
+    export const prepareCreate = (problem: NewProblem): PatientProblemModel => {
+      if (!isValidUUID(problem.patientId)) {
+        throw new Error(
+          `Cannot create a patient problem without a valid patient_id (got "${problem.patientId}")`,
+        )
+      }
+
+      return database.get<PatientProblemModel>("patient_problems").prepareCreate((newProblem) => {
+        newProblem.patientId = problem.patientId
+        newProblem.visitId = isValidUUID(problem.visitId ?? "") ? problem.visitId : undefined
+        newProblem.recordedByUserId = isValidUUID(problem.recordedByUserId ?? "")
+          ? problem.recordedByUserId
+          : undefined
+
+        newProblem.problemCodeSystem = problem.problemCodeSystem
+        newProblem.problemCode = problem.problemCode.slice(0, PROBLEM_CODE_LENGTH_MAX)
+        newProblem.problemLabel = problem.problemLabel.slice(0, PROBLEM_LABEL_LENGTH_MAX)
+        newProblem.clinicalStatus = problem.clinicalStatus
+        newProblem.verificationStatus = problem.verificationStatus
+
+        newProblem.metadata = problem.metadata ?? {}
+        newProblem.isDeleted = false
+      })
+    }
+
     /**
      * Create a new patient problem
      * @param problem Problem data to create
@@ -187,7 +247,7 @@ namespace PatientProblems {
             newProblem.severityScore = Option.getOrUndefined(problem.severityScore)
             newProblem.onsetDate = Option.getOrUndefined(problem.onsetDate)
             newProblem.endDate = Option.getOrUndefined(problem.endDate)
-            newProblem.recordedByUserId = Option.getOrUndefined(problem.recordedByUserId) || ""
+            newProblem.recordedByUserId = Option.getOrUndefined(problem.recordedByUserId)
             newProblem.metadata = problem.metadata || {}
             newProblem.isDeleted = problem.isDeleted || false
           })
@@ -232,6 +292,29 @@ namespace PatientProblems {
 
         return updated.id
       })
+    }
+
+    /**
+     * Soft delete problems.
+     *
+     * `markAsDeleted` is the load-bearing half: it puts the ids in the sync
+     * push's deleted bucket, which is what makes the server set `deleted_at`.
+     * An `is_deleted` flag on its own would travel as an ordinary update and
+     * leave `deleted_at` null, which the sync delta treats as not deleted.
+     *
+     * Callers already inside a `database.batch` should use
+     * `prepareMarkAsDeleted` on the record instead, to keep the deletion
+     * atomic with the rest of their write.
+     *
+     * @param problems The records to retire
+     */
+    export const softDelete = async (problems: PatientProblemModel[]): Promise<void> => {
+      for (const problem of problems) {
+        await problem.update((prob) => {
+          prob.isDeleted = true
+        })
+        await problem.markAsDeleted()
+      }
     }
 
     /**

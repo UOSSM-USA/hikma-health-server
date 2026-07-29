@@ -363,6 +363,30 @@ export function InputsConfiguration({
                       </div>
                     </If>
 
+                    {/* IF the field is a diagnosis field, ask if this result should be promoted to the patient chart within the patient problems */}
+                    <If show={field.fieldType === "diagnosis"}>
+                      <Checkbox
+                        value={
+                          (field as EventForm.DiagnosisField2).addToProblems
+                            ? "on"
+                            : "off"
+                        }
+                        checked={
+                          (field as EventForm.DiagnosisField2).addToProblems ===
+                          true
+                        }
+                        onClick={(e) => {
+                          onFieldChange(
+                            field.id,
+                            "addToProblems",
+                            // Toggle: `value` carries the pre-click state
+                            e.currentTarget.value === "off",
+                          );
+                        }}
+                        label="Record to patient problems"
+                      />
+                    </If>
+
                     {field.inputType === "number" && (
                       <Checkbox
                         onClick={(e) =>

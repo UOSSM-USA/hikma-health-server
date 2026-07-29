@@ -20,7 +20,9 @@ mod db;
 
 mod cloud_sync;
 pub mod crypto;
+pub(crate) mod event_problems;
 mod migrations;
+pub(crate) mod problems;
 mod rpc;
 pub(crate) mod sync_utils;
 

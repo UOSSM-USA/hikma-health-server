@@ -18,6 +18,7 @@ import {
 } from "kysely";
 import { jsonObjectFrom } from "kysely/helpers/postgres";
 import { v1 as uuidV1 } from "uuid";
+import EventProblems from "@/models/event-problems";
 import Visit from "./visit";
 import Patient from "./patient";
 import { Logger } from "@hikmahealth/js-utils";
@@ -128,6 +129,40 @@ namespace Event {
         return safeJSONParse(row.form_data, []) as Array<
           Record<string, unknown>
         >;
+      },
+    );
+
+    /**
+     * Who and what a live event was recorded against, with its current form
+     * data. Null when the event is missing or soft-deleted.
+     *
+     * @param eventId - The event's ID
+     */
+    export const getFormContextById = createServerOnlyFn(
+      async (
+        eventId: string,
+      ): Promise<{
+        patientId: string | null;
+        visitId: string | null;
+        formId: string | null;
+        formData: Array<Record<string, unknown>>;
+      } | null> => {
+        const row = await db
+          .selectFrom(Table.name)
+          .select(["patient_id", "visit_id", "form_id", "form_data"])
+          .where("id", "=", eventId)
+          .where("is_deleted", "=", false)
+          .executeTakeFirst();
+        if (!row) return null;
+
+        return {
+          patientId: row.patient_id,
+          visitId: row.visit_id,
+          formId: row.form_id,
+          formData: safeJSONParse(row.form_data, []) as Array<
+            Record<string, unknown>
+          >,
+        };
       },
     );
 
@@ -275,7 +310,16 @@ namespace Event {
       },
     );
 
+    /**
+     * Soft delete an event, along with the problems its diagnoses put on the
+     * patient's chart.
+     *
+     * @param id - The event's ID
+     */
     export const softDelete = createServerOnlyFn(async (id: string) => {
+      // Read before the flag flips — the lookup only sees live events.
+      const context = await API.getFormContextById(id);
+
       await db
         .updateTable(Event.Table.name)
         .set({
@@ -286,6 +330,8 @@ namespace Event {
         })
         .where("id", "=", id)
         .execute();
+
+      await EventProblems.retire(context?.patientId ?? null, id);
     });
 
     export const getAllByFormId = createServerOnlyFn(

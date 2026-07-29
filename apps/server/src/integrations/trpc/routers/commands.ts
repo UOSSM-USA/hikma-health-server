@@ -10,6 +10,7 @@ import Patient from "@/models/patient";
 import PatientAdditionalAttribute from "@/models/patient-additional-attribute";
 import Visit from "@/models/visit";
 import Event from "@/models/event";
+import EventProblems from "@/models/event-problems";
 import User from "@/models/user";
 import db from "@/db";
 import { sql } from "kysely";
@@ -97,6 +98,27 @@ const updateEventSchema = z.object({
   form_data: z.array(z.record(z.string(), z.any())),
   metadata: z.record(z.string(), z.any()).optional(),
 });
+
+/**
+ * Record an event's diagnoses on the patient's chart.
+ *
+ * The event is already committed by the time this runs — they are not one
+ * transaction — so throwing would 500 a client whose save succeeded and invite
+ * a retry into a duplicate. Failures are reported and dropped instead;
+ * reconciliation is idempotent, so the next edit of the event puts it right.
+ */
+async function recordEventProblems(
+  input: Parameters<typeof EventProblems.reconcile>[0],
+): Promise<void> {
+  try {
+    await EventProblems.reconcile(input);
+  } catch (error) {
+    Sentry.captureException(error, {
+      level: "error",
+      extra: { eventId: input.eventId, formId: input.formId },
+    });
+  }
+}
 
 /** Hub-compatible patient registration schema with client-provided id and ms-epoch timestamps */
 const registerPatientSchema = z.object({
@@ -548,6 +570,16 @@ export const commandProcedures = {
           })
           .executeTakeFirstOrThrow();
 
+        await recordEventProblems({
+          eventId,
+          patientId: values.patient_id,
+          visitId: values.visit_id,
+          formId: values.form_id,
+          formData: input.form_data,
+          previousFormData: [],
+          recordedByUserId: ctx.userId,
+        });
+
         await logAuditEvent({
           actionType: "CREATE",
           tableName: "events",
@@ -574,7 +606,24 @@ export const commandProcedures = {
     .input(updateEventSchema)
     .mutation(async ({ input, ctx }) => {
       try {
+        // Read before the write: reconciling needs the diagnoses this event
+        // asked to record last time, so a problem taken off the chart by hand
+        // is not put back.
+        const before = await Event.API.getFormContextById(input.id);
+
         await Event.API.updateFormData(input.id, input.form_data, input.metadata);
+
+        if (before) {
+          await recordEventProblems({
+            eventId: input.id,
+            patientId: before.patientId,
+            visitId: before.visitId,
+            formId: before.formId,
+            formData: input.form_data,
+            previousFormData: before.formData,
+            recordedByUserId: ctx.userId,
+          });
+        }
 
         await logAuditEvent({
           actionType: "UPDATE",

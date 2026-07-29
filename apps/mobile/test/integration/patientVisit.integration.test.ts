@@ -63,6 +63,7 @@ import PatientVitals from "../../app/models/PatientVitals"
 import PatientProblems from "../../app/models/PatientProblems"
 import Peer from "../../app/models/Peer"
 import Event from "../../app/models/Event"
+import EventForm from "../../app/models/EventForm"
 
 import PatientModel from "../../app/db/model/Patient"
 import ClinicModel from "../../app/db/model/Clinic"
@@ -70,6 +71,8 @@ import UserModel from "../../app/db/model/User"
 import UserClinicPermissionModel from "../../app/db/model/UserClinicPermissions"
 import VisitModel from "../../app/db/model/Visit"
 import EventModel from "../../app/db/model/Event"
+import EventFormModel from "../../app/db/model/EventForm"
+import PatientProblemModel from "../../app/db/model/PatientProblems"
 
 // Lifecycle
 
@@ -1171,6 +1174,182 @@ describe("Event.DB", () => {
       .query(Q.where("patient_id", patientId), Q.where("is_deleted", false))
       .fetch()
     expect(events).toHaveLength(0)
+  })
+})
+
+// The rule itself is covered in packages/hh-forms; what these exercise is the
+// wiring — that Event.DB writes, retires, and cascades what the rule decides.
+
+describe("Event.DB diagnoses → patient problems", () => {
+  const DIAGNOSIS_FIELD_ID = "field-diagnosis"
+  const CHOLERA = { code: "1A00", desc: "Cholera" }
+  const DIABETES = { code: "5A11", desc: "Type 2 diabetes" }
+
+  let patientId: string
+  let clinicId: string
+  let userId: string
+  let userName: string
+
+  beforeEach(async () => {
+    const clinic = await seedClinic()
+    clinicId = clinic.id
+    const user = await seedUser("Dr. Chart", clinic.id)
+    userId = user.id
+    userName = user.name
+    await seedPermissions(user.id, clinic.id)
+
+    const record = makePatientRecord({ given_name: "Chart", surname: "Patient" })
+    patientId = await Patient.DB.register(
+      record,
+      { id: userId, name: userName },
+      { id: clinicId, name: clinic.name },
+    )
+  })
+
+  /** A form with one diagnosis field. Pass `null` to omit `addToProblems`
+   * entirely, as a form authored before the flag existed would. */
+  async function seedDiagnosisForm(addToProblems: boolean | null = true) {
+    const form = await testDb.write(() =>
+      testDb.get<EventFormModel>("event_forms").create((f) => {
+        f.name = "Consultation"
+        f.description = "Consultation form"
+        f.language = "en"
+        f.isEditable = true
+        f.isSnapshotForm = false
+        f.formFields = [
+          {
+            id: DIAGNOSIS_FIELD_ID,
+            name: "Diagnosis",
+            fieldType: "diagnosis",
+            inputType: "diagnosis",
+            ...(addToProblems === null ? {} : { addToProblems }),
+          },
+        ] as unknown as EventForm.FieldItem[]
+        f.metadata = {}
+        f.isDeleted = false
+      }),
+    )
+    return form.id
+  }
+
+  function eventInput(formId: string, diagnoses: { code: string; desc: string }[]) {
+    return {
+      patientId,
+      formId,
+      visitId: "",
+      eventType: "consultation",
+      formData: [
+        {
+          inputType: "diagnosis",
+          fieldType: "diagnosis",
+          name: "Diagnosis",
+          fieldId: DIAGNOSIS_FIELD_ID,
+          value: diagnoses,
+        },
+      ],
+      metadata: {},
+      isDeleted: false,
+      recordedByUserId: userId,
+    } as unknown as Omit<EventModel, "id" | "createdAt" | "updatedAt">
+  }
+
+  const saveEvent = (
+    formId: string,
+    diagnoses: { code: string; desc: string }[],
+    existing?: { eventId: string; visitId: string },
+  ) =>
+    Event.DB.create(
+      eventInput(formId, diagnoses),
+      existing?.visitId ?? null,
+      clinicId,
+      userId,
+      userName,
+      Date.now(),
+      existing?.eventId,
+    )
+
+  const chartLabels = async () =>
+    (await PatientProblems.DB.getAllForPatient(patientId))
+      .map((problem) => problem.problemLabel)
+      .sort()
+
+  it("records a diagnosis on the patient's chart", async () => {
+    const formId = await seedDiagnosisForm()
+
+    const { eventId } = await saveEvent(formId, [CHOLERA])
+
+    const problems = await PatientProblems.DB.getAllForPatient(patientId)
+    expect(problems).toHaveLength(1)
+    expect(problems[0].problemCode).toBe("1A00")
+    expect(problems[0].problemLabel).toBe("Cholera")
+    expect(problems[0].problemCodeSystem).toBe("icd11")
+    expect(problems[0].clinicalStatus).toBe("active")
+    expect(problems[0].verificationStatus).toBe("provisional")
+
+    // The metadata link is the only way back to the event that recorded it.
+    const [record] = await testDb
+      .get<PatientProblemModel>("patient_problems")
+      .query(Q.where("patient_id", patientId))
+      .fetch()
+    expect(record.metadata.eventId).toBe(eventId)
+
+    // Singly-encoded, so it lands in the cloud as a jsonb object. Encoded twice
+    // it arrives as a jsonb string and `metadata->>'eventId'` matches nothing.
+    expect(JSON.parse(record._getRaw("metadata") as string)).toEqual({ eventId })
+  })
+
+  // Forms authored before the flag existed must not start writing to charts.
+  it("records nothing when the field is not marked for the chart", async () => {
+    const formId = await seedDiagnosisForm(null)
+
+    await saveEvent(formId, [CHOLERA])
+
+    expect(await chartLabels()).toEqual([])
+  })
+
+  it("retires a diagnosis dropped from the event", async () => {
+    const formId = await seedDiagnosisForm()
+    const saved = await saveEvent(formId, [CHOLERA, DIABETES])
+    expect(await chartLabels()).toEqual(["Cholera", "Type 2 diabetes"])
+
+    await saveEvent(formId, [DIABETES], saved)
+
+    expect(await chartLabels()).toEqual(["Type 2 diabetes"])
+  })
+
+  it("does not resurrect a problem removed from the chart by hand", async () => {
+    const formId = await seedDiagnosisForm()
+    const saved = await saveEvent(formId, [CHOLERA])
+
+    const recorded = await testDb
+      .get<PatientProblemModel>("patient_problems")
+      .query(Q.where("patient_id", patientId))
+      .fetch()
+    await testDb.write(() => PatientProblems.DB.softDelete(recorded))
+
+    await saveEvent(formId, [CHOLERA], saved)
+
+    expect(await chartLabels()).toEqual([])
+  })
+
+  it("takes the event's diagnoses off the chart when the event is deleted", async () => {
+    const formId = await seedDiagnosisForm()
+    const { eventId } = await saveEvent(formId, [CHOLERA])
+    expect(await chartLabels()).toEqual(["Cholera"])
+
+    await Event.DB.softDelete(eventId)
+
+    expect(await chartLabels()).toEqual([])
+  })
+
+  it("leaves another event's diagnoses on the chart", async () => {
+    const formId = await seedDiagnosisForm()
+    const { eventId } = await saveEvent(formId, [CHOLERA])
+    await saveEvent(formId, [DIABETES])
+
+    await Event.DB.softDelete(eventId)
+
+    expect(await chartLabels()).toEqual(["Type 2 diabetes"])
   })
 })
 

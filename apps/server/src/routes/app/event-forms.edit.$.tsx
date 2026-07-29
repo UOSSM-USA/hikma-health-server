@@ -208,9 +208,9 @@ function RouteComponent() {
         let cleanedOptions = field.options.map(
           (
             option:
-              { label: string; value: string; __isNew__?: boolean } | string,
+              | { label: string; value: string; __isNew__?: boolean }
+              | string,
           ) => {
-            Logger.log({ option }); // Object { label: "Damas", value: "Damas", __isNew__: true }
             if (typeof option === "string") {
               return option?.trim();
             } else if (typeof option === "object") {
@@ -683,6 +683,7 @@ const ComponentRegistry = [
         required: false,
         inputType: "select",
         options: [],
+        addToProblems: true,
       }),
     {
       label: "Diagnosis",

@@ -43,6 +43,7 @@ describe("SOFT_DELETE_DEPENDENCIES", () => {
     expect(tables).toContain("prescriptions");
     expect(tables).toContain("events");
     expect(tables).toContain("appointments");
+    expect(tables).toContain("patient_problems");
   });
 
   it("has no duplicate entries in any dependency list", () => {

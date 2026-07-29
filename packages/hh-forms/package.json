@@ -43,6 +43,10 @@
       "types": "./src/RuleCycles.gen.ts",
       "import": "./src/RuleCycles.res.mjs"
     },
+    "./Problems": {
+      "types": "./src/Problems.gen.ts",
+      "import": "./src/Problems.res.mjs"
+    },
     "./package.json": "./package.json"
   },
   "files": [

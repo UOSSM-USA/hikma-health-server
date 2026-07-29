@@ -14,8 +14,6 @@ import { sanitizeMetadata } from "@/utils/db"
 
 import VisitModel from "./Visit"
 
-// 'CREATE TABLE IF NOT EXISTS events (id varchar(32) PRIMARY KEY, patient_id varchar(32) REFERENCES patients(id) ON DELETE CASCADE, visit_id varchar(32) REFERENCES visits(id) ON DELETE CASCADE, event_type text, event_timestamp text, edited_at text, event_metadata text, deleted integer DEFAULT 0);',
-
 export default class EventModel extends Model {
   static table = "events"
 
@@ -29,14 +27,13 @@ export default class EventModel extends Model {
   @text("event_type") eventType!: string
   @text("form_id") formId!: string
   @json("form_data", sanitizeFormData) formData!: Event.FormDataItem[]
-  @json("metadata", sanitizeMetadata) metadata!: Record<string, any>
+  @json("metadata", sanitizeMetadata) metadata!: Record<string, unknown>
   @field("is_deleted") isDeleted!: boolean
   @date("deleted_at") deletedAt!: Date
 
   // V9
   @text("recorded_by_user_id") recordedByUserId!: string | null
 
-  // --- Timestamps (Read-only) ---
   @readonly @date("created_at") createdAt!: Date
   @readonly @date("updated_at") updatedAt!: Date
 

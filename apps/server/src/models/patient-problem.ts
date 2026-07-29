@@ -9,6 +9,7 @@ import {
   sql,
 } from "kysely";
 import db from "@/db";
+import { safeJSONParse } from "@/lib/utils";
 import { createServerOnlyFn } from "@tanstack/react-start";
 import { v1 as uuidV1 } from "uuid";
 
@@ -339,6 +340,33 @@ namespace PatientProblem {
   );
 
   /**
+   * The live problems a given event put on a patient's chart.
+   *
+   * Problems recorded from an event's diagnoses carry the event's id in
+   * `metadata.eventId`; that is the only link back, so it is the key here.
+   * `patient_id` is indexed and narrows to a handful of rows before the
+   * unindexed JSON comparison runs — this is called on every event save.
+   *
+   * @param patientId - The patient whose chart to look at
+   * @param eventId - The recording event's ID
+   * @returns {Promise<EncodedT[]>} - The problems that event recorded
+   */
+  export const getByEventId = createServerOnlyFn(
+    async (patientId: string, eventId: string): Promise<EncodedT[]> => {
+      const result = await db
+        .selectFrom(Table.name)
+        .where("patient_id", "=", patientId)
+        .where("is_deleted", "=", false)
+        .where(sql<boolean>`metadata->>'eventId' = ${eventId}`)
+        .orderBy("created_at", "asc")
+        .selectAll()
+        .execute();
+
+      return result as unknown as EncodedT[];
+    },
+  );
+
+  /**
    * Search problems by code or label
    * @param searchTerm - The search term
    * @param codeSystem - Optional code system filter
@@ -427,7 +455,13 @@ namespace PatientProblem {
       onset_date: delta.onset_date ?? null,
       end_date: delta.end_date ?? null,
       recorded_by_user_id: delta.recorded_by_user_id ?? null,
-      metadata: delta.metadata ?? {},
+      // Parsed rather than passed through, as `event.ts` and `visit.ts` do:
+      // a client that sends metadata as JSON text would otherwise store a
+      // jsonb *string*, and `getByEventId`'s `metadata->>'eventId'` only
+      // matches an object.
+      metadata: sql`${JSON.stringify(
+        safeJSONParse(delta.metadata, {}),
+      )}::jsonb`,
       is_deleted: delta.is_deleted ?? false,
       created_at: sql`now()::timestamp with time zone`,
       updated_at: sql`now()::timestamp with time zone`,

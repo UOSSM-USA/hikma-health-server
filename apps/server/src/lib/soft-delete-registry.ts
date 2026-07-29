@@ -31,6 +31,10 @@ export const SOFT_DELETE_DEPENDENCIES: Record<string, SoftDeleteDep[]> = {
     { table: "prescriptions", foreignKey: "visit_id" },
     { table: "events", foreignKey: "visit_id" },
     { table: "appointments", foreignKey: "current_visit_id" },
+    // A visit's events cascade above, so their problems go too. Reached by
+    // `visit_id`, not through the event: the cascade works on foreign-key
+    // columns, and a problem's link back to its event is a JSON field.
+    { table: "patient_problems", foreignKey: "visit_id" },
   ],
 };
 

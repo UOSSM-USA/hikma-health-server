@@ -67,8 +67,11 @@ export const DiagnosisEditor = function DiagnosisEditor(props: DiagnosisEditorPr
     setSearchQuery("")
   }
 
-  // TODO: Make one of the descriptions an empty string
-  const createDiagnosis = () => selectDiagnosis({ code: "0000", desc: searchQuery })()
+  // Minted here, once, so the code is fixed from the moment the clinician
+  // creates the diagnosis — it travels with the event's form data and is what
+  // the patient's problem list is reconciled against on every later edit.
+  const createDiagnosis = () =>
+    selectDiagnosis({ code: ICDEntry.freeTextCode(), desc: searchQuery })()
 
   const removeDiagnosis = (code: string) => () => {
     setSelectedDiagnoses((sd) => sd.filter((d) => d.code !== code))

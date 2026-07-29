@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/react-native"
+import { Q } from "@nozbe/watermelondb"
 import { Option } from "effect"
 import { upperFirst } from "es-toolkit/compat"
 
@@ -9,7 +10,11 @@ import VisitModel from "@/db/model/Visit"
 import ICDEntry from "./ICDEntry"
 import { isValid } from "date-fns"
 import { Logger } from "@hikmahealth/js-utils"
+import * as Problems from "@hikmahealth/forms/Problems"
 import { isValidUUID } from "@/utils/misc"
+import EventForm from "./EventForm"
+import PatientProblems from "./PatientProblems"
+import PatientProblemModel from "@/db/model/PatientProblems"
 
 namespace Event {
   /**
@@ -127,8 +132,6 @@ namespace Event {
 
     formData.forEach((field, idx) => {
       const { fieldId, fieldType, inputType, name, value } = field
-      // Logger.log({ fieldId, fieldType, inputType, name, value })
-      // const displayValue = inputType === "select" ? translate(value, language) : value
 
       display += `<div style="margin: 5px 0px;">`
       display += `<span style="text-decoration: underline;">${name}:</span>`
@@ -172,6 +175,101 @@ namespace Event {
     export type T = EventModel
 
     /**
+     * The authored fields of an event's form, which carry the per-field
+     * `addToProblems` opt-in. A form that cannot be loaded yields no fields, so
+     * nothing is recorded.
+     */
+    const loadFormFields = async (formId: string): Promise<EventForm.FieldItem[]> => {
+      const form = await EventForm.DB.findById(formId)
+      return form === null ? [] : form.formFields
+    }
+
+    /**
+     * The problems a given event has already put on the patient's chart.
+     *
+     * They are found by `metadata.eventId` — a JSON field, so the filtering
+     * happens here rather than in the query. A patient's problem list is small
+     * enough for that to be the cheaper trade against a schema change.
+     */
+    const problemsRecordedByEvent = async (
+      patientId: string,
+      eventId: string,
+    ): Promise<PatientProblemModel[]> => {
+      const problems = await database
+        .get<PatientProblemModel>("patient_problems")
+        .query(Q.where("patient_id", patientId), Q.where("is_deleted", false))
+        .fetch()
+
+      return problems.filter((problem) => problem.metadata?.eventId === eventId)
+    }
+
+    /**
+     * Build the writes that bring an event's recorded problems in line with
+     * its current diagnoses: new diagnoses are added, removed ones are marked
+     * deleted so the server soft-deletes them on the next sync push.
+     *
+     * @returns Unsaved operations for the caller's `database.batch`
+     */
+    const reconcileProblems = async (input: {
+      eventId: string
+      patientId: string
+      visitId: string | undefined
+      providerId: string
+      desired: Problems.problem[]
+      alreadyRequested: Problems.problem[]
+    }): Promise<PatientProblemModel[]> => {
+      const existing = await problemsRecordedByEvent(input.patientId, input.eventId)
+
+      const { toCreate, toRemoveIds } = Problems.diffProblems(
+        existing.map((problem) => ({
+          id: problem.id,
+          code: problem.problemCode,
+          label: problem.problemLabel,
+        })),
+        input.desired,
+        input.alreadyRequested,
+      )
+      const removing = new Set(toRemoveIds)
+
+      return [
+        ...toCreate.map((problem) =>
+          newProblemRecord({
+            eventId: input.eventId,
+            patientId: input.patientId,
+            visitId: input.visitId,
+            providerId: input.providerId,
+            problem,
+          }),
+        ),
+        ...existing
+          .filter((problem) => removing.has(problem.id))
+          .map((problem) => problem.prepareMarkAsDeleted()),
+      ]
+    }
+
+    /** One unsaved `patient_problems` row for a diagnosis recorded on an event. */
+    const newProblemRecord = (input: {
+      eventId: string
+      patientId: string
+      visitId: string | undefined
+      providerId: string
+      problem: Problems.problem
+    }): PatientProblemModel => {
+      const row = Problems.toNewProblem(input.problem)
+      return PatientProblems.DB.prepareCreate({
+        patientId: input.patientId,
+        visitId: input.visitId,
+        recordedByUserId: input.providerId,
+        problemCodeSystem: row.codeSystem,
+        problemCode: row.code,
+        problemLabel: row.label,
+        clinicalStatus: row.clinicalStatus,
+        verificationStatus: row.verificationStatus,
+        metadata: { eventId: input.eventId },
+      })
+    }
+
+    /**
      * Create a new event in the database, also create a new visit if the visitId is not provided
      * @param {Event} event
      * @param {string | null} visitId
@@ -198,38 +296,56 @@ namespace Event {
       if (!isValidUUID(clinicId)) {
         throw new Error(`Cannot create an event without a valid clinic_id (got "${clinicId}")`)
       }
-      // Logger.log({
-      //   event: JSON.stringify(event, null, 2),
-      //   visitId,
-      //   clinicId,
-      //   providerId,
-      //   providerName,
-      //   checkInTimestamp,
-      //   eventId,
-      // })
-      /** If there is an event Id, we are updating an existing event */
-      // TODO: update the visit to show the ne updated at time.
+      // TODO: update the visit to show the new updated at time.
       if (eventId && eventId !== "" && visitId && visitId !== "") {
+        const formFields = await loadFormFields(event.formId)
+        const projection = Problems.problemsFromFormData(event.formData, formFields)
+
         const res = await database.write(async () => {
           const eventQuery = await database.get<EventModel>("events").find(eventId)
-          if (eventQuery) {
-            return eventQuery.update((newEvent) => {
-              newEvent.formId = event.formId
-              newEvent.formData = event.formData
-              newEvent.metadata = event.metadata
-              if (!event.recordedByUserId) {
-                newEvent.recordedByUserId = providerId || null
-              }
-            })
-          } else {
+          if (!eventQuery) {
             throw new Error("Event not found")
           }
+
+          // Read before the update overwrites it: the diagnoses this event
+          // asked to record last time.
+          const alreadyRequested = Problems.problemsFromFormData(
+            eventQuery.formData,
+            formFields,
+          ).problems
+
+          const eventUpdate = eventQuery.prepareUpdate((newEvent) => {
+            newEvent.formId = event.formId
+            newEvent.formData = event.formData
+            newEvent.metadata = event.metadata
+            if (!event.recordedByUserId) {
+              newEvent.recordedByUserId = providerId || null
+            }
+          })
+
+          // A form that does not record problems leaves the list untouched:
+          // problems recorded while the flag was on stay on the chart.
+          const problemOperations = projection.recordsProblems
+            ? await reconcileProblems({
+                eventId,
+                patientId: event.patientId,
+                visitId,
+                providerId,
+                desired: projection.problems,
+                alreadyRequested,
+              })
+            : []
+
+          await database.batch(eventUpdate, ...problemOperations)
+          return eventQuery
         })
 
         return { eventId: res.id, visitId }
       }
 
       /** If there is no event Id, we are creating a new event */
+      const projection = Problems.problemsFromFormData(event.formData, await loadFormFields(event.formId))
+
       return await database.write(async () => {
         let visitQuery: VisitModel | null = null
         // If there is no visitId, we are creating a new visit
@@ -280,8 +396,19 @@ namespace Event {
           newEvent.recordedByUserId = providerId || null
         })
 
-        // batch create both of them
-        await database.batch(visitQuery !== null ? [visitQuery, eventQuery] : [eventQuery])
+        const problemQueries = projection.problems.map((problem) =>
+          newProblemRecord({
+            eventId: eventQuery.id,
+            patientId: event.patientId,
+            visitId: visitQuery !== null ? visitQuery.id : event.visitId,
+            providerId,
+            problem,
+          }),
+        )
+
+        // One batch, so an event never reaches the chart without its problems.
+        // `batch` ignores a null visit.
+        await database.batch(visitQuery, ...problemQueries, eventQuery)
 
         return {
           eventId: eventQuery.id,
@@ -302,15 +429,12 @@ namespace Event {
       if (!event) {
         return null
       }
-      // check if the event has a providerId and providerName in its metadata
-      if (event.metadata && event.metadata.providerId && event.metadata.providerName) {
-        return {
-          providerId: event.metadata.providerId,
-          providerName: event.metadata.providerName,
-        }
+      const { providerId, providerName } = event.metadata
+      if (typeof providerId === "string" && typeof providerName === "string") {
+        return { providerId, providerName }
       }
 
-      // if not, we need to find the visit and get the providerId and providerName from there
+      // Events created outside the visit flow carry no provider in metadata.
       const visit = await database.get<VisitModel>("visits").find(event.visitId)
       if (visit) {
         return {
@@ -322,13 +446,19 @@ namespace Event {
     }
 
     /**
-     * Delete an event by id
+     * Delete an event by id, along with the problems it put on the patient's
+     * chart.
+     *
      * @param {string} eventId
      * @returns {Promise<void>}
      */
     export const softDelete = async (eventId: string): Promise<void> => {
       return await database.write(async () => {
         const event = await database.get<EventModel>("events").find(eventId)
+
+        const recorded = await problemsRecordedByEvent(event.patientId, eventId)
+        await PatientProblems.DB.softDelete(recorded)
+
         const deletedEvent = await event.update((event) => {
           event.isDeleted = true
         })

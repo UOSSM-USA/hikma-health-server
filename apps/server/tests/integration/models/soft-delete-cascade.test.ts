@@ -116,6 +116,7 @@ const seed = async () => {
     .values({
       id: ids.prescription,
       patient_id: ids.patient,
+      visit_id: ids.visit,
       provider_id: ids.user,
       pickup_clinic_id: ids.clinic,
       is_deleted: false,
@@ -141,6 +142,7 @@ const seed = async () => {
     .values({
       id: ids.event,
       patient_id: ids.patient,
+      visit_id: ids.visit,
       form_data: sql`'[]'::jsonb`,
       metadata: sql`'{}'::jsonb`,
       is_deleted: false,
@@ -162,6 +164,7 @@ const seed = async () => {
     .values({
       id: ids.patient_problems,
       patient_id: ids.patient,
+      visit_id: ids.visit,
       problem_code_system: "ICD10",
       problem_code: "A00",
       problem_label: "Cholera",
@@ -230,6 +233,38 @@ afterEach(async () => {
   }
 });
 
+/**
+ * Every dependent row must come back soft-deleted with `deleted_at` set — the
+ * sync delta keys its deleted bucket on `deleted_at`, so an `is_deleted`-only
+ * row never reaches mobile.
+ */
+const expectCascaded = async (parentTable: string, parentId: string) => {
+  const deps = getDependencies(parentTable)!;
+  expect(deps.length).toBeGreaterThan(0);
+
+  for (const dep of deps) {
+    const rows = await testDb
+      // @ts-ignore — dynamic table name
+      .selectFrom(dep.table)
+      .select(["is_deleted", "deleted_at"])
+      // @ts-ignore — dynamic foreign-key column
+      .where(dep.foreignKey, "=", parentId)
+      .execute();
+
+    expect(rows.length, `${dep.table} should have a seeded row`).toBeGreaterThan(
+      0,
+    );
+
+    for (const row of rows as { is_deleted: boolean; deleted_at: unknown }[]) {
+      expect(row.is_deleted, `${dep.table}.is_deleted`).toBe(true);
+      expect(
+        row.deleted_at,
+        `${dep.table}.deleted_at must be populated so the sync delta emits it`,
+      ).not.toBeNull();
+    }
+  }
+};
+
 describe("patient soft-delete cascade (integration)", () => {
   it("sets is_deleted AND deleted_at on every registered dependent table", async () => {
     await seed();
@@ -238,27 +273,20 @@ describe("patient soft-delete cascade (integration)", () => {
       await cascadeSoftDelete(trx, "patients", ids.patient);
     });
 
-    const deps = getDependencies("patients")!;
-    expect(deps.length).toBeGreaterThan(0);
+    await expectCascaded("patients", ids.patient);
+  });
+});
 
-    for (const dep of deps) {
-      const rows = await testDb
-        // @ts-ignore — dynamic table name
-        .selectFrom(dep.table)
-        .select(["is_deleted", "deleted_at"])
-        // @ts-ignore — dynamic foreign-key column
-        .where(dep.foreignKey, "=", ids.patient)
-        .execute();
+describe("visit soft-delete cascade (integration)", () => {
+  // A visit's events cascade, so the problems those events recorded have to go
+  // with them — otherwise a deleted encounter leaves its diagnoses on the chart.
+  it("sets is_deleted AND deleted_at on every registered dependent table", async () => {
+    await seed();
 
-      expect(rows.length, `${dep.table} should have a seeded row`).toBeGreaterThan(0);
+    await testDb.transaction().execute(async (trx) => {
+      await cascadeSoftDelete(trx, "visits", ids.visit);
+    });
 
-      for (const row of rows as { is_deleted: boolean; deleted_at: unknown }[]) {
-        expect(row.is_deleted, `${dep.table}.is_deleted`).toBe(true);
-        expect(
-          row.deleted_at,
-          `${dep.table}.deleted_at must be populated so the sync delta emits it`,
-        ).not.toBeNull();
-      }
-    }
+    await expectCascaded("visits", ids.visit);
   });
 });

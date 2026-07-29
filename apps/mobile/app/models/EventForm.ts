@@ -103,6 +103,9 @@ namespace EventForm {
     multiple?: boolean
     minItems?: number
     maxItems?: number
+    // Diagnosis fields. Absent on forms authored before the flag existed,
+    // which read as "do not record" — see `Event.problemsFromFormData`.
+    addToProblems?: boolean
   } & WithInputRules
   export type T = {
     id: string
@@ -171,6 +174,25 @@ namespace EventForm {
 
   export namespace DB {
     export type T = EventFormModel
+
+    /**
+     * Look up a single form by id.
+     *
+     * Returns `null` for a missing or malformed id rather than throwing, so
+     * callers that only need the form to enrich a write can carry on without
+     * it.
+     *
+     * @param formId The form's id
+     * @returns The form, or `null` if there is no such record
+     */
+    export async function findById(formId: string): Promise<EventForm.DB.T | null> {
+      if (!formId) return null
+      try {
+        return await database.get<EventForm.DB.T>("event_forms").find(formId)
+      } catch {
+        return null
+      }
+    }
 
     /**
      * Subscription to an event form record in the database

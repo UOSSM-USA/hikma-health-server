@@ -13,6 +13,7 @@ import {
 import { Associations } from "@nozbe/watermelondb/Model"
 
 import Prescription from "@/models/Prescription"
+import { sanitizeMetadata } from "@/utils/db"
 
 import database from ".."
 import ClinicModel from "./Clinic"
@@ -45,7 +46,7 @@ export default class PrescriptionModel extends Model {
   @date("prescribed_at") prescribedAt!: Date
   @date("filled_at") filledAt?: Date | null
 
-  @json("metadata", sanitizeMetadata) metadata!: Record<string, any>
+  @json("metadata", sanitizeMetadata) metadata!: Record<string, unknown>
   @field("is_deleted") isDeleted!: boolean
   @date("deleted_at") deletedAt?: Date
   @readonly @date("created_at") createdAt!: Date
@@ -62,17 +63,6 @@ export default class PrescriptionModel extends Model {
     .get<DrugCatalogueModel>("drug_catalogue")
     .query(Q.on("prescription_items", "prescription_id", this.id))
 
-  // @lazy
-  // getDrugs(): DrugCatalogueModel[] {
-  //   database
-  //     .get<DrugCatalogueModel>("drug_catalogue")
-  //     .query(Q.on("prescription_items", "prescription_id", this.id))
-  //     .fetch()
-  // }
-}
-
-function sanitizeMetadata(metadata: Record<string, any>) {
-  return JSON.stringify(metadata)
 }
 
 function sanitizeItems(items: Prescription.Item[]) {

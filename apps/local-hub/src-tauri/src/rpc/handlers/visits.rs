@@ -7,6 +7,7 @@ use super::serde_flexible::{
     double_option, flexible_opt_timestamp, flexible_timestamp, stringify_json,
 };
 use super::{now_millis, HandlerResult};
+use crate::event_problems::{self, Reconciliation};
 
 // ============================================================================
 // Payloads
@@ -140,9 +141,46 @@ pub struct ListVitalsQuery {
 // Handlers
 // ============================================================================
 
+/// Creates or updates an event, and reflects the diagnoses it records onto the
+/// patient's problem list. The event row and the problems it implies commit
+/// together.
 pub fn handle_create_event(payload: &CreateEventCommand, conn: &Connection) -> HandlerResult {
     let now = now_millis();
 
+    // IMMEDIATE, not deferred: the chart is read before it is written, and each
+    // command opens its own connection, so two saves of the same event could
+    // otherwise both read an empty chart and both record the diagnosis.
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+
+    let result = (|| -> Result<Reconciliation, Box<dyn std::error::Error>> {
+        // Read before the upsert overwrites `form_data`.
+        let already_requested = event_problems::previously_requested(conn, &payload.id)?;
+
+        write_event(payload, conn, now)?;
+        event_problems::reconcile(conn, &payload.id, &already_requested, now)
+    })();
+
+    match result {
+        Ok(reconciliation) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(serde_json::json!({
+                "event_id": payload.id,
+                "problems_recorded": reconciliation.created,
+                "problems_retired": reconciliation.retired,
+            }))
+        }
+        Err(e) => {
+            conn.execute_batch("ROLLBACK")?;
+            Err(e.to_string().into())
+        }
+    }
+}
+
+fn write_event(
+    payload: &CreateEventCommand,
+    conn: &Connection,
+    now: i64,
+) -> Result<(), Box<dyn std::error::Error>> {
     conn.execute(
         r#"INSERT INTO events (
             id, patient_id, form_id, visit_id, event_type,
@@ -177,7 +215,7 @@ pub fn handle_create_event(payload: &CreateEventCommand, conn: &Connection) -> H
         ],
     )?;
 
-    Ok(serde_json::json!({ "event_id": payload.id }))
+    Ok(())
 }
 
 pub fn handle_get_visits(payload: &GetVisitsQuery, conn: &Connection) -> HandlerResult {
@@ -273,8 +311,7 @@ pub fn handle_update_visit(payload: &UpdateVisitCommand, conn: &Connection) -> H
         "UPDATE visits SET {} WHERE id = ?{idx} AND is_deleted = 0 AND local_server_deleted_at IS NULL",
         sets.join(", ")
     );
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|p| p.as_ref()).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let changed = conn.execute(&sql, param_refs.as_slice())?;
 
     if changed == 0 {
@@ -351,8 +388,7 @@ pub fn handle_update_vitals(payload: &UpdateVitalsCommand, conn: &Connection) ->
         "UPDATE patient_vitals SET {} WHERE id = ?{idx} AND is_deleted = 0 AND local_server_deleted_at IS NULL",
         sets.join(", ")
     );
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|p| p.as_ref()).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let changed = conn.execute(&sql, param_refs.as_slice())?;
 
     if changed == 0 {
@@ -587,6 +623,147 @@ mod tests {
             })
             .unwrap();
         assert!(form_data.contains("130/85"));
+    }
+
+    fn insert_event_form(conn: &Connection, id: &str, form_fields: &str) {
+        conn.execute(
+            "INSERT INTO event_forms (
+                id, name, description, language, is_editable, is_snapshot_form,
+                form_fields, metadata, is_deleted, created_at, updated_at,
+                local_server_created_at, local_server_last_modified_at
+            ) VALUES (?1, 'Form', 'desc', 'en', 1, 0, ?2, '{}', 0, 1000, 1000, 1000, 1000)",
+            rusqlite::params![id, form_fields],
+        )
+        .unwrap();
+    }
+
+    /// A form with one diagnosis field that records to the chart.
+    fn insert_diagnosis_form(conn: &Connection, id: &str) {
+        insert_event_form(
+            conn,
+            id,
+            r#"[{"id":"fld1","fieldType":"diagnosis","addToProblems":true}]"#,
+        );
+    }
+
+    fn diagnoses_form_data(entries: &str) -> String {
+        format!(r#"[{{"fieldId":"fld1","fieldType":"diagnosis","value":[{entries}]}}]"#)
+    }
+
+    fn live_problem_labels(conn: &Connection) -> Vec<String> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT problem_label FROM patient_problems
+                 WHERE is_deleted = 0 ORDER BY problem_label",
+            )
+            .unwrap();
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0)).unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    }
+
+    #[test]
+    fn create_event_records_diagnoses_on_the_chart() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_visit(&conn, "v1", "p1");
+        insert_diagnosis_form(&conn, "form1");
+
+        let mut cmd = make_test_event("e3", "p1", "v1");
+        cmd.form_data = diagnoses_form_data(r#"{"code":"1A00","desc":"Cholera"}"#);
+        let result = handle_create_event(&cmd, &conn).unwrap();
+
+        assert_eq!(result["problems_recorded"], 1);
+        assert_eq!(live_problem_labels(&conn), vec!["Cholera".to_string()]);
+    }
+
+    // The handler is create and update in one, so an edit that drops a
+    // diagnosis has to take it back off the chart.
+    #[test]
+    fn editing_an_event_retires_a_dropped_diagnosis() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_visit(&conn, "v1", "p1");
+        insert_diagnosis_form(&conn, "form1");
+
+        let mut cmd = make_test_event("e4", "p1", "v1");
+        cmd.form_data =
+            diagnoses_form_data(r#"{"code":"1A00","desc":"Cholera"},{"code":"5A11","desc":"T2D"}"#);
+        handle_create_event(&cmd, &conn).unwrap();
+
+        let mut edited = make_test_event("e4", "p1", "v1");
+        edited.form_data = diagnoses_form_data(r#"{"code":"5A11","desc":"T2D"}"#);
+        let result = handle_create_event(&edited, &conn).unwrap();
+
+        assert_eq!(result["problems_retired"], 1);
+        assert_eq!(live_problem_labels(&conn), vec!["T2D".to_string()]);
+    }
+
+    // Re-saving an unchanged event must not resurrect a diagnosis a clinician
+    // took off the chart by hand.
+    #[test]
+    fn resaving_an_event_does_not_resurrect_a_manually_removed_problem() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_visit(&conn, "v1", "p1");
+        insert_diagnosis_form(&conn, "form1");
+
+        let mut cmd = make_test_event("e5", "p1", "v1");
+        cmd.form_data = diagnoses_form_data(r#"{"code":"1A00","desc":"Cholera"}"#);
+        handle_create_event(&cmd, &conn).unwrap();
+
+        conn.execute(
+            "UPDATE patient_problems SET is_deleted = 1, deleted_at = 5000",
+            [],
+        )
+        .unwrap();
+
+        let result = handle_create_event(&cmd, &conn).unwrap();
+
+        assert_eq!(result["problems_recorded"], 0);
+        assert_eq!(live_problem_labels(&conn), Vec::<String>::new());
+    }
+
+    // The upsert never updates `form_id`, so a payload naming a different form
+    // does not change which form the event is filed under — and the chart has
+    // to follow the row, not the payload.
+    #[test]
+    fn an_upsert_reconciles_against_the_stored_form() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_visit(&conn, "v1", "p1");
+        insert_diagnosis_form(&conn, "form1");
+        insert_event_form(&conn, "form2", "[]");
+
+        let mut cmd = make_test_event("e7", "p1", "v1");
+        cmd.form_data = diagnoses_form_data(r#"{"code":"1A00","desc":"Cholera"}"#);
+        handle_create_event(&cmd, &conn).unwrap();
+
+        let mut edited = make_test_event("e7", "p1", "v1");
+        edited.form_id = "form2".to_string();
+        edited.form_data = diagnoses_form_data(r#"{"code":"1A00","desc":"Cholera"}"#);
+        handle_create_event(&edited, &conn).unwrap();
+
+        let stored_form: String = conn
+            .query_row("SELECT form_id FROM events WHERE id = 'e7'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+
+        assert_eq!(stored_form, "form1");
+        assert_eq!(live_problem_labels(&conn), vec!["Cholera".to_string()]);
+    }
+
+    // The common case, and it must not touch the chart at all.
+    #[test]
+    fn create_event_without_a_recording_form_touches_no_problems() {
+        let conn = setup_test_db();
+        insert_test_patient(&conn, "p1");
+        insert_test_visit(&conn, "v1", "p1");
+
+        let result = handle_create_event(&make_test_event("e6", "p1", "v1"), &conn).unwrap();
+
+        assert_eq!(result["problems_recorded"], 0);
+        assert_eq!(live_problem_labels(&conn), Vec::<String>::new());
     }
 
     #[test]
