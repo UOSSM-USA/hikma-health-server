@@ -44,6 +44,18 @@ const SYNC_PUSH_ALLOWED_TABLES: &[&str] = &[
 /// no `hashed_password` column, so dropping it is invisible to mobile.
 const SYNC_PULL_REDACTED_COLUMNS: &[(&str, &[&str])] = &[("users", &["hashed_password"])];
 
+/// Whether a pushed record carries a client-side soft delete.
+///
+/// Accepts both the JSON boolean WatermelonDB sends and the integer form a
+/// SQLite-backed client would.
+fn is_marked_deleted(record: &crate::RawRecord) -> bool {
+    match record.data.get("is_deleted") {
+        Some(serde_json::Value::Bool(flag)) => *flag,
+        Some(serde_json::Value::Number(n)) => n.as_i64().is_some_and(|v| v != 0),
+        _ => false,
+    }
+}
+
 /// Returns the columns to strip from `table`'s pull changeset (empty if none).
 fn redacted_pull_columns(table: &str) -> &'static [&'static str] {
     SYNC_PULL_REDACTED_COLUMNS
@@ -180,6 +192,14 @@ pub fn handle_sync_push(payload: &SyncPushPayload, conn: &Connection) -> Handler
         for record in changeset.created.iter().chain(changeset.updated.iter()) {
             crate::upsert_client_record(conn, table, record, &valid_columns, now)?;
             total_upserts += 1;
+
+            // Clients soft-delete, so a deletion reaches us as an ordinary
+            // upsert. Without this the row keeps `local_server_deleted_at NULL`
+            // and every other LAN device goes on receiving it in full.
+            if is_marked_deleted(record) {
+                crate::soft_delete_client_record(conn, table, &record.id, now)?;
+                total_deletes += 1;
+            }
         }
 
         for id in &changeset.deleted {
@@ -492,6 +512,109 @@ mod tests {
             )
             .unwrap();
         assert!(deleted_at.is_some());
+    }
+
+    /// Mobile never hard-deletes — a deletion arrives as an ordinary upsert
+    /// carrying `is_deleted = 1`. The hub has to recognise that, or the record
+    /// stays live in its own bookkeeping and keeps being fanned out to the LAN.
+    #[test]
+    fn push_of_a_soft_deleted_record_marks_it_deleted_on_the_hub() {
+        let conn = setup_test_db();
+
+        let mut record = HashMap::new();
+        record.insert("patient_id".to_string(), serde_json::json!("p1"));
+        record.insert("metadata".to_string(), serde_json::json!("{}"));
+        record.insert("is_deleted".to_string(), serde_json::json!(true));
+
+        let mut changes = crate::SyncDatabaseChangeSet::new();
+        changes.add_table_changes(
+            "visits",
+            crate::SyncTableChangeSet {
+                created: vec![],
+                updated: vec![crate::RawRecord {
+                    id: "gone".to_string(),
+                    created_at: 1000,
+                    updated_at: 2000,
+                    data: record,
+                }],
+                deleted: vec![],
+            },
+        );
+
+        handle_sync_push(
+            &SyncPushPayload {
+                last_pulled_at: 0,
+                changes,
+            },
+            &conn,
+        )
+        .unwrap();
+
+        let deleted_at: Option<i64> = conn
+            .query_row(
+                "SELECT local_server_deleted_at FROM visits WHERE id = 'gone'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            deleted_at.is_some(),
+            "a soft-deleted record must be marked deleted on the hub"
+        );
+    }
+
+    /// The point of the above: it must stop reaching other devices.
+    #[test]
+    fn a_soft_deleted_record_is_never_pulled_as_live() {
+        let conn = setup_test_db();
+
+        let mut record = HashMap::new();
+        record.insert("patient_id".to_string(), serde_json::json!("p1"));
+        record.insert("metadata".to_string(), serde_json::json!("{}"));
+        record.insert("is_deleted".to_string(), serde_json::json!(true));
+
+        let mut changes = crate::SyncDatabaseChangeSet::new();
+        changes.add_table_changes(
+            "visits",
+            crate::SyncTableChangeSet {
+                created: vec![],
+                updated: vec![crate::RawRecord {
+                    id: "gone".to_string(),
+                    created_at: 1000,
+                    updated_at: 2000,
+                    data: record,
+                }],
+                deleted: vec![],
+            },
+        );
+        handle_sync_push(
+            &SyncPushPayload {
+                last_pulled_at: 0,
+                changes,
+            },
+            &conn,
+        )
+        .unwrap();
+
+        // A device joining fresh pulls from 0 and must not receive the record.
+        let pulled = handle_sync_pull(&SyncPullParams { last_pulled_at: 0 }, &conn).unwrap();
+        let visits = &pulled["changes"]["visits"];
+
+        assert_eq!(
+            visits["created"].as_array().map_or(0, |a| a.len()),
+            0,
+            "deleted record was sent as created"
+        );
+        assert_eq!(
+            visits["updated"].as_array().map_or(0, |a| a.len()),
+            0,
+            "deleted record was sent as updated"
+        );
+        assert_eq!(
+            visits["deleted"].as_array().unwrap(),
+            &vec![serde_json::json!("gone")],
+            "deletion should reach peers as an id, not a full record"
+        );
     }
 
     #[test]

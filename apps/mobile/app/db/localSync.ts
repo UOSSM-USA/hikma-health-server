@@ -47,6 +47,21 @@ const SYNCABLE_TABLES = [
   // "app_config",
 ] as const
 
+/**
+ * Tables a peer is allowed to write into this device.
+ *
+ * Wider than SYNCABLE_TABLES because the server owns user_clinic_permissions and
+ * app_config and pushes them down. Narrower than the set of collections because
+ * `peers` is device-local: a peer able to write `peers.metadata.url` would point
+ * the next cloud sync — Basic-auth credentials and the whole changeset — at a
+ * host of its choosing.
+ */
+export const INBOUND_TABLES: ReadonlySet<string> = new Set<string>([
+  ...SYNCABLE_TABLES,
+  "user_clinic_permissions",
+  "app_config",
+])
+
 // ── Pure helpers ──────────────────────────────────────────────────────
 
 /** Mark a raw record as synced — it came from the server, no local changes pending. */
@@ -107,6 +122,11 @@ export async function applyRemoteChanges(changes: SyncDatabaseChangeSet): Promis
 
   await database.write(async () => {
     for (const [tableName, tableChanges] of Object.entries(changes)) {
+      if (!INBOUND_TABLES.has(tableName)) {
+        Logger.warn({ msg: "[localSync] Ignoring table a peer may not write", table: tableName })
+        continue
+      }
+
       const collection = database.get(tableName)
       const { created, updated, deleted } = tableChanges as SyncTableChangeSet
 
@@ -238,6 +258,7 @@ export async function fetchLocalChanges(): Promise<SyncDatabaseChangeSet> {
 
       const [createdRecords, updatedRecords, deletedRecords] = await Promise.all([
         collection.query(Q.where("_status", "created")).fetch(),
+        // Carries soft deletes too — is_deleted rows stay ordinary updates.
         collection.query(Q.where("_status", "updated")).fetch(),
         collection.query(Q.where("_status", "deleted")).fetch(),
       ])
