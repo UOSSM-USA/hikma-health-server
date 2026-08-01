@@ -60,6 +60,62 @@ namespace Peer {
     [key: string]: unknown
   }
 
+  /**
+   * Where a paged manual sync got to, so an interrupted run resumes instead of
+   * restarting. `snapshotTs` is the server's snapshot for the run — a resumed
+   * page must carry it or it would read a moving target.
+   */
+  export type ResumeState = {
+    cursor: string
+    since: number
+    snapshotTs: number
+    pagesApplied: number
+    recordsApplied: number
+  }
+
+  const RESUME_KEY = "manualSyncResume"
+
+  /**
+   * Merge resume state into a peer's metadata blob, or remove it when null.
+   *
+   * Metadata also carries the peer URL, so this merges rather than replaces —
+   * dropping `url` would leave the peer unreachable. Returns a new object; the
+   * caller passes a live record's `metadata` straight in.
+   */
+  export const mergeResumeState = (
+    metadata: PeerMetadata,
+    state: ResumeState | null,
+  ): PeerMetadata => {
+    const next = { ...(metadata ?? {}) } as Record<string, unknown>
+    if (state === null) delete next[RESUME_KEY]
+    else next[RESUME_KEY] = { ...state }
+    return next as PeerMetadata
+  }
+
+  /**
+   * Read resume state, tolerating absent or malformed blobs.
+   *
+   * Anything unreadable returns null, which restarts the run from the beginning.
+   * That is always safe — the backfill is idempotent — whereas trusting a
+   * half-written blob would send a bad cursor the server rejects outright.
+   */
+  export const readResumeState = (metadata: PeerMetadata): ResumeState | null => {
+    const raw = (metadata as Record<string, unknown> | null)?.[RESUME_KEY]
+    if (!raw || typeof raw !== "object") return null
+    const s = raw as Record<string, unknown>
+    // An empty cursor is not a position: the server rejects `cursor: ""` as
+    // malformed, so treat it as absent and start over.
+    if (typeof s.cursor !== "string" || s.cursor.length === 0) return null
+    if (typeof s.since !== "number" || typeof s.snapshotTs !== "number") return null
+    return {
+      cursor: s.cursor,
+      since: s.since,
+      snapshotTs: s.snapshotTs,
+      pagesApplied: typeof s.pagesApplied === "number" ? s.pagesApplied : 0,
+      recordsApplied: typeof s.recordsApplied === "number" ? s.recordsApplied : 0,
+    }
+  }
+
   export const empty: T = {
     id: "",
     peerId: "",
@@ -363,6 +419,41 @@ namespace Peer {
       await database.write(() =>
         record.update((rec) => {
           rec.lastSyncedAt = timestamp
+        }),
+      )
+    }
+
+    /** Record where a paged manual sync got to, so it can resume after an interruption. */
+    export const saveResumeState = async (id: string, state: Peer.ResumeState): Promise<void> => {
+      const record = await collection().find(id)
+      await database.write(() =>
+        record.update((rec) => {
+          rec.metadata = Peer.mergeResumeState(rec.metadata, state)
+        }),
+      )
+    }
+
+    /**
+     * Where the last manual sync got to, or null if there is nothing to resume.
+     *
+     * Returns null for a peer that no longer exists rather than throwing: a peer
+     * deleted mid-run leaves nothing to resume, which is the same answer.
+     */
+    export const getResumeState = async (id: string): Promise<Peer.ResumeState | null> => {
+      try {
+        const record = await collection().find(id)
+        return Peer.readResumeState(record.metadata)
+      } catch {
+        return null
+      }
+    }
+
+    /** Drop resume state once a run completes or the user abandons it. */
+    export const clearResumeState = async (id: string): Promise<void> => {
+      const record = await collection().find(id)
+      await database.write(() =>
+        record.update((rec) => {
+          rec.metadata = Peer.mergeResumeState(rec.metadata, null)
         }),
       )
     }

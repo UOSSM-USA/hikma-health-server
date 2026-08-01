@@ -152,6 +152,7 @@ const en = {
       "When enabled, no data is stored locally. All data is read and written directly to the server.",
     switchingMode: "Switching…",
     unsyncedChangesWarning: "Sync local changes before switching to online mode",
+    onlineModeUnavailable: "Online mode is not available in this version",
     noInternetWarning: "Internet connection required to switch to online mode",
   },
   errorScreen: {

@@ -1,34 +1,28 @@
 /**
- * Backward compatibility tests for the operation mode initialization.
+ * Migration of the stored operation-mode preference.
  *
- * Verifies that the MMKV preference migration logic correctly handles
- * all stored values including the deprecated "sync_hub" value from
- * earlier app versions.
+ * Covers the deprecated "sync_hub" value from earlier app versions, and the
+ * stale "online" a device carries if the user opted into online mode before it
+ * was disabled — left alone, that preference reactivates online mode silently
+ * the moment the gate is lifted.
+ *
+ * Imports the real function rather than restating it. An earlier version of
+ * this file kept its own copy, which could drift from the hook without any
+ * test noticing.
  */
 
 import fc from "fast-check"
+import { resolvePreference } from "../../app/hooks/useOperationModeInit"
 import type { OperationMode } from "../../app/store/operationMode"
-
-// ── Pure migration logic (extracted for testability) ─────────────────
-
-/**
- * Mirrors the preference resolution logic in useOperationModeInit.
- * This is the pure function under test — the hook wraps it with effects.
- */
-const resolvePreference = (stored: string | null): { mode: OperationMode; shouldClean: boolean } => {
-  const shouldClean = stored === "sync_hub"
-  const mode: OperationMode = stored === "online" ? "online" : "offline"
-  return { mode, shouldClean }
-}
 
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe("useOperationModeInit — backward compatibility", () => {
   describe("resolvePreference (pure logic)", () => {
-    it('maps "online" → online, no cleanup', () => {
+    it('maps "online" → offline and clears the stale preference', () => {
       const result = resolvePreference("online")
-      expect(result.mode).toBe("online")
-      expect(result.shouldClean).toBe(false)
+      expect(result.mode).toBe("offline")
+      expect(result.shouldClean).toBe(true)
     })
 
     it('maps "offline" → offline, no cleanup', () => {
@@ -49,7 +43,7 @@ describe("useOperationModeInit — backward compatibility", () => {
       expect(result.shouldClean).toBe(true)
     })
 
-    it("only 'online' produces online mode (property)", () => {
+    it("nothing produces online mode while the gate is on (property)", () => {
       fc.assert(
         fc.property(
           fc.oneof(
@@ -57,12 +51,7 @@ describe("useOperationModeInit — backward compatibility", () => {
             fc.string({ minLength: 0, maxLength: 30 }),
           ),
           (stored) => {
-            const { mode } = resolvePreference(stored)
-            if (stored === "online") {
-              expect(mode).toBe("online")
-            } else {
-              expect(mode).toBe("offline")
-            }
+            expect(resolvePreference(stored).mode).toBe("offline")
           },
         ),
       )
@@ -84,7 +73,7 @@ describe("useOperationModeInit — backward compatibility", () => {
       )
     })
 
-    it("shouldClean is true only for 'sync_hub' (property)", () => {
+    it("shouldClean is true for exactly 'sync_hub' and 'online' (property)", () => {
       fc.assert(
         fc.property(
           fc.oneof(
@@ -93,11 +82,7 @@ describe("useOperationModeInit — backward compatibility", () => {
           ),
           (stored) => {
             const { shouldClean } = resolvePreference(stored)
-            if (stored === "sync_hub") {
-              expect(shouldClean).toBe(true)
-            } else {
-              expect(shouldClean).toBe(false)
-            }
+            expect(shouldClean).toBe(stored === "sync_hub" || stored === "online")
           },
         ),
       )

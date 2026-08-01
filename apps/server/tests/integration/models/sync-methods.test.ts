@@ -496,9 +496,13 @@ describe("Sync.persistClientChanges (integration)", () => {
       },
     } as any;
 
-    await expect(
-      Sync.persistClientChanges(pushData, "mobile", caller),
-    ).resolves.toBeUndefined();
+    // An unknown table is warned about and skipped. It is deliberately NOT
+    // reported as rejected: the server will never accept it, so telling the
+    // client to keep those records pending would retry them forever.
+    const outcome = await Sync.persistClientChanges(pushData, "mobile", caller);
+    expect(outcome.accepted).toBe(0);
+    expect(outcome.rejected).toEqual({});
+    expect(outcome.byTable).toEqual({});
   });
 });
 

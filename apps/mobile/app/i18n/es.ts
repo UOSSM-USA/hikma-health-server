@@ -154,6 +154,7 @@ const es: ENTranslations = {
       "Cuando está activado, no se almacenan datos localmente. Todos los datos se leen y escriben directamente en el servidor.",
     switchingMode: "Cambiando…",
     unsyncedChangesWarning: "Sincronice los cambios locales antes de cambiar al modo en línea",
+    onlineModeUnavailable: "El modo en línea no está disponible en esta versión",
     noInternetWarning: "Se requiere conexión a internet para cambiar al modo en línea",
   },
   errorScreen: {

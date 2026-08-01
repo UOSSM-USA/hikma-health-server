@@ -37,7 +37,7 @@ jest.mock("../../app/utils/date", () => ({
   }),
 }))
 
-import { updateDates } from "../../app/db/peerSync"
+import { updateDates } from "../../app/db/syncNormalize"
 
 describe("updateDates", () => {
   // =========================================================================
@@ -129,11 +129,24 @@ describe("updateDates", () => {
       expect(record.check_in_timestamp).toBe(new Date("2024-03-01T08:00:00Z").getTime())
     })
 
-    it("sets image_timestamp to 0 always", () => {
+    // `image_timestamp` is not in the mobile schema at all — it is a server-only
+    // column on `patients`. Zeroing it did nothing inbound (sanitizedRaw strips
+    // unknown columns) but on the outbound force-upload path it reached the
+    // server, where 0 on a date column is coerced to null — silently wiping the
+    // column for every uploaded patient. Leave the field exactly as found.
+    it("leaves image_timestamp untouched", () => {
       const record = makeRecord({ image_timestamp: 999 })
       const changes = makeChangeset({ patients: { created: [record] } })
       updateDates(changes)
-      expect(record.image_timestamp).toBe(0)
+      expect(record.image_timestamp).toBe(999)
+    })
+
+    it("does not introduce image_timestamp on records that lack it", () => {
+      const record = makeRecord({})
+      delete (record as Record<string, unknown>).image_timestamp
+      const changes = makeChangeset({ patients: { created: [record] } })
+      updateDates(changes)
+      expect(record).not.toHaveProperty("image_timestamp")
     })
 
     it("handles records with no id field gracefully", () => {

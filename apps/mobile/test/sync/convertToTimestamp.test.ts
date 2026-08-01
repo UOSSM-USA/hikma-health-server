@@ -44,7 +44,7 @@ jest.mock("../../app/utils/parsers", () => ({
 jest.mock("../../app/utils/storage", () => ({}))
 jest.mock("../../app/utils/date", () => ({ toDateSafe: jest.fn() }))
 
-import { convertToTimestamp } from "../../app/db/peerSync"
+import { convertToTimestamp } from "../../app/db/syncNormalize"
 
 describe("convertToTimestamp", () => {
   const fallback = new Date("2024-01-01T00:00:00Z")

@@ -1,4 +1,4 @@
-import { createEncryptedTransport, createCloudTransport } from "../../app/rpc/transport"
+import { createEncryptedTransport } from "../../app/rpc/transport"
 import { encryptForWire, decryptFromWire } from "../../app/rpc/wire"
 import { seal } from "../../app/crypto/cipher"
 import { encode, utf8Encode } from "../../app/crypto/encoding"
@@ -126,86 +126,5 @@ describe("createEncryptedTransport", () => {
     const result = await transport.sendCommand("test", {})
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.code).toBe("NETWORK_ERROR")
-  })
-})
-
-describe("createCloudTransport", () => {
-  beforeEach(() => mockFetch.mockReset())
-
-  it("sendCommand sends plain JSON with auth header", async () => {
-    const transport = createCloudTransport("https://api.example.com", () => "Bearer token123")
-    const responseData = { id: "123" }
-
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => responseData,
-    })
-
-    const result = await transport.sendCommand("patients.create", { name: "Test" })
-    expect(result.ok).toBe(true)
-    if (result.ok) expect(result.data).toEqual(responseData)
-
-    const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe("https://api.example.com/rpc/command")
-    expect(options.headers.Authorization).toBe("Bearer token123")
-    expect(JSON.parse(options.body)).toEqual({ command: "patients.create", data: { name: "Test" } })
-  })
-
-  it("sendQuery sends plain JSON with auth header", async () => {
-    const transport = createCloudTransport("https://api.example.com", () => "Bearer token123")
-    const responseData = [{ id: "1" }]
-
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => responseData,
-    })
-
-    const result = await transport.sendQuery("get_patients", { limit: 10 })
-    expect(result.ok).toBe(true)
-    if (result.ok) expect(result.data).toEqual(responseData)
-
-    const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe("https://api.example.com/rpc/query")
-    expect(options.headers.Authorization).toBe("Bearer token123")
-  })
-
-  it("login sends without auth header", async () => {
-    const transport = createCloudTransport("https://api.example.com", () => "Bearer token123")
-    const loginData: LoginResponse = {
-      token: "jwt",
-      user_id: "u1",
-      clinic_id: "c1",
-      role: "provider",
-    }
-
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => loginData,
-    })
-
-    const result = await transport.login("test@example.com", "pass")
-    expect(result.ok).toBe(true)
-    if (result.ok) expect(result.data).toEqual(loginData)
-
-    const [, options] = mockFetch.mock.calls[0]
-    expect(options.headers.Authorization).toBeUndefined()
-  })
-
-  it("network error returns NETWORK_ERROR", async () => {
-    const transport = createCloudTransport("https://api.example.com", () => "Bearer x")
-    mockFetch.mockRejectedValueOnce(new Error("Fetch failed"))
-
-    const result = await transport.sendCommand("test", {})
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error.code).toBe("NETWORK_ERROR")
-  })
-
-  it("401 returns AUTH_FAILED", async () => {
-    const transport = createCloudTransport("https://api.example.com", () => "Bearer x")
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 })
-
-    const result = await transport.sendCommand("test", {})
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error.code).toBe("AUTH_FAILED")
   })
 })

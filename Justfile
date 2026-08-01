@@ -33,3 +33,22 @@ build-all: build-packages build-apps
 test-all: test-server test-aiproxy test-local-hub-frontend test-mobile
 
 clean-all: clean-utils-js clean-database clean-ui clean-server clean-aiproxy
+
+
+# Test data — see database/seed/README.md.
+
+# `db` is the name of the database to write to and is required: it must match
+# the database the resolved DATABASE_URL lands on, or the seeder refuses. This
+# writes tens of thousands of rows and has no undo, so the target is never
+# inherited silently. Extra flags pass through, e.g.
+#   just seed-database hhdb_local 5000 --dry-run
+#   just seed-database hhdb_local 5000 --seed=42
+
+# Fill a database with synthetic patients and every related table.
+seed-database db patients='2000' *args='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ENV_ARGS="-f .env"
+    [ -f apps/server/.env ] && ENV_ARGS="$ENV_ARGS -f apps/server/.env"
+    pnpm exec dotenvx run $ENV_ARGS -- pnpm exec tsx database/seed/seed.ts \
+        --allow-database={{ db }} --patients={{ patients }} {{ args }}

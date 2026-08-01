@@ -5,10 +5,16 @@
  *   - applyRemoteChanges: pulls from hub → applies to local DB (sets _status = "synced")
  *   - fetchLocalChanges: gathers locally-changed records by _status for hub push
  *   - markLocalChangesAsSynced: confirms pushed records as synced
- *   - getLocalChangesSince: timestamp-based query for force sync (upload)
+ *   - getLocalChangesSince: timestamp-based query, independent of _status
  *
  * Normal sync uses _status/_changed (WatermelonDB-native).
- * Force sync uses timestamps (independent of _status).
+ *
+ * `getLocalChangesSince` and `getTableChangesSince` outlived the force-sync
+ * feature they were written for. Their remaining consumer is
+ * `modeSwitchService.checkUnsyncedChanges`, which uses them on the `sync_hub`
+ * branch to refuse a switch into online mode while hub changes are still
+ * unsynced — a data-loss guard, not a sync path. Do not delete them with the
+ * next round of sync cleanup.
  */
 
 import { Collection, Database, Model, Q, TableSchema } from "@nozbe/watermelondb"
@@ -62,6 +68,19 @@ export const INBOUND_TABLES: ReadonlySet<string> = new Set<string>([
   "app_config",
 ])
 
+/**
+ * Tables this device may send to a peer.
+ *
+ * Narrower than INBOUND_TABLES in both directions. The server owns
+ * user_clinic_permissions and app_config, so pushing them back is meaningless;
+ * `peers` and `event_logs` are device-local, and `peers` in particular holds
+ * hub URLs and public keys that have no business leaving the device.
+ *
+ * `fetchLocalChanges` reports pending records for every collection, so an
+ * outbound path that does not filter will send all of them.
+ */
+export const OUTBOUND_TABLES: ReadonlySet<string> = new Set<string>(SYNCABLE_TABLES)
+
 // ── Pure helpers ──────────────────────────────────────────────────────
 
 /** Mark a raw record as synced — it came from the server, no local changes pending. */
@@ -111,6 +130,11 @@ export const resolveConflict = (local: DirtyRaw, remote: DirtyRaw): DirtyRaw => 
  * All incoming records are marked _status = "synced", _changed = "".
  * When a record already exists locally with pending changes (_changed non-empty),
  * per-column conflict resolution preserves the local edits.
+ *
+ * `created` and `updated` both upsert, because a peer's classification is
+ * relative to its own cursor rather than to what this device holds. Deletions
+ * destroy the record outright, so a remote delete beats an unsynced local edit —
+ * upstream WatermelonDB's semantics, and the only ones that terminate.
  */
 export async function applyRemoteChanges(changes: SyncDatabaseChangeSet): Promise<void> {
   if (!changes || Object.keys(changes).length === 0) {
@@ -130,6 +154,17 @@ export async function applyRemoteChanges(changes: SyncDatabaseChangeSet): Promis
       const collection = database.get(tableName)
       const { created, updated, deleted } = tableChanges as SyncTableChangeSet
 
+      // A record tombstoned locally and not yet pushed is invisible to
+      // `collection.query` — every query description carries `_status !=
+      // 'deleted'` — but its row is still there, so creating over it collides on
+      // the primary key. The whole pull is one write, so that failure takes the
+      // entire sync down rather than one record.
+      const locallyDeletedIds = new Set<string>(
+        (created?.length ?? 0) > 0 || (updated?.length ?? 0) > 0
+          ? await database.adapter.getDeletedRecords(tableName)
+          : [],
+      )
+
       // ── Created records ──────────────────────────────────────────
       if (created && created.length > 0) {
         for (const currentChunk of chunk(created, BATCH_SIZE)) {
@@ -139,10 +174,20 @@ export async function applyRemoteChanges(changes: SyncDatabaseChangeSet): Promis
             collection.schema,
           )
 
+          const sanitizedChunk = currentChunk.map((dirtyRecord) =>
+            sanitizedRaw(markAsSynced(dirtyRecord), collection.schema),
+          )
+
+          // The peer classified these as created, so it knows nothing of a
+          // deletion this device never pushed, and it wins. The tombstone row
+          // has to go before the insert or the insert collides on the id.
+          const tombstoned = sanitizedChunk
+            .map((raw) => raw.id)
+            .filter((id) => locallyDeletedIds.has(id))
+
           const batch: Model[] = []
 
-          for (const dirtyRecord of currentChunk) {
-            const sanitized = sanitizedRaw(markAsSynced(dirtyRecord), collection.schema)
+          for (const sanitized of sanitizedChunk) {
             const existing = existingMap.get(sanitized.id)
 
             if (existing) {
@@ -164,6 +209,14 @@ export async function applyRemoteChanges(changes: SyncDatabaseChangeSet): Promis
                 }),
               )
             }
+          }
+
+          // Must stay adjacent to the batch it enables: `database.write` does
+          // not roll back, so a throw between the two drops a local deletion
+          // that no later push can recover, because only this device knew it.
+          if (tombstoned.length > 0) {
+            await database.adapter.destroyDeletedRecords(tableName, tombstoned)
+            tombstoned.forEach((id) => locallyDeletedIds.delete(id))
           }
 
           if (batch.length > 0) {
@@ -198,9 +251,20 @@ export async function applyRemoteChanges(changes: SyncDatabaseChangeSet): Promis
                   record._raw = mergedRaw as any
                 }),
               )
+            } else if (!locallyDeletedIds.has(sanitized.id)) {
+              // A peer classifies created-vs-updated against its own cursor, not
+              // against what this device holds, so a record created long ago and
+              // edited recently arrives as "updated" even on a device that has
+              // never seen it — exactly the records a repaired device needs. The
+              // payload is a full row, so creating is safe.
+              batch.push(
+                collection.prepareCreate((record) => {
+                  record._raw = sanitized as any
+                }),
+              )
             }
-            // If record doesn't exist locally, skip — server sent an update for
-            // something we never had. This can happen after a partial sync failure.
+            // Otherwise the record is tombstoned locally: leave it, and let the
+            // next push tell the peer about the deletion.
           }
 
           if (batch.length > 0) {
@@ -210,23 +274,28 @@ export async function applyRemoteChanges(changes: SyncDatabaseChangeSet): Promis
       }
 
       // ── Deleted records ──────────────────────────────────────────
+      // This bucket carries bare id strings, not raw records — passing them
+      // through the raw-record helpers generates a fresh id for each and
+      // silently matches nothing.
       if (deleted && deleted.length > 0) {
         for (const currentChunk of chunk(deleted, BATCH_SIZE)) {
-          const existingMap = await fetchExistingRecordsAsMap(
-            collection,
-            currentChunk,
-            collection.schema,
-          )
-
-          const batch: Model[] = []
-
-          for (const dirtyRecord of currentChunk) {
-            const sanitized = sanitizedRaw(markAsSynced(dirtyRecord), collection.schema)
-            const existing = existingMap.get(sanitized.id)
-            if (existing) {
-              batch.push(existing.prepareMarkAsDeleted())
-            }
+          const ids = currentChunk.filter((id): id is RecordId => typeof id === "string")
+          if (ids.length !== currentChunk.length) {
+            Logger.warn({
+              msg: "[localSync] Ignoring deletion entries that are not record ids",
+              table: tableName,
+              ignored: currentChunk.length - ids.length,
+            })
           }
+          if (ids.length === 0) continue
+
+          const existing = await collection.query(Q.where("id", Q.oneOf(ids))).fetch()
+
+          // Destroy rather than mark deleted: a local pending deletion is pushed
+          // back on the next sync and keeps hasUnsyncedChanges true forever,
+          // because nothing on this path ever marks it synced. The peer is the
+          // one that asked for the deletion, so it has nothing to learn from it.
+          const batch = existing.map((record) => record.prepareDestroyPermanently())
 
           if (batch.length > 0) {
             await database.batch(batch)

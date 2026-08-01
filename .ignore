@@ -53,7 +53,7 @@ postserver
 
 *.local.txt
 *.local
-*.local.md
+# *.local.md
 *.local.json
 
 # Rust/Cargo

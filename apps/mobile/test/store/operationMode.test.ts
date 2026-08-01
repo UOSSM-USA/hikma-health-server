@@ -6,7 +6,12 @@
  */
 
 import fc from "fast-check"
-import { operationModeStore, type OperationMode, type ModeConfig } from "../../app/store/operationMode"
+import {
+  ONLINE_MODE_ENABLED,
+  operationModeStore,
+  type OperationMode,
+  type ModeConfig,
+} from "../../app/store/operationMode"
 
 // ── Arbitraries ──────────────────────────────────────────────────────
 
@@ -43,12 +48,12 @@ describe("operationModeStore", () => {
     expect(ctx.serverConfig).toBe("user_choice")
   })
 
-  it("set_mode sets any valid OperationMode", () => {
+  it("set_mode never leaves offline while online mode is disabled", () => {
     fc.assert(
       fc.property(arbMode, (mode) => {
         operationModeStore.send({ type: "reset" })
         operationModeStore.send({ type: "set_mode", mode })
-        expect(operationModeStore.getSnapshot().context.mode).toBe(mode)
+        expect(operationModeStore.getSnapshot().context.mode).toBe("offline")
         expect(operationModeStore.getSnapshot().context.isTransitioning).toBe(false)
       }),
     )
@@ -64,24 +69,23 @@ describe("operationModeStore", () => {
         operationModeStore.send({ type: "end_transition", mode: targetMode })
         const ctx = operationModeStore.getSnapshot().context
         expect(ctx.isTransitioning).toBe(false)
-        expect(ctx.mode).toBe(targetMode)
+        expect(ctx.mode).toBe("offline")
       }),
     )
   })
 
-  it("set_server_config forces mode when config is not user_choice", () => {
+  // The server's answer is recorded as given — the gate belongs on `mode`, and
+  // rewriting `serverConfig` would hide the disagreement from diagnostics.
+  it("records the server config verbatim but refuses to follow it into online", () => {
     fc.assert(
-      fc.property(
-        fc.constantFrom<ModeConfig>("offline", "online"),
-        (config) => {
-          operationModeStore.send({ type: "reset" })
-          operationModeStore.send({ type: "set_server_config", config })
-          const ctx = operationModeStore.getSnapshot().context
-          expect(ctx.serverConfig).toBe(config)
-          expect(ctx.configSource).toBe("server")
-          expect(ctx.mode).toBe(config)
-        },
-      ),
+      fc.property(fc.constantFrom<ModeConfig>("offline", "online"), (config) => {
+        operationModeStore.send({ type: "reset" })
+        operationModeStore.send({ type: "set_server_config", config })
+        const ctx = operationModeStore.getSnapshot().context
+        expect(ctx.serverConfig).toBe(config)
+        expect(ctx.configSource).toBe("server")
+        expect(ctx.mode).toBe("offline")
+      }),
     )
   })
 
@@ -94,59 +98,76 @@ describe("operationModeStore", () => {
 
         const ctx = operationModeStore.getSnapshot().context
         expect(ctx.serverConfig).toBe("user_choice")
-        expect(ctx.mode).toBe(initialMode)
+        expect(ctx.mode).toBe("offline")
       }),
     )
   })
 
   it("reset always returns to initial state regardless of prior state", () => {
     fc.assert(
-      fc.property(
-        fc.array(arbEvent, { minLength: 0, maxLength: 20 }),
-        (events) => {
-          for (const event of events) {
-            operationModeStore.send(event)
-          }
-          operationModeStore.send({ type: "reset" })
+      fc.property(fc.array(arbEvent, { minLength: 0, maxLength: 20 }), (events) => {
+        for (const event of events) {
+          operationModeStore.send(event)
+        }
+        operationModeStore.send({ type: "reset" })
 
-          const ctx = operationModeStore.getSnapshot().context
-          expect(ctx.mode).toBe("offline")
-          expect(ctx.isTransitioning).toBe(false)
-          expect(ctx.configSource).toBe("local")
-          expect(ctx.serverConfig).toBe("user_choice")
-        },
-      ),
+        const ctx = operationModeStore.getSnapshot().context
+        expect(ctx.mode).toBe("offline")
+        expect(ctx.isTransitioning).toBe(false)
+        expect(ctx.configSource).toBe("local")
+        expect(ctx.serverConfig).toBe("user_choice")
+      }),
     )
   })
 
   it("mode is always a valid OperationMode after any event sequence", () => {
     const validModes: readonly OperationMode[] = ["offline", "online"]
     fc.assert(
-      fc.property(
-        fc.array(arbEvent, { minLength: 1, maxLength: 50 }),
-        (events) => {
-          operationModeStore.send({ type: "reset" })
-          for (const event of events) {
-            operationModeStore.send(event)
-          }
-          expect(validModes).toContain(operationModeStore.getSnapshot().context.mode)
-        },
-      ),
+      fc.property(fc.array(arbEvent, { minLength: 1, maxLength: 50 }), (events) => {
+        operationModeStore.send({ type: "reset" })
+        for (const event of events) {
+          operationModeStore.send(event)
+        }
+        expect(validModes).toContain(operationModeStore.getSnapshot().context.mode)
+      }),
     )
+  })
+
+  // The gate has to hold for *any* route into the store, not just the three
+  // handlers that set `mode` today. A fourth added later is the failure mode
+  // this test exists for — paired with the arbitrary-coverage check below,
+  // which fails if a new handler is added without extending `arbEvent`.
+  it("no sequence of events can reach online mode", () => {
+    fc.assert(
+      fc.property(fc.array(arbEvent, { minLength: 1, maxLength: 50 }), (events) => {
+        operationModeStore.send({ type: "reset" })
+        for (const event of events) {
+          operationModeStore.send(event)
+        }
+        expect(operationModeStore.getSnapshot().context.mode).toBe("offline")
+      }),
+    )
+  })
+
+  it("arbEvent covers every event the store accepts", () => {
+    const accepted = Object.keys(operationModeStore.trigger).sort()
+    const generated = fc.sample(arbEvent, 500).map((e) => e.type)
+    expect([...new Set(generated)].sort()).toEqual(accepted)
+  })
+
+  it("online mode is disabled", () => {
+    expect(ONLINE_MODE_ENABLED).toBe(false)
   })
 
   it("isTransitioning is boolean after any event sequence", () => {
     fc.assert(
-      fc.property(
-        fc.array(arbEvent, { minLength: 1, maxLength: 50 }),
-        (events) => {
-          operationModeStore.send({ type: "reset" })
-          for (const event of events) {
-            operationModeStore.send(event)
-          }
-          expect(typeof operationModeStore.getSnapshot().context.isTransitioning).toBe("boolean")
-        },
-      ),
+      fc.property(fc.array(arbEvent, { minLength: 1, maxLength: 50 }), (events) => {
+        operationModeStore.send({ type: "reset" })
+        for (const event of events) {
+          operationModeStore.send(event)
+        }
+        expect(typeof operationModeStore.getSnapshot().context.isTransitioning).toBe("boolean")
+      }),
     )
   })
 })

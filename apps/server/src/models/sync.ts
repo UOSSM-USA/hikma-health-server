@@ -1,32 +1,21 @@
-import Patient from "./patient";
-import Event from "./event";
-import Appointment from "./appointment";
-import Visit from "./visit";
-import Prescription from "./prescription";
-// import Language from "./language";
-// import User from "./user";
-import Clinic from "./clinic";
-import PatientAdditionalAttribute from "./patient-additional-attribute";
 import db from "@/db";
-import { sql } from "kysely";
-import EventForm from "./event-form";
-import PatientRegistrationForm from "./patient-registration-form";
-// import UserClinicPermissions from "./user-clinic-permissions";
 // import AppConfig from "./app-config";
-import PatientVital from "./patient-vital";
-import PatientProblem from "./patient-problem";
-import ClinicDepartment from "./clinic-department";
-import DrugCatalogue from "./drug-catalogue";
-import ClinicInventory from "./clinic-inventory";
-import DispensingRecord from "./dispensing-records";
-import PrescriptionItem from "./prescription-items";
 import { toSafeDateString } from "@/lib/utils";
 import User from "./user";
-import Device from "./device";
-import DevicePinCode from "./device-pin-code";
+import type Device from "./device";
 import UserClinicPermissions from "./user-clinic-permissions";
 import type { RequestCaller } from "@/types";
 import { Logger } from "@hikmahealth/js-utils";
+import {
+  ENTITIES_TO_PUSH_TO_MOBILE,
+  ENTITIES_TO_PUSH_TO_HUB,
+  ENTITIES_TO_PULL_FROM_MOBILE,
+  ENTITIES_TO_PULL_FROM_HUB,
+  EXEMPT_FROM_HISTORY_LIMIT,
+  CLINIC_COLUMN_BY_TABLE,
+  applyClinicScope,
+  getMaxHistoryDaysSync,
+} from "./sync-shared";
 
 /** Returns true if the value looks like a raw epoch timestamp (10-13 digit numeric string or number, possibly negative for pre-1970 dates). */
 export const isEpochTimestamp = (value: unknown): boolean =>
@@ -108,82 +97,41 @@ export const isDateColumn = (
   return dateColumnsByTable.get(tableName)?.has(columnName) ?? false;
 };
 
+/**
+ * Did an upsert actually write?
+ *
+ * Every model upserts one row at a time and guards it with
+ * `ON CONFLICT DO UPDATE ... WHERE excluded.updated_at > <table>.updated_at`.
+ * When that guard rejects a stale record, Kysely's `.executeTakeFirst()`
+ * returns `{ numInsertedOrUpdatedRows: 0n }` — verified against Postgres in
+ * tests/integration/models/sync-rejections.test.ts.
+ *
+ * It is NOT `undefined`, despite the inline comment in `event.ts` saying so.
+ * The undefined/null branch below is defensive, for a model that adds RETURNING
+ * or a future driver change. Since the conflict target is the primary key and
+ * DO UPDATE always writes when its WHERE passes, a zero count is unambiguously
+ * a rejection, not a no-op.
+ *
+ * A row count counts whether it arrives as a bigint or a number. Kysely's own
+ * `InsertResult` uses bigint, but `appointment.ts` and `prescription.ts` build
+ * their own `{ numInsertedOrUpdatedRows }` and appointment's passes it through
+ * `Number()` — so reading only the bigint shape reports a rejected record as
+ * ACCEPTED, and the client marks it synced and loses the user's edit on the next
+ * pull. The row fallback below stays for models that return `returningAll()`
+ * instead of a count.
+ */
+export const classifyUpsertResult = (result: unknown): boolean => {
+  if (result === undefined || result === null) return false;
+  const rows = (result as { numInsertedOrUpdatedRows?: unknown })
+    .numInsertedOrUpdatedRows;
+  if (typeof rows === "bigint") return rows > 0n;
+  // NaN is not > 0, so an unparseable count reads as a rejection — the safe
+  // direction: the client keeps the record pending rather than discarding it.
+  if (typeof rows === "number") return rows > 0;
+  return true;
+};
+
 namespace Sync {
-  /**
-   * These entities are synced to mobile. They should not contain information that is not needed for mobile use.
-   * Do not sync users.
-   * When adding new entities that need to be synced to mobile, add them to ENTITIES_TO_PUSH_TO_MOBILE
-   */
-  const ENTITIES_TO_PUSH_TO_MOBILE = [
-    Patient,
-    PatientAdditionalAttribute,
-    Clinic,
-    Visit,
-    Event,
-    EventForm,
-    PatientRegistrationForm,
-    Appointment,
-    Prescription,
-    PatientVital,
-    PatientProblem,
-    ClinicDepartment,
-    DrugCatalogue,
-    ClinicInventory,
-    DispensingRecord,
-    PrescriptionItem,
-    // Add more syncable entities here. Do not add any server defined entities here that do not track server_created_at or server_updated_at
-  ];
-
-  /**
-   * These entities are synced to the local sync hub. They contain a subset of the information available in the server for the respective clinics the sync hub is allowed to store data for.
-   * Syncing users is allowed.
-   *
-   * When adding new entities that need to be synced to the hubs, add them to ENTITIES_TO_PUSH_TO_HUB
-   */
-  const ENTITIES_TO_PUSH_TO_HUB = [
-    ...ENTITIES_TO_PUSH_TO_MOBILE,
-    User,
-    Device,
-    DevicePinCode,
-  ];
-
-  /**
-   * These entities are synced from mobile.
-   * When adding new entities that need to be synced from mobile, add them to ENTITIES_TO_PULL_FROM_MOBILE
-   *
-   * NOTE: Not going to sync the following from mobile, they will just be ignored
-   * 1. DrugCatalogue
-   * 2. ClinicInventory
-   * 3. Clinic
-   * 4. User
-   * 5. PatientRegistrationForm
-   * 6. EventForm
-   */
-  const ENTITIES_TO_PULL_FROM_MOBILE = [
-    Patient,
-    PatientAdditionalAttribute,
-    Visit,
-    Event,
-    Appointment,
-    Prescription,
-    PatientVital,
-    PatientProblem,
-    PrescriptionItem,
-    DispensingRecord,
-  ];
-
-  /**
-   * These entities are accepted from sync hubs. Hubs relay data from mobile
-   * devices and may also manage clinic-level configuration locally, so they
-   * can push a superset of what mobile pushes.
-   */
-  const ENTITIES_TO_PULL_FROM_HUB = [
-    ...ENTITIES_TO_PULL_FROM_MOBILE,
-    ClinicDepartment,
-    DrugCatalogue,
-    DevicePinCode,
-  ];
-
   const pushTableNameModelMap = ENTITIES_TO_PULL_FROM_MOBILE.reduce(
     (acc, entity) => {
       acc[entity.Table.name] = entity;
@@ -270,98 +218,6 @@ namespace Sync {
   type DBChangeSet = PullResponse["changes"];
 
   /**
-   * Validates and retrieves the MAX_HISTORY_DAYS_SYNC environment variable
-   * @returns The number of days to limit history sync, or null if not set
-   * @throws Error if the value is present but not a valid positive number
-   */
-  const getMaxHistoryDaysSync = (): number | null => {
-    const envValue = process.env.MAX_HISTORY_DAYS_SYNC;
-
-    if (!envValue) {
-      return null;
-    }
-
-    const days = Number(envValue);
-
-    if (isNaN(days) || days <= 0 || !Number.isInteger(days)) {
-      Logger.error(
-        `MAX_HISTORY_DAYS_SYNC must be a valid positive integer, got: ${envValue}. Ignoring and using no limit.`,
-      );
-      return null;
-    }
-
-    return days;
-  };
-
-  // Maps server table names to their clinic column for hub scoping.
-  // Tables not listed here have no direct clinic association and sync unfiltered.
-  const CLINIC_COLUMN_BY_TABLE: Record<string, string> = {
-    patients: "primary_clinic_id",
-    visits: "clinic_id",
-    appointments: "clinic_id",
-    prescriptions: "pickup_clinic_id",
-    clinic_departments: "clinic_id",
-    clinic_inventory: "clinic_id",
-    dispensing_records: "clinic_id",
-    prescription_items: "clinic_id",
-    patient_registration_forms: "clinic_id",
-    users: "clinic_id",
-    user_clinic_permissions: "clinic_id",
-  };
-
-  // Tables whose clinic association is stored as an array rather than a single column.
-  const CLINIC_ARRAY_TABLES: Record<
-    string,
-    { column: string; type: "jsonb" | "pg_array" }
-  > = {
-    event_forms: { column: "clinic_ids", type: "jsonb" },
-    devices: { column: "clinic_ids", type: "pg_array" },
-  };
-
-  /**
-   * Applies clinic-scoped filtering to a Kysely query builder for hub pulls.
-   * Returns the query unchanged when clinicIds is null (non-hub peers).
-   */
-  function applyClinicScope<Q>(
-    query: Q,
-    tableName: string,
-    clinicIds: string[] | null,
-  ): Q {
-    if (!clinicIds || clinicIds.length === 0) return query;
-
-    // Clinics table: filter by id directly
-    if (tableName === "clinics") {
-      return (query as any).where("id", "in", clinicIds);
-    }
-
-    // Simple column filter (clinic_id, primary_clinic_id, etc.)
-    const clinicColumn = CLINIC_COLUMN_BY_TABLE[tableName];
-    if (clinicColumn) {
-      return (query as any).where(clinicColumn, "in", clinicIds);
-    }
-
-    // Array-based clinic associations
-    const arrayConfig = CLINIC_ARRAY_TABLES[tableName];
-    if (arrayConfig) {
-      const idsLiteral = `{${clinicIds.join(",")}}`;
-      if (arrayConfig.type === "jsonb") {
-        // JSONB array: include records with empty/null clinic_ids (available to all clinics)
-        // or those whose clinic_ids overlap with the hub's clinics via ?| operator
-        return (query as any).where(
-          sql`(${sql.ref(arrayConfig.column)} IS NULL OR ${sql.ref(arrayConfig.column)} = '[]'::jsonb OR ${sql.ref(arrayConfig.column)} ?| ${idsLiteral}::text[])`,
-        );
-      }
-      // PostgreSQL native uuid[] array: use && overlap operator
-      return (query as any).where(
-        sql`${sql.ref(arrayConfig.column)} && ${idsLiteral}::uuid[]`,
-      );
-    }
-
-    // No clinic association (e.g. patient_additional_attributes, events, drug_catalogue) — no filtering
-    return query;
-  }
-
-  /**
    * Get the delta records for the last synced at time
    * TODO: if lastSyncedAt is 0, no deleted records should be returned
    * @param lastSyncedAt
@@ -400,18 +256,6 @@ namespace Sync {
       effectiveLastSyncDate =
         clientLastSyncDate < cutoffDate ? cutoffDate : clientLastSyncDate;
     }
-
-    // Configuration entities that should always sync full history (exempt from MAX_HISTORY_DAYS_SYNC)
-    const EXEMPT_FROM_HISTORY_LIMIT = [
-      "clinics",
-      // Patient registration forms have different names on mobile and on server, thus both are listed in the exemption list
-      "patient_registration_forms",
-      "registration_forms",
-      "event_forms",
-      "drug_catalogue",
-      "clinic_departments",
-      "clinic_inventory", // this should synced for just the signed in clinic??
-    ];
 
     for (const entity of ENTITIES_TO_PUSH_TO_CLIENT) {
       // It can happen that the server table name is different from the mobile table name
@@ -558,11 +402,33 @@ namespace Sync {
    * @param entity
    * @param deltaData
    */
+  export type PushOutcome = {
+    accepted: number;
+    rejected: Record<string, string[]>;
+    byTable: Record<string, { accepted: number; rejected: number }>;
+  };
+
+  /**
+   * Entities whose upsert return value has been verified to distinguish an
+   * applied write from a guard rejection.
+   *
+   * Restricted to what mobile pushes. The hub-only additions each return
+   * something `classifyUpsertResult` would read wrongly: `device_pin_codes` is
+   * a deliberate no-op returning undefined (reported as rejected, so a client
+   * would keep the record pending forever), and `drug_catalogue` returns an
+   * un-run Effect — an object with no row count, reported as accepted for a
+   * write that never happened. Both are out of scope here; excluding them keeps
+   * PushOutcome honest about what it can speak to.
+   */
+  const REPORTABLE_TABLES: ReadonlySet<string> = new Set(
+    ENTITIES_TO_PULL_FROM_MOBILE.map((e) => e.Table.name),
+  );
+
   export const persistClientChanges = async (
     data: PushRequest,
     peerType: Device.DeviceTypeT,
     caller: RequestCaller,
-  ): Promise<void> => {
+  ): Promise<PushOutcome> => {
     // Hub peers can push a wider set of entities than mobile devices
     const isHub = peerType === "sync_hub";
     const entitiesToPull = isHub
@@ -579,6 +445,25 @@ namespace Sync {
         ? new Set((caller.device.clinic_ids as unknown as string[]) ?? [])
         : null;
 
+    const outcome: PushOutcome = { accepted: 0, rejected: {}, byTable: {} };
+
+    /**
+     * Record one record's fate, keyed by the name the CLIENT knows the table
+     * by. The client feeds `rejected` straight into WatermelonDB's
+     * `markLocalChangesAsSynced`, which resolves collections by mobile name, so
+     * keying this by the server name would silently protect nothing.
+     */
+    const note = (mobileTable: string, id: string, accepted: boolean) => {
+      outcome.byTable[mobileTable] ??= { accepted: 0, rejected: 0 };
+      if (accepted) {
+        outcome.accepted += 1;
+        outcome.byTable[mobileTable].accepted += 1;
+      } else {
+        outcome.byTable[mobileTable].rejected += 1;
+        (outcome.rejected[mobileTable] ??= []).push(id);
+      }
+    };
+
     // Warm the schema-driven date-column map before iterating records — the
     // coercion below depends on it. Cached after the first call.
     await loadDateColumnsByTable();
@@ -588,6 +473,10 @@ namespace Sync {
     // dependency order: patients → patient_additional_attributes → visits → events → …
     for (const entity of entitiesToPull) {
       const tableName = entity.Table.name;
+      // `Device.Table` declares no mobileName; falling back to the server name
+      // keeps its records out of an `outcome.rejected["undefined"]` bucket.
+      const mobileName = entity.Table.mobileName ?? tableName;
+      const reportable = REPORTABLE_TABLES.has(tableName);
       const newDeltaJson = (data as Record<string, DeltaData>)[tableName];
       if (!newDeltaJson) {
         continue;
@@ -655,13 +544,17 @@ namespace Sync {
             `[sync] Hub not authorized to push "${tableName}" record ${cleaned.id} — ` +
               `clinic ${cleaned[clinicColumn!]} not in hub's authorized clinics`,
           );
+          if (reportable) note(mobileName, String(cleaned.id), false);
           continue;
         }
 
-        await tableModelMap[tableName].Sync.upsertFromDelta(
+        const upsertResult = await tableModelMap[tableName].Sync.upsertFromDelta(
           cleaned as any,
           caller,
         );
+        if (reportable) {
+          note(mobileName, String(cleaned.id), classifyUpsertResult(upsertResult));
+        }
       }
 
       for (const id of deltaData.deleted) {
@@ -680,6 +573,7 @@ namespace Sync {
     }
 
     Logger.log("Finished persisting client changes");
+    return outcome;
   };
 }
 

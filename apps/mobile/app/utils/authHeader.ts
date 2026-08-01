@@ -1,6 +1,8 @@
 import { Buffer } from "buffer"
 import * as SecureStore from "expo-secure-store"
 
+import type { LoginResponse, RpcResult } from "@/rpc/types"
+
 /**
  * Authorization header for provider-authenticated requests, or null when no
  * credential is stored. Basic is only a fallback: the server validates it with a
@@ -18,4 +20,44 @@ export const getProviderAuthHeader = async (): Promise<string | null> => {
     return `Basic ${Buffer.from(`${email}:${password}`).toString("base64")}`
   }
   return null
+}
+
+/**
+ * Authorization header for tRPC calls, or an empty string when no token is
+ * cached.
+ *
+ * Deliberately without the Basic fallback above: tRPC's authedProcedure rejects
+ * any scheme other than Bearer, so a Basic header is not a degraded credential
+ * here, it is a guaranteed 401. Callers holding a transport should recover from
+ * the empty case with `refreshBearerToken`.
+ */
+export const getBearerToken = async (): Promise<string> => {
+  const token = await SecureStore.getItemAsync("provider_token")
+  return token ? `Bearer ${token}` : ""
+}
+
+/**
+ * Mint a fresh token from the stored credentials and cache it.
+ *
+ * Returns false when there is nothing to sign in with or the server refused,
+ * leaving any existing token untouched — a failed refresh during a transient
+ * outage must not escalate into a forced re-login. The transport is passed in
+ * rather than constructed so the caller decides which host to authenticate
+ * against.
+ */
+export const refreshBearerToken = async (transport: {
+  login: (email: string, password: string) => Promise<RpcResult<LoginResponse>>
+}): Promise<boolean> => {
+  const [email, password] = await Promise.all([
+    SecureStore.getItemAsync("provider_email"),
+    SecureStore.getItemAsync("provider_password"),
+  ])
+  if (!email || !password) return false
+
+  const result = await transport.login(email, password)
+  if (!result.ok) return false
+  if (!result.data?.token) return false
+
+  await SecureStore.setItemAsync("provider_token", result.data.token)
+  return true
 }

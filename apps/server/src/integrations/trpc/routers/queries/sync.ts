@@ -8,36 +8,10 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { authedProcedure, createTRPCRouter } from "../../init";
 import Sync from "@/models/sync";
-import User from "@/models/user";
-import Clinic from "@/models/clinic";
-import { Option } from "@/lib/option";
-import type { RequestCaller } from "@/types";
-import type { AuthedContext } from "../../init";
+import { getDeltaPage, DEFAULT_PAGE_ROWS } from "@/models/sync-paged";
+import { recordManualSyncAudit } from "@/models/sync-audit";
+import { callerFromContext, resolvePeerType } from "../../caller";
 import * as Sentry from "@sentry/tanstackstart-react";
-
-/** Build a RequestCaller suitable for Sync methods from tRPC auth context */
-async function callerFromContext(ctx: AuthedContext): Promise<RequestCaller> {
-  // Load full user record for the caller
-  const user = await User.API.getById(ctx.userId);
-  if (!user) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "User not found",
-    });
-  }
-
-  let clinic: Option<Clinic.EncodedT> = Option.none;
-  if (user.clinic_id) {
-    try {
-      const c = await Clinic.getById(user.clinic_id);
-      clinic = Option.some(c);
-    } catch {
-      // Clinic may not exist — proceed without it
-    }
-  }
-
-  return { user, clinic, token: "" };
-}
 
 export const syncQueryRouter = createTRPCRouter({
   /**
@@ -70,7 +44,7 @@ export const syncQueryRouter = createTRPCRouter({
     .query(async ({ input, ctx }) => {
       try {
         const caller = await callerFromContext(ctx);
-        const peerType = (input.peer_type ?? "unknown") as any;
+        const peerType = resolvePeerType(input.peer_type, caller);
         const syncTimestamp = Date.now();
         const changes = await Sync.getDeltaRecords(
           input.last_pulled_at,
@@ -85,6 +59,119 @@ export const syncQueryRouter = createTRPCRouter({
           code: "INTERNAL_SERVER_ERROR",
           message:
             error instanceof Error ? error.message : "Sync pull failed",
+        });
+      }
+    }),
+
+  /**
+   * One page of a resumable, memory-bounded backfill.
+   *
+   * Unlike `pull`, which returns the whole delta in a single response, this
+   * returns at most `page_bytes` of rows and an opaque cursor to resume from.
+   * `timestamp` is a snapshot captured on the first page and repeated on every
+   * later page — clients advance their own cursor to it only once the run
+   * completes.
+   */
+  backfillPull: authedProcedure
+    .input(
+      z.object({
+        since: z.number().int().nonnegative(),
+        cursor: z.string().nullable(),
+        page_bytes: z.number().int().positive(),
+        page_rows: z.number().int().positive().optional(),
+        peer_type: z
+          .enum([
+            "android",
+            "ios",
+            "web",
+            "desktop",
+            "sync_hub",
+            "laptop",
+            "unknown",
+          ])
+          .optional(),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      const caller = await callerFromContext(ctx);
+      const peerType = resolvePeerType(input.peer_type, caller);
+
+      // A null cursor is the first page of a run. The start is recorded before
+      // any data is read, so a run that dies mid-way leaves a start with no
+      // terminal row — the audit helper swallows its own failures, and that
+      // asymmetry is what makes one visible. A client retrying its first page
+      // writes a second start; two starts against one completion reads as the
+      // retry it was, so this is deliberately not deduplicated.
+      if (input.cursor === null) {
+        await recordManualSyncAudit({
+          userId: ctx.userId,
+          direction: "pull",
+          peerType: String(peerType),
+          since: input.since,
+          // The snapshot is not taken until the first query runs, so the start
+          // row carries the request time instead.
+          snapshotTs: Date.now(),
+          counts: {},
+          outcome: "started",
+        });
+      }
+
+      try {
+        const page = await getDeltaPage({
+          since: input.since,
+          cursor: input.cursor,
+          pageBytes: input.page_bytes,
+          pageRows: input.page_rows ?? DEFAULT_PAGE_ROWS,
+          peerType,
+          caller,
+        });
+
+        // Audit the whole operation once, when it finishes, rather than once
+        // per page — a 2,500-page backfill must not write 2,500 audit rows.
+        // The totals cover the entire run: they ride in the cursor, because the
+        // server holds nothing between pages.
+        if (page.nextCursor === null) {
+          await recordManualSyncAudit({
+            userId: ctx.userId,
+            direction: "pull",
+            peerType: String(peerType),
+            since: input.since,
+            snapshotTs: page.timestamp,
+            counts: page.totals,
+            outcome: "completed",
+          });
+        }
+
+        return {
+          changes: page.changes,
+          next_cursor: page.nextCursor,
+          timestamp: page.timestamp,
+          progress: {
+            table: page.progress.table,
+            bucket: page.progress.bucket,
+            tables_remaining: page.progress.tablesRemaining,
+          },
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Backfill pull failed";
+
+        await recordManualSyncAudit({
+          userId: ctx.userId,
+          direction: "pull",
+          peerType: String(peerType),
+          since: input.since,
+          snapshotTs: Date.now(),
+          counts: {},
+          outcome: "failed",
+          error: message,
+        });
+
+        if (error instanceof TRPCError) throw error;
+        Sentry.captureException(error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message,
         });
       }
     }),

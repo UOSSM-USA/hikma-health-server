@@ -26,7 +26,7 @@ jest.mock("../../app/db/localSync", () => ({
   getLocalChangesSince: jest.fn(() => Promise.resolve({})),
 }))
 
-jest.mock("../../app/db/peerSync", () => ({
+jest.mock("../../app/db/syncNormalize", () => ({
   countRecordsInChanges: jest.fn(() => mockLocalChangesCount),
 }))
 
@@ -150,66 +150,54 @@ describe("checkUnsyncedChanges", () => {
 // switchToOnlineMode
 // ---------------------------------------------------------------------------
 
-describe("switchToOnlineMode", () => {
-  it("switches to online when no active peer (no changes to lose)", async () => {
-    mockActivePeer = null
+describe("switchToOnlineMode — refused while online mode is disabled", () => {
+  it("refuses whatever the peer and whatever the unsynced state", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom<Peer.T | null>(null, makeCloudPeer(), makeHubPeer()),
+        fc.boolean(),
+        fc.nat({ max: 10 }),
+        async (peer, hasUnsynced, changeCount) => {
+          operationModeStore.send({ type: "reset" })
+          mockActivePeer = peer
+          mockHasUnsynced = hasUnsynced
+          mockLocalChangesCount = changeCount
 
-    const result = await switchToOnlineMode()
+          const result = await switchToOnlineMode()
 
-    expect(result.ok).toBe(true)
-    expect(operationModeStore.getSnapshot().context.mode).toBe("online")
-    expect(savedValues[MODE_PREFERENCE_KEY]).toBe("online")
+          expect(result.ok).toBe(false)
+          if (!result.ok) expect(result.reason).toBe("disabled")
+          expect(operationModeStore.getSnapshot().context.mode).toBe("offline")
+        },
+      ),
+    )
   })
 
-  it("switches to online with cloud peer and no unsynced changes", async () => {
+  // It returns before `start_transition` and before the preference is written.
+  // A refusal that left either behind would strand the UI mid-transition or
+  // silently arm online mode for the next launch.
+  it("leaves no trace — no stored preference, no transition, no peer lookup", async () => {
     mockActivePeer = makeCloudPeer()
-    mockHasUnsynced = false
+    const resolveActive = (jest.requireMock("../../app/models/Peer") as any).default.DB
+      .resolveActive as jest.Mock
+    resolveActive.mockClear()
 
-    const result = await switchToOnlineMode()
+    await switchToOnlineMode()
 
-    expect(result.ok).toBe(true)
-    expect(operationModeStore.getSnapshot().context.mode).toBe("online")
+    expect(savedValues[MODE_PREFERENCE_KEY]).toBeUndefined()
+    expect(operationModeStore.getSnapshot().context.isTransitioning).toBe(false)
+    expect(resolveActive).not.toHaveBeenCalled()
   })
 
-  it("rejects with cloud peer when hasUnsyncedChanges is true", async () => {
-    mockActivePeer = makeCloudPeer()
-    mockHasUnsynced = true
-
-    const result = await switchToOnlineMode()
-
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.reason).toBe("unsynced_changes")
-    expect(operationModeStore.getSnapshot().context.mode).toBe("offline")
-  })
-
-  it("switches to online with hub peer and no local changes since last sync", async () => {
-    mockActivePeer = makeHubPeer()
-    mockLocalChangesCount = 0
-
-    const result = await switchToOnlineMode()
-
-    expect(result.ok).toBe(true)
-    expect(operationModeStore.getSnapshot().context.mode).toBe("online")
-  })
-
-  it("rejects with hub peer when local changes exist since last sync", async () => {
-    mockActivePeer = makeHubPeer()
-    mockLocalChangesCount = 3
-
-    const result = await switchToOnlineMode()
-
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.reason).toBe("unsynced_changes")
-    expect(operationModeStore.getSnapshot().context.mode).toBe("offline")
-  })
-
-  it("returns already_in_mode when already online", async () => {
+  // Refusing takes priority over "already online" — the store cannot be in
+  // online mode to begin with, so that branch is unreachable.
+  it("still refuses when something has tried to set the mode to online", async () => {
     operationModeStore.send({ type: "set_mode", mode: "online" })
 
     const result = await switchToOnlineMode()
 
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.reason).toBe("already_in_mode")
+    if (!result.ok) expect(result.reason).toBe("disabled")
   })
 })
 
@@ -218,17 +206,20 @@ describe("switchToOnlineMode", () => {
 // ---------------------------------------------------------------------------
 
 describe("switchToOfflineMode", () => {
-  it("switches to offline and persists preference", async () => {
+  // Its success path is unreachable while online mode is disabled: the store
+  // can never hold "online", so the guard at the top always fires. The path
+  // itself is untouched and returns when the gate is lifted.
+  it("reports already_in_mode, because offline is the only reachable mode", async () => {
     operationModeStore.send({ type: "set_mode", mode: "online" })
 
     const result = await switchToOfflineMode()
 
-    expect(result.ok).toBe(true)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toBe("already_in_mode")
     expect(operationModeStore.getSnapshot().context.mode).toBe("offline")
-    expect(savedValues[MODE_PREFERENCE_KEY]).toBe("offline")
   })
 
-  it("returns already_in_mode when already offline", async () => {
+  it("returns already_in_mode from a clean start too", async () => {
     const result = await switchToOfflineMode()
 
     expect(result.ok).toBe(false)
@@ -248,16 +239,17 @@ describe("checkUnsyncedChanges — properties", () => {
       fc.asyncProperty(
         fc.oneof(
           fc.constant(null),
-          fc.record({
-            peerType: arbPeerType,
-            lastSyncedAt: fc.oneof(fc.constant(null), fc.integer({ min: 0 })),
-          }).map(
-            (partial) =>
+          fc
+            .record({
+              peerType: arbPeerType,
+              lastSyncedAt: fc.oneof(fc.constant(null), fc.integer({ min: 0 })),
+            })
+            .map((partial) =>
               makeCloudPeer({
                 peerType: partial.peerType,
                 lastSyncedAt: partial.lastSyncedAt,
               }),
-          ),
+            ),
         ),
         async (peer) => {
           // Should never throw

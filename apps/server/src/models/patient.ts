@@ -1058,7 +1058,9 @@ namespace Patient {
   export namespace Sync {
     export const upsertFromDelta = createServerOnlyFn(
       async (delta: Patient.EncodedT) => {
-        await API.DANGEROUS_SYNC_ONLY_upsert(delta);
+        // Returned so sync can tell an applied write from one the staleness
+        // guard skipped; see Sync.classifyUpsertResult.
+        return await API.DANGEROUS_SYNC_ONLY_upsert(delta);
       },
     );
     export const deleteFromDelta = createServerOnlyFn(async (id: string) => {

@@ -8,22 +8,20 @@ import {
   ViewStyle,
   StyleSheet,
   TouchableOpacity,
-  TextStyle,
   ActivityIndicator,
 } from "react-native"
 import { CameraType, useCameraPermissions, BarcodeScanningResult, CameraView } from "expo-camera"
 import * as SecureStore from "expo-secure-store"
 import { useSelector } from "@xstate/react"
-import { LucideCamera, LucideRefreshCcw, LucideUpload, LucideDownload } from "lucide-react-native"
+import { LucideCamera, LucideRefreshCcw } from "lucide-react-native"
 import Toast from "react-native-root-toast"
 
 import { useIsFocused } from "@react-navigation/native"
 
+import { ManualSyncActions } from "@/components/ManualSyncActions"
 import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
-import { TextField } from "@/components/TextField"
 import { View } from "@/components/View"
-import { useForceSyncActions } from "@/hooks/useForceSyncActions"
 import { usePeerRegistration } from "@/hooks/usePeerRegistration"
 import { useSync } from "@/hooks/useSync"
 import { translate } from "@/i18n/translate"
@@ -52,20 +50,6 @@ const { height, width } = Dimensions.get("screen")
 const formatTimestamp = (ts: number | null): string => {
   if (!ts) return "Never"
   return new Date(ts).toLocaleString()
-}
-
-const formatDateForInput = (ts: number | null): string => {
-  if (!ts) return ""
-  const d = new Date(ts)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
-
-const parseDateInput = (input: string): number => {
-  const parsed = new Date(input)
-  return isNaN(parsed.getTime()) ? 0 : parsed.getTime()
 }
 
 async function reauthWithHub(
@@ -385,101 +369,11 @@ function ServerTypeComponent({
         <ConnectButton onPress={() => handleAddServer(server.type)} mode="change" />
       </View>
 
-      {/* Disabled in production for now */}
-      <If condition={__DEV__}>
-        <ForceSyncActions serverId={server.id} lastSyncedAt={server.lastSyncedAt} />
+      {/* Cloud only — the hub path is not implemented — and only while the peer
+          is in rotation, so a revoked server cannot be handed the record store. */}
+      <If condition={server.type === "cloud" && server.isActive}>
+        <ManualSyncActions serverId={server.id} />
       </If>
-    </View>
-  )
-}
-
-/**
- * Force sync upload/download actions for a specific peer.
- * Includes a date input and upload/download buttons.
- */
-function ForceSyncActions({
-  serverId,
-  lastSyncedAt,
-}: {
-  serverId: string
-  lastSyncedAt: number | null
-}) {
-  const [dateInput, setDateInput] = useState(formatDateForInput(lastSyncedAt))
-  const { state, upload, download } = useForceSyncActions(serverId)
-
-  const isBusy = state.isUploading || state.isDownloading
-
-  const handleUpload = () => {
-    const ts = parseDateInput(dateInput)
-    Alert.alert(
-      "Upload Device Data",
-      `Upload all records changed since ${dateInput || "the beginning"} to this server?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Upload", onPress: () => upload(ts) },
-      ],
-    )
-  }
-
-  const handleDownload = () => {
-    const ts = parseDateInput(dateInput)
-    Alert.alert(
-      "Download Data From Server",
-      `Download all records since ${dateInput || "the beginning"} from this server?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Download", onPress: () => download(ts) },
-      ],
-    )
-  }
-
-  return (
-    <View pt={8} direction="column" gap={6}>
-      <Text text="Data Transfer" size="xs" color={colors.palette.neutral600} />
-
-      {/* TODO: THIS SHOULD BE A DATE PICKER */}
-      <TextField
-        label="Since:"
-        // style={$dateInput}
-        value={dateInput}
-        onChangeText={setDateInput}
-        placeholder="YYYY-MM-DD"
-        placeholderTextColor={colors.palette.neutral400}
-      />
-
-      <View direction="row" gap={8}>
-        <TouchableOpacity
-          style={[$forceSyncButton, isBusy && $syncButtonDisabled]}
-          onPress={handleUpload}
-          disabled={isBusy}
-        >
-          <LucideUpload
-            color={isBusy ? colors.palette.neutral400 : colors.palette.primary600}
-            size={14}
-          />
-          <Text
-            text={state.isUploading ? "Uploading..." : "Upload device data"}
-            size="xxs"
-            color={isBusy ? colors.palette.neutral400 : colors.palette.primary600}
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[$forceSyncButton, isBusy && $syncButtonDisabled]}
-          onPress={handleDownload}
-          disabled={isBusy}
-        >
-          <LucideDownload
-            color={isBusy ? colors.palette.neutral400 : colors.palette.primary600}
-            size={14}
-          />
-          <Text
-            text={state.isDownloading ? "Downloading..." : "Download from server"}
-            size="xxs"
-            color={isBusy ? colors.palette.neutral400 : colors.palette.primary600}
-          />
-        </TouchableOpacity>
-      </View>
     </View>
   )
 }
@@ -551,29 +445,6 @@ const $setActiveButton: ViewStyle = {
   borderWidth: 1,
   borderColor: colors.palette.primary200,
   backgroundColor: colors.palette.primary50,
-}
-
-const $forceSyncButton: ViewStyle = {
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 4,
-  paddingHorizontal: 12,
-  paddingVertical: 8,
-  borderRadius: 6,
-  borderWidth: 1,
-  borderColor: colors.palette.primary200,
-  backgroundColor: colors.palette.primary50,
-}
-
-const $dateInput: TextStyle = {
-  flex: 1,
-  borderWidth: 1,
-  borderColor: colors.palette.neutral300,
-  borderRadius: 6,
-  paddingHorizontal: 10,
-  paddingVertical: 6,
-  fontSize: 12,
-  color: colors.text,
 }
 
 const $loadingIndicatorContainer: ViewStyle = {

@@ -22,7 +22,7 @@ import type { AppStackScreenProps } from "@/navigators/AppNavigator"
 import { navigationRef } from "@/navigators/navigationUtilities"
 import { switchToOnlineMode, switchToOfflineMode } from "@/services/modeSwitchService"
 import { appStateStore } from "@/store/appState"
-import { operationModeStore } from "@/store/operationMode"
+import { ONLINE_MODE_ENABLED, operationModeStore } from "@/store/operationMode"
 import { providerStore } from "@/store/provider"
 import { colors } from "@/theme/colors"
 import { generateDummyPatients, insertBenchmarkingData } from "@/utils/benchmarking"
@@ -40,7 +40,9 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
     (state) => state.context,
   )
   const { isConnected, isInternetReachable } = useNetInfo()
-  const showModeToggle = serverConfig === "user_choice"
+  // Offering the choice while online mode is disabled would show a control
+  // that cannot do anything.
+  const showModeToggle = ONLINE_MODE_ENABLED && serverConfig === "user_choice"
 
   const launchIcon = require("@/assets/images/launch_icon.png")
 
@@ -108,6 +110,10 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
       const result = await switchToOnlineMode()
       if (!result.ok && result.reason === "unsynced_changes") {
         Toast.show(translate("settingsScreen:unsyncedChangesWarning"), {
+          duration: Toast.durations.LONG,
+        })
+      } else if (!result.ok && result.reason === "disabled") {
+        Toast.show(translate("settingsScreen:onlineModeUnavailable"), {
           duration: Toast.durations.LONG,
         })
       }

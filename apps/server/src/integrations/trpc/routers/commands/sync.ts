@@ -8,35 +8,9 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { authedProcedure, createTRPCRouter } from "../../init";
 import Sync from "@/models/sync";
-import User from "@/models/user";
-import Clinic from "@/models/clinic";
-import { Option } from "@/lib/option";
-import type { RequestCaller } from "@/types";
-import type { AuthedContext } from "../../init";
+import { recordManualSyncAudit } from "@/models/sync-audit";
+import { callerFromContext, resolvePeerType } from "../../caller";
 import * as Sentry from "@sentry/tanstackstart-react";
-
-/** Build a RequestCaller suitable for Sync methods from tRPC auth context */
-async function callerFromContext(ctx: AuthedContext): Promise<RequestCaller> {
-  const user = await User.API.getById(ctx.userId);
-  if (!user) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "User not found",
-    });
-  }
-
-  let clinic: Option<Clinic.EncodedT> = Option.none;
-  if (user.clinic_id) {
-    try {
-      const c = await Clinic.getById(user.clinic_id);
-      clinic = Option.some(c);
-    } catch {
-      // Clinic may not exist — proceed without it
-    }
-  }
-
-  return { user, clinic, token: "" };
-}
 
 // The sync push payload is a record of table names to delta data.
 // We use z.record with a loose schema since the Sync model validates internally.
@@ -80,7 +54,7 @@ export const syncCommandRouter = createTRPCRouter({
     .mutation(async ({ input, ctx }) => {
       try {
         const caller = await callerFromContext(ctx);
-        const peerType = (input.peer_type ?? "unknown") as any;
+        const peerType = resolvePeerType(input.peer_type, caller);
         await Sync.persistClientChanges(
           input.changes as any,
           peerType,
@@ -94,6 +68,96 @@ export const syncCommandRouter = createTRPCRouter({
           code: "INTERNAL_SERVER_ERROR",
           message:
             error instanceof Error ? error.message : "Sync push failed",
+        });
+      }
+    }),
+
+  /**
+   * Accept a client push and report what was rejected.
+   *
+   * Unlike `push`, which returns only success, this returns the ids the
+   * staleness guard or the clinic-authorization check dropped. The client keeps
+   * those records pending instead of marking them synced — without that, a
+   * rejected edit is silently discarded and then overwritten by the next pull.
+   *
+   * `since` is not a filter: the payload is whatever the client chose to send.
+   * It is carried so the audit row can say which window the client believed it
+   * was reconciling.
+   *
+   * There is no "started" row to match the paged pull's. The client splits a
+   * push, so every call is a complete unit of work the server either finished
+   * or failed — a start row would say nothing the terminal row does not.
+   */
+  backfillPush: authedProcedure
+    .input(
+      z.object({
+        changes: z.record(z.string(), deltaDataSchema),
+        since: z.number().int().nonnegative(),
+        peer_type: z
+          .enum([
+            "android",
+            "ios",
+            "web",
+            "desktop",
+            "sync_hub",
+            "laptop",
+            "unknown",
+          ])
+          .optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const caller = await callerFromContext(ctx);
+      const peerType = resolvePeerType(input.peer_type, caller);
+
+      try {
+        const outcome = await Sync.persistClientChanges(
+          input.changes as any,
+          peerType,
+          caller,
+        );
+
+        const counts: Record<string, number> = {};
+        for (const [table, tally] of Object.entries(outcome.byTable)) {
+          counts[table] = tally.accepted;
+        }
+
+        await recordManualSyncAudit({
+          userId: ctx.userId,
+          direction: "push",
+          peerType: String(peerType),
+          since: input.since,
+          snapshotTs: Date.now(),
+          counts,
+          byTable: outcome.byTable,
+          outcome: "completed",
+        });
+
+        return {
+          accepted: outcome.accepted,
+          rejected: outcome.rejected,
+          by_table: outcome.byTable,
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Backfill push failed";
+
+        await recordManualSyncAudit({
+          userId: ctx.userId,
+          direction: "push",
+          peerType: String(peerType),
+          since: input.since,
+          snapshotTs: Date.now(),
+          counts: {},
+          outcome: "failed",
+          error: message,
+        });
+
+        if (error instanceof TRPCError) throw error;
+        Sentry.captureException(error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message,
         });
       }
     }),

@@ -9,7 +9,7 @@ import * as SecureStore from "expo-secure-store"
 import { useQueryClient } from "@tanstack/react-query"
 import database from "@/db"
 import { operationModeStore, type OperationMode } from "@/store/operationMode"
-import { createCloudTransport } from "@/rpc/transport"
+import { createTrpcCloudTransport } from "@/rpc/transport"
 import Peer from "@/models/Peer"
 import type { DataProvider } from "../../types/data"
 import { createOfflineProvider } from "./offlineProvider"
@@ -81,7 +81,7 @@ const buildProvider = (kind: ProviderKind, credentials: Credentials | null): Dat
         hasAuth: ${authHeader.length > 0}`,
       )
       const getAuth = () => authHeader
-      return createRpcProvider(async () => createCloudTransport(baseUrl, getAuth))
+      return createRpcProvider(async () => createTrpcCloudTransport(baseUrl, getAuth))
     }
 
     case "unknown":

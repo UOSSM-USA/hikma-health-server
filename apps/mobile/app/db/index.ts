@@ -8,28 +8,7 @@ import { uuidv7 } from "uuidv7"
 
 import migrations from "./migrations"
 
-// Import all models here
-import AppConfig from "./model/AppConfig"
-import Appointment from "./model/Appointment"
-import Clinic from "./model/Clinic"
-import ClinicDepartment from "./model/ClinicDepartment"
-import ClinicInventory from "./model/ClinicInventory"
-import DispensingRecord from "./model/DispensingRecord"
-import DrugCatalogue from "./model/DrugCatalogue"
-import Event from "./model/Event"
-import EventForm from "./model/EventForm"
-import EventLog from "./model/EventLog"
-import Patient from "./model/Patient"
-import PatientAdditionalAttribute from "./model/PatientAdditionalAttribute"
-import PatientProblems from "./model/PatientProblems"
-import PatientRegistrationForm from "./model/PatientRegistrationForm"
-import PatientVitals from "./model/PatientVitals"
-import Peer from "./model/Peer"
-import Prescription from "./model/Prescription"
-import PrescriptionItem from "./model/PrescriptionItem"
-import User from "./model/User"
-import UserClinicPermissions from "./model/UserClinicPermissions"
-import Visit from "./model/Visit"
+import { modelClasses } from "./modelClasses"
 import schema from "./schema"
 import { Logger } from "@hikmahealth/js-utils"
 
@@ -96,43 +75,7 @@ function createAdapter() {
 
 export const database = new Database({
   adapter: createAdapter(),
-  modelClasses: [
-    PatientRegistrationForm,
-    Patient,
-    Visit,
-    Event,
-    EventForm,
-    User,
-    Clinic,
-
-    // v2
-    PatientAdditionalAttribute,
-
-    // v3
-    Appointment,
-
-    // v4
-    Prescription,
-
-    // v5
-    AppConfig,
-    PatientVitals,
-    PatientProblems,
-    UserClinicPermissions,
-
-    // v6
-    ClinicDepartment,
-
-    // V7
-    DrugCatalogue,
-    ClinicInventory,
-    PrescriptionItem,
-    DispensingRecord,
-
-    // V9
-    EventLog,
-    Peer,
-  ],
+  modelClasses,
 })
 
 export default database

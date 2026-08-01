@@ -31,7 +31,7 @@ jest.mock("../../app/utils/parsers", () => ({
 jest.mock("../../app/utils/storage", () => ({}))
 jest.mock("../../app/utils/date", () => ({ toDateSafe: jest.fn() }))
 
-import { countRecordsInChanges } from "../../app/db/peerSync"
+import { countRecordsInChanges } from "../../app/db/syncNormalize"
 
 describe("countRecordsInChanges", () => {
   it("returns 0 for an empty changeset", () => {

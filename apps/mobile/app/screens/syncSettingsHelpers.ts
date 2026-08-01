@@ -87,3 +87,43 @@ export const getServerDisplayName = (type: DisplayServerType): string => {
       return "Unknown Server"
   }
 }
+
+// ── Manual sync ranges ────────────────────────────────────────────────
+
+export type SyncRangeId = "24h" | "3d" | "7d" | "14d" | "30d" | "3mo" | "everything" | "custom"
+
+export const SYNC_RANGES: { id: SyncRangeId; label: string; days: number | null }[] = [
+  { id: "24h", label: "Last 24 hours", days: 1 },
+  { id: "3d", label: "Last 3 days", days: 3 },
+  { id: "7d", label: "Last 7 days", days: 7 },
+  { id: "14d", label: "Last 14 days", days: 14 },
+  { id: "30d", label: "Last 30 days", days: 30 },
+  { id: "3mo", label: "Last 3 months", days: 90 },
+  { id: "everything", label: "Everything", days: null },
+]
+
+/**
+ * Days to count back from now, or null for no lower bound.
+ *
+ * Counting whole days back rather than parsing a typed date removes two live
+ * bugs in what this replaces: the local-vs-UTC round trip between the old
+ * formatter and parser, and the old parser returning 0 — "transfer the entire
+ * database" — for anything it could not read, while the confirmation dialog
+ * quoted the typo back to the user as though it had been understood.
+ *
+ * Every failure throws. Nothing here may widen the range on bad input.
+ */
+export function rangeToSinceDays(id: string, customDays?: number): number | null {
+  if (id === "custom") {
+    // Number.isInteger is false for NaN and Infinity, which is how an
+    // unparseable text field actually arrives.
+    if (customDays === undefined || !Number.isInteger(customDays) || customDays <= 0) {
+      throw new Error("Enter a whole number of days greater than zero")
+    }
+    return customDays
+  }
+
+  const preset = SYNC_RANGES.find((r) => r.id === id)
+  if (!preset) throw new Error(`Unknown sync range: ${id}`)
+  return preset.days
+}

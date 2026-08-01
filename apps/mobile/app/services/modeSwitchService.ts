@@ -30,16 +30,20 @@ import { hasUnsyncedChanges } from "@nozbe/watermelondb/sync"
 
 import database from "@/db"
 import { getLocalChangesSince } from "@/db/localSync"
-import { countRecordsInChanges } from "@/db/peerSync"
+import { countRecordsInChanges } from "@/db/syncNormalize"
 import { MODE_PREFERENCE_KEY } from "@/hooks/useOperationModeInit"
 import Peer from "@/models/Peer"
-import { operationModeStore } from "@/store/operationMode"
+import { ONLINE_MODE_ENABLED, operationModeStore } from "@/store/operationMode"
 import { saveString } from "@/utils/storage"
 import { Logger } from "@hikmahealth/js-utils"
 
 export type SwitchResult =
   | { ok: true }
-  | { ok: false; reason: "unsynced_changes" | "already_in_mode" | "error"; message: string }
+  | {
+      ok: false
+      reason: "unsynced_changes" | "already_in_mode" | "disabled" | "error"
+      message: string
+    }
 
 /**
  * Check whether there are local changes not yet synced to the given peer.
@@ -76,6 +80,18 @@ export const checkUnsyncedChanges = async (peer: Peer.T | null): Promise<boolean
 export async function switchToOnlineMode(): Promise<SwitchResult> {
   const { mode } = operationModeStore.getSnapshot().context
   Logger.log({ msg: "[ModeSwitch] switchToOnlineMode called, current mode:", mode })
+
+  // Refuse before `start_transition`, and before the MMKV preference is
+  // written. The store would coerce the mode back to offline anyway, so
+  // without this the switch reports success and nothing changes.
+  if (!ONLINE_MODE_ENABLED) {
+    return {
+      ok: false,
+      reason: "disabled",
+      message: "Online mode is not available in this version",
+    }
+  }
+
   if (mode === "online") return { ok: false, reason: "already_in_mode", message: "Already online" }
 
   try {

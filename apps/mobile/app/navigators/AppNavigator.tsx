@@ -20,6 +20,7 @@ import { ErrorBoundary } from "@/screens/ErrorScreen/ErrorBoundary"
 import { LoginScreen } from "@/screens/LoginScreen"
 import { PrivacyPolicyScreen } from "@/screens/PrivacyPolicyScreen"
 import { SettingsScreen } from "@/screens/SettingsScreen"
+import { ManualSyncScreen } from "@/screens/ManualSyncScreen"
 import { SyncSettingsScreen } from "@/screens/SyncSettingsScreen"
 import { startSync } from "@/services/syncService"
 import { languageStore } from "@/store/language"
@@ -56,6 +57,7 @@ export type AppStackParamList = {
   VisitEventsList: { patientId: string; visitId: string; visitTimestamp?: number }
   PatientRegistrationForm: { editPatientId?: string }
   SyncSettings: undefined
+  ManualSync: { peerId: string; sinceDays: number | null }
   VitalHistory: undefined
   VitalForm: undefined
   AppointmentEditorForm: undefined
@@ -132,6 +134,13 @@ const MainDrawer = () => {
         options={{ title: "Sync Settings", headerShown: true }}
         component={SyncSettingsScreen}
       />
+      {/* Blocking: no header and no drawer swipe, so the screen's own controls
+          are the only way out of a run. */}
+      <Drawer.Screen
+        name="ManualSync"
+        options={{ headerShown: false, swipeEnabled: false }}
+        component={ManualSyncScreen}
+      />
       <Drawer.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
       <Drawer.Screen name="Appointment" component={AppointmentNavigator} />
       <Drawer.Screen name="Pharmacy" component={PharmacyNavigator} />
@@ -189,8 +198,10 @@ const AppStack = () => {
         }
       }
 
-      // Sync with whichever peer is active (cloud or hub) — peerSync handles dispatch
-      await startSync(provider.email)
+      // Sync with whichever peer is active (cloud or hub) — peerSync handles dispatch.
+      // Automatic: this fires on login with nobody waiting on it, so it should
+      // give up rather than queue behind a manual sync that covers the same ground.
+      await startSync(provider.email, { trigger: "auto" })
     }
 
     run().catch((err) => {

@@ -22,55 +22,10 @@ logger.silence()
 // production and fail here for reasons unrelated to what is under test.
 setGenerator(() => uuidv7())
 
-import AppConfig from "../../app/db/model/AppConfig"
-import Appointment from "../../app/db/model/Appointment"
-import Clinic from "../../app/db/model/Clinic"
-import ClinicDepartment from "../../app/db/model/ClinicDepartment"
-import ClinicInventory from "../../app/db/model/ClinicInventory"
-import DispensingRecord from "../../app/db/model/DispensingRecord"
-import DrugCatalogue from "../../app/db/model/DrugCatalogue"
-import Event from "../../app/db/model/Event"
-import EventForm from "../../app/db/model/EventForm"
-import EventLog from "../../app/db/model/EventLog"
-import Patient from "../../app/db/model/Patient"
-import PatientAdditionalAttribute from "../../app/db/model/PatientAdditionalAttribute"
-import PatientProblems from "../../app/db/model/PatientProblems"
-import PatientRegistrationForm from "../../app/db/model/PatientRegistrationForm"
-import PatientVitals from "../../app/db/model/PatientVitals"
-import Peer from "../../app/db/model/Peer"
-import Prescription from "../../app/db/model/Prescription"
-import PrescriptionItem from "../../app/db/model/PrescriptionItem"
-import User from "../../app/db/model/User"
-import UserClinicPermissions from "../../app/db/model/UserClinicPermissions"
-import Visit from "../../app/db/model/Visit"
+import { modelClasses } from "../../app/db/modelClasses"
 import schema from "../../app/db/schema"
 
 let dbCounter = 0
-
-
-const allModelClasses = [
-  PatientRegistrationForm,
-  Patient,
-  Visit,
-  Event,
-  EventForm,
-  User,
-  Clinic,
-  PatientAdditionalAttribute,
-  Appointment,
-  Prescription,
-  AppConfig,
-  PatientVitals,
-  PatientProblems,
-  UserClinicPermissions,
-  ClinicDepartment,
-  DrugCatalogue,
-  ClinicInventory,
-  PrescriptionItem,
-  DispensingRecord,
-  EventLog,
-  Peer,
-]
 
 /** Create a fresh, isolated WatermelonDB instance for testing. */
 export function createTestDatabase(): Database {
@@ -84,7 +39,7 @@ export function createTestDatabase(): Database {
 
   return new Database({
     adapter,
-    modelClasses: allModelClasses,
+    modelClasses,
   })
 }
 

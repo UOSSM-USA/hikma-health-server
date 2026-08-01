@@ -5,6 +5,10 @@ type RateLimiterConfig = {
 
 type RateLimiterEntry = { timestamps: number[] };
 
+export type RateLimitResult =
+  | { allowed: true }
+  | { allowed: false; retryAfterMs: number };
+
 /**
  * Creates an in-memory sliding-window rate limiter.
  * Tracks request timestamps per key (typically IP) and rejects
@@ -26,9 +30,7 @@ export const createRateLimiter = (config: RateLimiterConfig) => {
   cleanup.unref?.(); // Don't prevent process from exiting
 
   return {
-    check(
-      key: string,
-    ): { allowed: true } | { allowed: false; retryAfterMs: number } {
+    check(key: string): RateLimitResult {
       const now = Date.now();
       const entry = store.get(key) ?? { timestamps: [] };
       entry.timestamps = entry.timestamps.filter(

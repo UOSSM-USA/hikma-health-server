@@ -471,9 +471,13 @@ namespace PatientProblem {
     });
 
     export const upsertFromDelta = createServerOnlyFn(
-      async (deltaData: Table.NewPatientProblems): Promise<void> => {
+      async (deltaData: Table.NewPatientProblems) => {
         const row = pickColumns(deltaData as Record<string, any>);
-        await db
+        // executeTakeFirst rather than execute: identical SQL, but it yields the
+        // single InsertResult instead of an array, which is what
+        // Sync.classifyUpsertResult reads to tell an applied write from one the
+        // staleness guard skipped.
+        return await db
           .insertInto(Table.name)
           .values(row)
           .onConflict((oc) =>
@@ -484,7 +488,7 @@ namespace PatientProblem {
             // Only update if the incoming record is newer than what's already stored
             .where(sql<boolean>`excluded.updated_at > patient_problems.updated_at`),
           )
-          .execute();
+          .executeTakeFirst();
       },
     );
 

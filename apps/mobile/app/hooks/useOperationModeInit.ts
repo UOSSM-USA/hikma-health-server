@@ -10,13 +10,38 @@
 
 import { useEffect } from "react"
 import AppConfig from "@/models/AppConfig"
-import { operationModeStore, type ModeConfig, type OperationMode } from "@/store/operationMode"
+import {
+  ONLINE_MODE_ENABLED,
+  operationModeStore,
+  type ModeConfig,
+  type OperationMode,
+} from "@/store/operationMode"
 import { loadString, saveString } from "@/utils/storage"
 
 /** MMKV key for the user's preferred operation mode */
 export const MODE_PREFERENCE_KEY = "operation_mode_preference"
 
 const VALID_MODES: ModeConfig[] = ["offline", "online", "user_choice"]
+
+/**
+ * Resolve the stored preference into a mode, and say whether the stored value
+ * should be rewritten.
+ *
+ * Two values get cleaned up. `"sync_hub"` was a conflated mode in earlier
+ * versions — the hub peer still exists for sync resolution, so it maps to
+ * offline. `"online"` is cleaned while online mode is disabled, so that a device
+ * which opted in before the gate does not drop straight back into online mode
+ * the moment the gate lifts, with no user action and nothing to warn them.
+ */
+export const resolvePreference = (
+  stored: string | null,
+): { mode: OperationMode; shouldClean: boolean } => {
+  const wantsOnline = stored === "online"
+  return {
+    mode: wantsOnline && ONLINE_MODE_ENABLED ? "online" : "offline",
+    shouldClean: stored === "sync_hub" || (wantsOnline && !ONLINE_MODE_ENABLED),
+  }
+}
 
 export function useOperationModeInit() {
   useEffect(() => {
@@ -31,13 +56,10 @@ export function useOperationModeInit() {
         operationModeStore.send({ type: "set_server_config", config: serverConfig })
 
         if (serverConfig === "user_choice") {
-          const stored = loadString(MODE_PREFERENCE_KEY)
-          // Backward compat: "sync_hub" was a conflated mode in earlier versions.
-          // Map it to "offline" — the hub peer still exists for sync resolution.
-          if (stored === "sync_hub") {
+          const { mode, shouldClean } = resolvePreference(loadString(MODE_PREFERENCE_KEY))
+          if (shouldClean) {
             saveString(MODE_PREFERENCE_KEY, "offline")
           }
-          const mode: OperationMode = stored === "online" ? "online" : "offline"
           operationModeStore.send({ type: "set_mode", mode })
         }
       } catch {

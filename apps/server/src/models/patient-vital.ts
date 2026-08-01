@@ -409,8 +409,11 @@ namespace PatientVital {
 
   export namespace Sync {
     export const upsertFromDelta = createServerOnlyFn(
-      async (deltaData: Table.NewPatientVitals): Promise<void> => {
-        await PatientVital.API.save(deltaData);
+      async (deltaData: Table.NewPatientVitals) => {
+        // `save` uses returningAll(), so this is the row on success and
+        // undefined when the staleness guard skips the record. Returned so sync
+        // can report it; see Sync.classifyUpsertResult.
+        return await PatientVital.API.save(deltaData);
       },
     );
 
