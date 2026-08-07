@@ -258,6 +258,7 @@ This codebase handles protected health information. Treat it accordingly:
 - Report vulnerabilities privately to the maintainer rather than opening a
   public issue
 
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) where present, plus the per-app
