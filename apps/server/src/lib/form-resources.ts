@@ -6,6 +6,7 @@ import User from "@/models/user";
 import Token from "@/models/token";
 import EventLog from "@/models/event-logs";
 import AccessGrant from "@/models/access-grant";
+import { ACCESS_GRANT_QUERY_PARAM } from "@/lib/access-grant-scopes";
 
 /**
  * Deliberately stricter than the global storage allowlist, which also permits
@@ -69,7 +70,10 @@ export const eventReferencesResource = (
     return false;
   });
 
-const startsWith = (data: Uint8Array, signature: readonly number[]): boolean => {
+const startsWith = (
+  data: Uint8Array,
+  signature: readonly number[],
+): boolean => {
   if (data.length < signature.length) return false;
   for (let i = 0; i < signature.length; i++) {
     if (data[i] !== signature[i]) return false;
@@ -258,8 +262,6 @@ export const authenticateCaller = createServerOnlyFn(
   },
 );
 
-export const ACCESS_GRANT_QUERY_PARAM = "t";
-
 export type GrantedCaller = AuthenticatedCaller & { grantId: string };
 
 /**
@@ -292,7 +294,9 @@ export const buildRequestContext = (
   request: Request,
 ): EventLog.RequestContext => {
   const forwarded = request.headers.get("x-forwarded-for");
-  const ipAddress = forwarded ? (forwarded.split(",")[0]?.trim() ?? null) : null;
+  const ipAddress = forwarded
+    ? (forwarded.split(",")[0]?.trim() ?? null)
+    : null;
   const userAgent = request.headers.get("user-agent") ?? "unknown";
   const deviceId = createHash("sha256").update(userAgent).digest("hex");
   return { ipAddress, deviceId, appId: "mobile" };

@@ -25,7 +25,10 @@ jest.mock("@/models/Peer", () => ({
   },
 }))
 jest.mock("@nozbe/watermelondb/sync", () => ({ hasUnsyncedChanges: jest.fn(async () => false) }))
-jest.mock("@/models/User", () => ({ __esModule: true, default: { signIn: jest.fn(async () => undefined) } }))
+jest.mock("@/models/User", () => ({
+  __esModule: true,
+  default: { signIn: jest.fn(async () => undefined), signOut: jest.fn(async () => undefined) },
+}))
 
 // Reached transitively now that syncService imports the first-sync backfill,
 // which pulls in pageBudget. Both throw on import outside a native runtime.

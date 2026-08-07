@@ -8,6 +8,13 @@ import type {
 } from "kysely";
 import { createServerOnlyFn } from "@tanstack/react-start";
 import db from "@/db";
+import {
+  ACCESS_GRANT_SCOPES,
+  type AccessGrantScope,
+  EXPIRY_DAYS_MIN as SCOPE_EXPIRY_DAYS_MIN,
+  clampExpiryDays as clampScopeExpiryDays,
+  expiryDaysMax as scopeExpiryDaysMax,
+} from "@/lib/access-grant-scopes";
 
 /**
  * Time-boxed, revocable capability tokens for credentials that travel outside a
@@ -19,19 +26,12 @@ import db from "@/db";
  * leaks from one feature cannot be replayed against another.
  */
 namespace AccessGrant {
-  /** Adding a capability means adding an entry here and to SCOPE_EXPIRY_DAYS_MAX. */
-  export const SCOPES = {
-    /** Read event-form attachments. Never accepted by an upload or delete route. */
-    EVENT_FORM_ATTACHMENTS_READ: "event_form_attachments:read",
-  } as const;
-
-  export type Scope = (typeof SCOPES)[keyof typeof SCOPES];
-
-  const SCOPE_EXPIRY_DAYS_MAX: Record<Scope, number> = {
-    [SCOPES.EVENT_FORM_ATTACHMENTS_READ]: 30,
-  };
-
-  export const EXPIRY_DAYS_MIN = 1;
+  // Re-exported from the client-safe module so server code has one import.
+  export const SCOPES = ACCESS_GRANT_SCOPES;
+  export type Scope = AccessGrantScope;
+  export const EXPIRY_DAYS_MIN = SCOPE_EXPIRY_DAYS_MIN;
+  export const expiryDaysMax = scopeExpiryDaysMax;
+  export const clampExpiryDays = clampScopeExpiryDays;
 
   const TOKEN_BYTES = 32;
 
@@ -85,24 +85,17 @@ namespace AccessGrant {
     expiresAt: Date;
   };
 
-  export const expiryDaysMax = (scope: Scope): number =>
-    SCOPE_EXPIRY_DAYS_MAX[scope];
-
-  /** Malformed input shortens a grant's life rather than throwing or extending it. */
-  export const clampExpiryDays = (scope: Scope, days: number): number => {
-    if (!Number.isFinite(days)) return EXPIRY_DAYS_MIN;
-    const whole = Math.floor(days);
-    if (whole < EXPIRY_DAYS_MIN) return EXPIRY_DAYS_MIN;
-    const max = expiryDaysMax(scope);
-    return whole > max ? max : whole;
-  };
-
   const hashToken = (token: string): string =>
     createHash("sha256").update(token, "utf8").digest("hex");
 
+  // Compared as bytes: Buffer.from drops non-hex, so equal-length strings can
+  // still decode to different lengths, and timingSafeEqual throws on those.
   const digestsMatch = (left: string, right: string): boolean => {
-    if (left.length !== right.length) return false;
-    return timingSafeEqual(Buffer.from(left, "hex"), Buffer.from(right, "hex"));
+    const leftBytes = Buffer.from(left, "hex");
+    const rightBytes = Buffer.from(right, "hex");
+    if (leftBytes.length === 0) return false;
+    if (leftBytes.length !== rightBytes.length) return false;
+    return timingSafeEqual(leftBytes, rightBytes);
   };
 
   /**

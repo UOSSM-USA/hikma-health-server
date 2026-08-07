@@ -1,6 +1,8 @@
 import * as SecureStorage from "expo-secure-store"
+import { CommonActions } from "@react-navigation/native"
 import { Option } from "effect"
 
+import { navigationRef } from "@/navigators/navigationUtilities"
 import Peer from "@/models/Peer"
 import { providerStore } from "@/store/provider"
 import UserClinicPermissions from "./UserClinicPermissions"
@@ -105,7 +107,6 @@ namespace User {
           Logger.warn("[User.signIn] No token in response — online tRPC writes may not work")
         }
 
-        // update the provider store
         Logger.log("🚩🚩 Set from Cloud Login")
         providerStore.send({
           type: "set_provider",
@@ -118,7 +119,6 @@ namespace User {
           clinic_name: Option.fromNullable(result.clinic_name),
         })
 
-        // Return the user data
         return {
           id: result.id,
           name: result.name,
@@ -166,6 +166,29 @@ namespace User {
 
     providerStore.send({ type: "set_provider", ...provider })
     return provider
+  }
+
+  /**
+   * Sign out and return to the login screen.
+   *
+   * Reset navigation first: clearing the provider swaps in the auth stack, and a
+   * screen removed natively but not from JS state desyncs the native stack.
+   */
+  export const signOut = async (): Promise<void> => {
+    await SecureStorage.deleteItemAsync("provider_password")
+    await SecureStorage.deleteItemAsync("provider_email")
+    await SecureStorage.deleteItemAsync("provider_token")
+
+    if (navigationRef.isReady()) {
+      navigationRef.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: "Patients" }],
+        }),
+      )
+    }
+
+    providerStore.trigger.reset()
   }
 
   export namespace DB {

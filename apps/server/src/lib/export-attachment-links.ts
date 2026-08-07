@@ -17,6 +17,17 @@ export type AttachmentLink = {
   url: string;
 };
 
+export type AttachmentLinkContext = {
+  baseUrl: string;
+  token: string;
+  tokenParam: string;
+};
+
+/** Gates minting a grant: an export with no file fields needs no credential. */
+export const hasFileField = (formFields: unknown): boolean =>
+  Array.isArray(formFields) &&
+  formFields.some((field) => field?.fieldType === "file");
+
 /**
  * The portal's reader, plus the legacy bare-string `value`. The download route
  * still honours that shape (`eventReferencesResource`) and today's export
@@ -50,13 +61,12 @@ export const buildAttachmentUrl = (params: {
 };
 
 /** Links for one file field on one event, capped at ATTACHMENT_LINK_COLUMNS_MAX. */
-export const attachmentLinksForField = (params: {
-  baseUrl: string;
-  token: string;
-  tokenParam: string;
-  eventId: string;
-  field: Record<string, unknown> | null | undefined;
-}): AttachmentLink[] =>
+export const attachmentLinksForField = (
+  params: AttachmentLinkContext & {
+    eventId: string;
+    field: Record<string, unknown> | null | undefined;
+  },
+): AttachmentLink[] =>
   readExportAttachments(params.field)
     .slice(0, ATTACHMENT_LINK_COLUMNS_MAX)
     .map((attachment, index) => ({

@@ -21,6 +21,9 @@ const en = {
     hubPairing: "Pairing with Hub...",
     hubPairingFailed: "Failed to pair with hub",
     hubAuthFailed: "Hub authentication failed",
+    disconnectedTitle: "Disconnected from sync server",
+    disconnectedMessage:
+      "The app has been disconnected from any sync servers. Please sign back in by scanning the QR code again.",
   },
   patientFile: {
     patientView: "Patient View",

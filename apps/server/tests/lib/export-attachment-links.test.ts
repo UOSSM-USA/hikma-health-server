@@ -5,6 +5,7 @@ import {
   attachmentLinksForField,
   attachmentOverflowCount,
   buildAttachmentUrl,
+  hasFileField,
   planAttachmentColumns,
   readExportAttachments,
 } from "../../src/lib/export-attachment-links";
@@ -174,5 +175,26 @@ describe("attachmentColumnHeaders", () => {
         hasOverflowColumn: true,
       }),
     ).toEqual(["X-Ray", "X-Ray (not shown)"]);
+  });
+});
+
+describe("hasFileField", () => {
+  it("detects a file field anywhere in the form", () => {
+    expect(hasFileField([{ fieldType: "file" }])).toBe(true);
+    expect(
+      hasFileField([{ fieldType: "free-text" }, { fieldType: "file" }]),
+    ).toBe(true);
+  });
+
+  it("reports none for forms without one", () => {
+    expect(hasFileField([{ fieldType: "free-text" }])).toBe(false);
+    expect(hasFileField([])).toBe(false);
+  });
+
+  it("reports none for malformed form_fields", () => {
+    expect(hasFileField(null)).toBe(false);
+    expect(hasFileField(undefined)).toBe(false);
+    expect(hasFileField("not an array")).toBe(false);
+    expect(hasFileField([null, 42, { name: "x" }])).toBe(false);
   });
 });

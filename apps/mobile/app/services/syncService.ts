@@ -87,7 +87,6 @@ export const startSync = async (
     return Promise.resolve()
   }
 
-  // Check if test account
   if (providerEmail === "tester.g@gmail.com") {
     Alert.alert("Please sign in with your server to continue syncing")
     return Promise.reject(new Error("Test account cannot sync"))
@@ -211,6 +210,28 @@ const runFirstSyncBackfill = async (peer: Peer.T): Promise<boolean> => {
   }
 }
 
+/**
+ * Re-pairing only happens on the login screen, so signing out is the only way
+ * forward — hence one button and no dismiss.
+ */
+const promptSignInAfterDisconnect = (): void => {
+  Alert.alert(
+    translate("login:disconnectedTitle"),
+    translate("login:disconnectedMessage"),
+    [
+      {
+        text: translate("login:signIn"),
+        onPress: () => {
+          User.signOut().catch((error) =>
+            Logger.error({ msg: "[Sync] Sign out after disconnect failed", error }),
+          )
+        },
+      },
+    ],
+    { cancelable: false },
+  )
+}
+
 const runSync = async (providerEmail?: string): Promise<void> => {
   try {
     // Find the active peer to sync with — prefer hub if available, fall back to cloud
@@ -223,7 +244,7 @@ const runSync = async (providerEmail?: string): Promise<void> => {
       )
     }
     if (!activePeer) {
-      Alert.alert("No sync peer configured. Please pair with a hub or register a cloud server.")
+      promptSignInAfterDisconnect()
       return Promise.reject(new Error("No active sync peer"))
     }
 

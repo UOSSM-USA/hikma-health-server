@@ -59,6 +59,13 @@ describe("AccessGrant.evaluateStoredGrant", () => {
     ).toBeNull();
   });
 
+  // Buffer.from silently drops non-hex, so these decode shorter than they look.
+  it("rejects a malformed stored hash rather than throwing", () => {
+    expect(evaluate(storedGrant({ token_hash: "z".repeat(64) }))).toBeNull();
+    expect(evaluate(storedGrant({ token_hash: "" }))).toBeNull();
+    expect(evaluate(storedGrant({ token_hash: "abcd" }))).toBeNull();
+  });
+
   it("rejects a grant minted for a different scope", () => {
     expect(evaluate(storedGrant({ scope: OTHER_SCOPE }))).toBeNull();
     expect(evaluate(storedGrant(), { scope: OTHER_SCOPE })).toBeNull();

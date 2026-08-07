@@ -23,6 +23,9 @@ const es: ENTranslations = {
     hubPairing: "Emparejando con el Hub...",
     hubPairingFailed: "Error al emparejar con el hub",
     hubAuthFailed: "Error de autenticación del hub",
+    disconnectedTitle: "Desconectado del servidor de sincronización",
+    disconnectedMessage:
+      "La aplicación se ha desconectado de todos los servidores de sincronización. Por favor, inicie sesión de nuevo escaneando el código QR.",
   },
   patientFile: {
     patientView: "Vista del paciente",

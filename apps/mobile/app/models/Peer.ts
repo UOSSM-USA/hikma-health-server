@@ -152,7 +152,7 @@ namespace Peer {
 
   export const displayName = (peer: T): string => peer.name || peer.peerId
 
-  // ── DB operations ─────────────────────────────────────────────────────
+  // DB operations
 
   export namespace DB {
     export type T = PeerModel
@@ -570,10 +570,7 @@ namespace Peer {
   export const getActiveUrl = async (): Promise<string | null> => {
     const activePeers = await DB.getActive()
 
-    if (activePeers.length === 0) {
-      // There are no active peers
-      return null
-    }
+    if (activePeers.length === 0) return null
 
     if (activePeers.length === 1) {
       return getUrl(activePeers[0]) || null
@@ -607,22 +604,6 @@ namespace Peer {
       })
 
     return getUrl(winner) || null
-
-    // if (activeSyncPeerId) {
-    //   try {
-    //     const peer = await DB.getByPeerId(activeSyncPeerId)
-    //     Logger.log({ activeSyncPeerId, peer })
-    //     if (peer && (peer.status === "active" || peer.status === "untrusted")) {
-    //       const url = getUrl(peer)
-    //       if (url) return url
-    //     }
-    //   } catch {
-    //     // Peer no longer exists — fall through to default resolution
-    //   }
-    // }
-
-    // const peer = await DB.resolveActive()
-    // return peer ? getUrl(peer) : null
   }
 
   /**
@@ -637,7 +618,6 @@ namespace Peer {
     const SecureStore = require("expo-secure-store")
     const legacyUrl = await SecureStore.getItemAsync("HIKMA_API")
     if (!legacyUrl) {
-      // Check dev fallback
       const devUrl = process.env.EXPO_PUBLIC_HIKMA_API_TESTING
       if (__DEV__ && devUrl) {
         await DB.upsertCloud(devUrl)
@@ -646,6 +626,23 @@ namespace Peer {
     }
 
     await DB.upsertCloud(legacyUrl)
+  }
+
+  /**
+   * True when the device has no sync server registered in any form.
+   *
+   * Counts inactive and revoked rows, and anything `migrateFromLegacyApiUrl`
+   * would turn into a row — that migration runs concurrently with callers, so a
+   * device mid-migration must not read as unconfigured.
+   */
+  export const hasNoConfiguredServer = async (): Promise<boolean> => {
+    const peers = await DB.getAll()
+    if (peers.length > 0) return false
+
+    const legacyUrl = await SecureStore.getItemAsync("HIKMA_API")
+    if (legacyUrl) return false
+
+    return !(__DEV__ && process.env.EXPO_PUBLIC_HIKMA_API_TESTING)
   }
 
   export const isCloudReachable = async (

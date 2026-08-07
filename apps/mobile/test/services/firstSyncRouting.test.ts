@@ -17,6 +17,7 @@ const mockRunManualSync = jest.fn()
 const mockSyncDB = jest.fn()
 const mockGetLastPulledAt = jest.fn()
 const mockSignIn = jest.fn()
+const mockSignOut = jest.fn()
 const mockDeactivate = jest.fn()
 let mockActivePeers: { id: string; peerType: string }[] = []
 let mockPeerCalls = 0
@@ -60,7 +61,10 @@ jest.mock("@/models/Peer", () => ({
 
 jest.mock("@/models/User", () => ({
   __esModule: true,
-  default: { signIn: (...a: unknown[]) => mockSignIn(...a) },
+  default: {
+    signIn: (...a: unknown[]) => mockSignIn(...a),
+    signOut: (...a: unknown[]) => mockSignOut(...a),
+  },
 }))
 
 jest.mock("@/models/Sync", () => ({

@@ -1,9 +1,7 @@
 import { FC, useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Linking, Pressable, ViewStyle, Image } from "react-native"
 import * as Notifications from "expo-notifications"
-import * as SecureStore from "expo-secure-store"
 import { useNetInfo } from "@react-native-community/netinfo"
-import { CommonActions } from "@react-navigation/native"
 import { useSelector } from "@xstate/react"
 import { Option } from "effect"
 import { ChevronRight } from "lucide-react-native"
@@ -19,7 +17,6 @@ import { useLockWhenIdleSettings } from "@/hooks/useLockWhenIdleSettings"
 import { useOTAVersion } from "@/hooks/useOTAVersion"
 import { translate } from "@/i18n/translate"
 import type { AppStackScreenProps } from "@/navigators/AppNavigator"
-import { navigationRef } from "@/navigators/navigationUtilities"
 import { switchToOnlineMode, switchToOfflineMode } from "@/services/modeSwitchService"
 import { appStateStore } from "@/store/appState"
 import { ONLINE_MODE_ENABLED, operationModeStore } from "@/store/operationMode"
@@ -27,6 +24,7 @@ import { providerStore } from "@/store/provider"
 import { colors } from "@/theme/colors"
 import { generateDummyPatients, insertBenchmarkingData } from "@/utils/benchmarking"
 import Peer from "@/models/Peer"
+import User from "@/models/User"
 import { Logger } from "@hikmahealth/js-utils"
 
 interface SettingsScreenProps extends AppStackScreenProps<"Settings"> {}
@@ -56,7 +54,6 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
     lockScreenNow,
   } = useLockWhenIdleSettings()
 
-  // Check if the provider is signed in
   const isSignedIn = useSelector(providerStore, (state) => {
     const { id, name, email } = state.context
     return !!id && !!name && !!email
@@ -74,7 +71,6 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
   }
 
   const toggleNotifications = async (newStatus: boolean) => {
-    // Implement the logic to toggle notifications here
     try {
       const { status: existingStatus } = await Notifications.getPermissionsAsync()
       let finalStatus = existingStatus
@@ -184,20 +180,10 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
         },
         {
           text: translate("common:confirmSignOut"),
-          onPress: async () => {
-            await SecureStore.deleteItemAsync("provider_password")
-            await SecureStore.deleteItemAsync("provider_email")
-            // Reset navigation state before clearing provider to avoid
-            // native-stack desync ("screen removed natively but not from JS state")
-            if (navigationRef.isReady()) {
-              navigationRef.dispatch(
-                CommonActions.reset({
-                  index: 0,
-                  routes: [{ name: "Patients" }],
-                }),
-              )
-            }
-            providerStore.trigger.reset()
+          onPress: () => {
+            User.signOut().catch((error) =>
+              Logger.error({ msg: "[Settings] Sign out failed", error }),
+            )
           },
         },
       ],

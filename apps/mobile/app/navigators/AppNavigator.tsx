@@ -157,7 +157,6 @@ const AppStack = () => {
 
   const provider = useSelector(providerStore, (state) => state.context)
 
-  // Check if the provider is signed in
   const isSignedIn = useSelector(providerStore, (state) => {
     const { id, name, email } = state.context
     return !!id && !!name && !!email
@@ -171,12 +170,20 @@ const AppStack = () => {
     if (shouldSeedE2E) return
 
     const run = async () => {
+      // Re-pairing only happens on the login screen, so a device with no server
+      // is stuck until it goes back there.
+      if (await Peer.hasNoConfiguredServer()) {
+        // Production logger: the only path that ends a session unasked, and
+        // support has nothing else to go on. No PHI, credentials or tokens.
+        Logger.Production.warn("[Login] No sync server configured — signing out")
+        await User.signOut()
+        return
+      }
+
       // Determine which peer type is active — cloud re-auth only applies to cloud peers
       const cloudPeers = await Peer.DB.getActiveByType("cloud_server")
       const hasCloudPeer = cloudPeers.length > 0
 
-      // Only attempt cloud re-authentication when a cloud server peer is active
-      // and the device has internet connectivity
       const reachableCloudServer = hasCloudPeer ? await Peer.isAnyCloudReachable() : null
       if (reachableCloudServer?.reachable) {
         const email = await SecureStore.getItemAsync("provider_email")

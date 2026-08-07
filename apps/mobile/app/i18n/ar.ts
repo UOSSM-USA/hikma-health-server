@@ -23,6 +23,9 @@ const ar: Translations = {
     hubPairing: "جارٍ الاقتران بالمحور...",
     hubPairingFailed: "فشل الاقتران بالمحور",
     hubAuthFailed: "فشل مصادقة المحور",
+    disconnectedTitle: "تم قطع الاتصال بخادم المزامنة",
+    disconnectedMessage:
+      "تم قطع اتصال التطبيق بجميع خوادم المزامنة. يرجى تسجيل الدخول مرة أخرى عن طريق مسح رمز الاستجابة السريعة.",
   },
   patientFile: {
     patientView: "صفحة المريض",
