@@ -25,6 +25,18 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AccessGrants {
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string;
+  description: string | null;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  revoked_at: Timestamp | null;
+  scope: string;
+  subject_id: string | null;
+  token_hash: string;
+}
+
 export interface AppConfig {
   created_at: Generated<Timestamp | null>;
   data_type: Generated<string>;
@@ -710,6 +722,7 @@ export interface Visits {
 }
 
 export interface DB {
+  access_grants: AccessGrants;
   app_config: AppConfig;
   appointments: Appointments;
   clinic_departments: ClinicDepartments;

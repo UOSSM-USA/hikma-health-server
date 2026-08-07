@@ -10,11 +10,13 @@ import Resource from "@/models/resource";
 import Event from "@/models/event";
 import UserClinicPermissions from "@/models/user-clinic-permissions";
 import { getConfiguredAdapter } from "@/storage/factory";
+import AccessGrant from "@/models/access-grant";
 import {
   authenticateCaller,
   eventReferencesResource,
   isCanonicalUuid,
   logResourceAudit,
+  resolveGrantedCaller,
 } from "@/lib/form-resources";
 
 const downloadLimiter = createRateLimiter({
@@ -36,6 +38,10 @@ const json = (body: unknown, status: number): Response =>
  *
  * Every negative case returns 404 so the endpoint never confirms whether a
  * given event or resource id exists.
+ *
+ * A caller with no session may present an access-grant token instead, which is
+ * how links in an exported workbook resolve. The grant supplies only an
+ * identity; the clinic guard below runs unchanged.
  */
 export const Route = createFileRoute(
   "/api/events/$eventId/attachments/$resourceId",
@@ -48,15 +54,23 @@ export const Route = createFileRoute(
         if (!limit.allowed) return tooManyRequestsResponse(limit.retryAfterMs);
 
         try {
-          const caller = await authenticateCaller(request);
-          if (!caller) return json({ error: "Unauthorized" }, 401);
-
           if (
             !isCanonicalUuid(params.eventId) ||
             !isCanonicalUuid(params.resourceId)
           ) {
             return json({ error: "Not found" }, 404);
           }
+
+          // Session wins over token, so a logged-in user is audited as themselves.
+          const session = await authenticateCaller(request);
+          const granted = session
+            ? null
+            : await resolveGrantedCaller(request, {
+                scope: AccessGrant.SCOPES.EVENT_FORM_ATTACHMENTS_READ,
+                subjectId: params.eventId,
+              });
+          const caller = session ?? granted;
+          if (!caller) return json({ error: "Unauthorized" }, 401);
 
           const formData = await Event.API.getFormDataById(params.eventId);
           if (!formData) {
@@ -94,6 +108,8 @@ export const Route = createFileRoute(
               metadata: {
                 clinic_id: resource.clinic_id,
                 event_id: params.eventId,
+                // Traces an exported-link read back to a revocable grant.
+                access_grant_id: granted?.grantId ?? null,
               },
             });
           } catch (auditError) {

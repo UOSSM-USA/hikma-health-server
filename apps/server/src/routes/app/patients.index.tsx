@@ -71,10 +71,67 @@ import { forEach } from "ramda";
 import { useEffect } from "react";
 import { useImmerReducer } from "use-immer";
 import { Logger } from "@hikmahealth/js-utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import AccessGrant from "@/models/access-grant";
+import { ACCESS_GRANT_QUERY_PARAM } from "@/lib/form-resources";
+import { logAuditEvent } from "@/lib/server-functions/audit";
+import {
+  type AttachmentColumnLayout,
+  attachmentColumnHeaders,
+  attachmentLinksForField,
+  attachmentOverflowCount,
+  planAttachmentColumns,
+  readExportAttachments,
+} from "@/lib/export-attachment-links";
+
+const ATTACHMENT_LINK_SCOPE = AccessGrant.SCOPES.EVENT_FORM_ATTACHMENTS_READ;
+
+/** One grant per export, not one per file, so a single revocation kills a leaked workbook. */
+const createAttachmentExportGrant = createServerFn({ method: "POST" })
+  .inputValidator((data: { expiryDays: number }) => data)
+  .handler(async ({ data }) => {
+    const currentUser = await getCurrentUser();
+    if (!currentUser || currentUser.role !== User.ROLES.SUPER_ADMIN) {
+      throw new Error("Unauthorized");
+    }
+
+    const grant = await AccessGrant.mint({
+      scope: ATTACHMENT_LINK_SCOPE,
+      userId: currentUser.id,
+      expiryDays: data.expiryDays,
+      description: "Patient data export attachment links",
+    });
+
+    await logAuditEvent({
+      actionType: "EXPORT",
+      tableName: "access_grants",
+      rowId: grant.id,
+      changes: {},
+      userId: currentUser.id,
+      metadata: {
+        scope: ATTACHMENT_LINK_SCOPE,
+        expires_at: grant.expiresAt.toISOString(),
+      },
+    });
+
+    return {
+      token: grant.token,
+      tokenParam: ACCESS_GRANT_QUERY_PARAM,
+      expiresAt: grant.expiresAt.toISOString(),
+    };
+  });
 
 // Function to get all patients for export (no pagination)
-const getAllPatientsForExport = createServerFn({ method: "GET" }).handler(
-  async () => {
+const getAllPatientsForExport = createServerFn({ method: "GET" })
+  .inputValidator((data: { includeDeletedForms: boolean }) => data)
+  .handler(async ({ data }) => {
     const currentUser = await getCurrentUser();
     if (!currentUser || currentUser.role !== User.ROLES.SUPER_ADMIN) {
       throw new Error("Unauthorized");
@@ -83,13 +140,14 @@ const getAllPatientsForExport = createServerFn({ method: "GET" }).handler(
     const { patients } = await Patient.API.getAllWithAttributes({
       includeCount: false,
     });
-    const eventForms = await EventForm.API.getAll({ includeDeleted: true });
+    const eventForms = await EventForm.API.getAll({
+      includeDeleted: data.includeDeletedForms,
+    });
     const exportEvents = await Event.API.getAllForExport();
     const vitals = await PatientVital.API.getAll();
     const problems = await PatientProblem.getAll();
     return { patients, exportEvents, eventForms, vitals, problems };
-  },
-);
+  });
 
 // Function to get all patients matching search filters for export (no pagination)
 // Returns the same shape as getAllPatientsForExport, but scoped to matching patients
@@ -102,6 +160,7 @@ const getFilteredPatientsForExport = createServerFn({ method: "GET" })
       visitsDateStart?: string;
       visitsDateEnd?: string;
       clinicIds?: string[];
+      includeDeletedForms: boolean;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -120,7 +179,9 @@ const getFilteredPatientsForExport = createServerFn({ method: "GET" })
     });
     const patientIds = new Set(patients.map((p) => p.id));
 
-    const eventForms = await EventForm.API.getAll({ includeDeleted: true });
+    const eventForms = await EventForm.API.getAll({
+      includeDeleted: data.includeDeletedForms,
+    });
     const allEvents = await Event.API.getAllForExport();
     const allVitals = await PatientVital.API.getAll();
     const allProblems = await PatientProblem.getAll();
@@ -172,6 +233,18 @@ const initialSearchState: SearchState = {
   clinicIds: [],
   registrationDate: [null, null],
   visitsInDateRange: [null, null],
+};
+
+type ExportScope = "all" | "filtered";
+
+type ExportOptions = {
+  linkExpiryDays: number;
+  includeDeletedForms: boolean;
+};
+
+const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
+  linkExpiryDays: 7,
+  includeDeletedForms: false,
 };
 
 type SearchAction =
@@ -240,6 +313,12 @@ function RouteComponent() {
     clinicIds: clinicIdFromUrl ? [clinicIdFromUrl] : [],
   });
   const [loading, setLoading] = React.useState(false);
+  const [pendingExport, setPendingExport] = React.useState<ExportScope | null>(
+    null,
+  );
+  const [exportOptions, setExportOptions] = React.useState<ExportOptions>(
+    DEFAULT_EXPORT_OPTIONS,
+  );
 
   const [selectedPatients, actions] = useMap<string, string>(); // [patientId, patientName]
 
@@ -545,6 +624,7 @@ function RouteComponent() {
     workbook: ExcelJS.Workbook,
     eventForms: EventForm.EncodedT[],
     exportEvents: (Event.EncodedT & { patient?: Partial<Patient.EncodedT> })[],
+    linkContext: { baseUrl: string; token: string; tokenParam: string },
   ) => {
     eventForms.forEach((eventForm) => {
       const isDeletedPrefix = eventForm.is_deleted ? "DEL - " : "";
@@ -569,37 +649,80 @@ function RouteComponent() {
         eventForm.form_fields,
         [],
       ) as typeof eventForm.form_fields;
+      const formEvents = exportEvents.filter(
+        (ev) => ev.form_id === eventForm.id,
+      );
+
+      // A cell holds at most one hyperlink, so a file field spans as many
+      // columns as the widest answer here. Planned before the header is built.
+      const attachmentLayouts = new Map<string, AttachmentColumnLayout>();
+      eventFormFields?.forEach((field) => {
+        if (field.fieldType !== "file") return;
+        attachmentLayouts.set(
+          field.id,
+          planAttachmentColumns(
+            formEvents.map(
+              (event) =>
+                readExportAttachments(
+                  event.form_data.find((f) => f.fieldId === field.id),
+                ).length,
+            ),
+          ),
+        );
+      });
+
       const headerRow = [
         "ID",
-        ...eventFormFields?.map((f) => f.name),
+        ...(eventFormFields ?? []).flatMap((field) => {
+          const layout = attachmentLayouts.get(field.id);
+          return layout
+            ? attachmentColumnHeaders(field.name, layout)
+            : [field.name];
+        }),
         ...Object.values(extraColumns),
       ];
       worksheet.addRow(headerRow);
       worksheet.getRow(1).font = { bold: true };
 
-      exportEvents
-        .filter((ev) => ev.form_id === eventForm.id)
-        .forEach((event) => {
-          const rowData = [event.id];
-          eventFormFields?.forEach((field) => {
-            const fieldData = event.form_data.find(
-              (f) => f.fieldId === field.id,
-            );
+      formEvents.forEach((event) => {
+        const rowData: unknown[] = [event.id];
+        eventFormFields?.forEach((field) => {
+          const fieldData = event.form_data.find((f) => f.fieldId === field.id);
+          const layout = attachmentLayouts.get(field.id);
+          if (!layout) {
             rowData.push(JSON.stringify(fieldData?.value));
-          });
+            return;
+          }
 
-          rowData.push(event.patient_id);
-          rowData.push(
-            `${event?.patient?.given_name || ""} ${event?.patient?.surname || ""}`.trim(),
-          );
-          rowData.push(event?.patient?.sex || "");
-          rowData.push(event?.patient?.phone || "");
-          rowData.push(event?.patient?.citizenship || "");
-          rowData.push(String(event?.patient?.date_of_birth || ""));
-          rowData.push(event.visit_id || "");
-          rowData.push(format(event.created_at, "yyyy-MM-dd HH:mm:ss"));
-          worksheet.addRow(rowData);
+          const links = attachmentLinksForField({
+            ...linkContext,
+            eventId: event.id,
+            field: fieldData,
+          });
+          for (let column = 0; column < layout.linkColumns; column++) {
+            const link = links[column];
+            rowData.push(
+              link ? { text: link.label, hyperlink: link.url } : "",
+            );
+          }
+          if (layout.hasOverflowColumn) {
+            const overflow = attachmentOverflowCount(fieldData);
+            rowData.push(overflow > 0 ? `+${overflow} more` : "");
+          }
         });
+
+        rowData.push(event.patient_id);
+        rowData.push(
+          `${event?.patient?.given_name || ""} ${event?.patient?.surname || ""}`.trim(),
+        );
+        rowData.push(event?.patient?.sex || "");
+        rowData.push(event?.patient?.phone || "");
+        rowData.push(event?.patient?.citizenship || "");
+        rowData.push(String(event?.patient?.date_of_birth || ""));
+        rowData.push(event.visit_id || "");
+        rowData.push(format(event.created_at, "yyyy-MM-dd HH:mm:ss"));
+        worksheet.addRow(rowData);
+      });
     });
   };
 
@@ -633,13 +756,18 @@ function RouteComponent() {
     document.body.removeChild(link);
   };
 
-  const buildExportWorkbook = async (exportData: {
-    patients: (typeof Patient.PatientWithAttributesSchema.Encoded)[];
-    exportEvents: (Event.EncodedT & { patient?: Partial<Patient.EncodedT> })[];
-    eventForms: EventForm.EncodedT[];
-    vitals: PatientVital.EncodedT[];
-    problems: PatientProblem.EncodedWithPatientName[];
-  }) => {
+  const buildExportWorkbook = async (
+    exportData: {
+      patients: (typeof Patient.PatientWithAttributesSchema.Encoded)[];
+      exportEvents: (Event.EncodedT & {
+        patient?: Partial<Patient.EncodedT>;
+      })[];
+      eventForms: EventForm.EncodedT[];
+      vitals: PatientVital.EncodedT[];
+      problems: PatientProblem.EncodedWithPatientName[];
+    },
+    linkContext: { baseUrl: string; token: string; tokenParam: string },
+  ) => {
     const ExcelJS = (await import("exceljs")).default;
     const workbook = new ExcelJS.Workbook();
     workbook.creator = currentUser?.name ?? "";
@@ -657,56 +785,73 @@ function RouteComponent() {
       workbook,
       exportData.eventForms,
       exportData.exportEvents,
+      linkContext,
     );
 
     return workbook;
   };
 
-  const handleExport = async () => {
+  const runExport = async (scope: ExportScope, options: ExportOptions) => {
+    const filtered = scope === "filtered";
     try {
       toast("Export started. Please be patient as this could take some time.", {
         dismissible: true,
         duration: 2000,
       });
-      const exportData = await getAllPatientsForExport({});
-      const workbook = await buildExportWorkbook(exportData as any);
-      const fileName = `patients_export_${new Date().toISOString().split("T")[0]}.xlsx`;
-      await downloadWorkbook(workbook, fileName);
-    } catch (error: any) {
-      Logger.error({ msg: "Error exporting patients:", error });
-      toast.error("Failed to export patients", error.message);
-    }
-  };
 
-  const handleFilteredExport = async () => {
-    try {
-      toast("Export started. Please be patient as this could take some time.", {
-        dismissible: true,
-        duration: 2000,
+      const grant = await createAttachmentExportGrant({
+        data: { expiryDays: options.linkExpiryDays },
       });
-      const exportData = await getFilteredPatientsForExport({
-        data: {
-          searchQuery: searchState.searchQuery,
-          registrationDateStart:
-            searchState.registrationDate[0]?.toISOString() ?? undefined,
-          registrationDateEnd:
-            searchState.registrationDate[1]?.toISOString() ?? undefined,
-          visitsDateStart:
-            searchState.visitsInDateRange[0]?.toISOString() ?? undefined,
-          visitsDateEnd:
-            searchState.visitsInDateRange[1]?.toISOString() ?? undefined,
-          clinicIds:
-            searchState.clinicIds.length > 0
-              ? searchState.clinicIds
-              : undefined,
-        },
+
+      const exportData = filtered
+        ? await getFilteredPatientsForExport({
+            data: {
+              searchQuery: searchState.searchQuery,
+              registrationDateStart:
+                searchState.registrationDate[0]?.toISOString() ?? undefined,
+              registrationDateEnd:
+                searchState.registrationDate[1]?.toISOString() ?? undefined,
+              visitsDateStart:
+                searchState.visitsInDateRange[0]?.toISOString() ?? undefined,
+              visitsDateEnd:
+                searchState.visitsInDateRange[1]?.toISOString() ?? undefined,
+              clinicIds:
+                searchState.clinicIds.length > 0
+                  ? searchState.clinicIds
+                  : undefined,
+              includeDeletedForms: options.includeDeletedForms,
+            },
+          })
+        : await getAllPatientsForExport({
+            data: { includeDeletedForms: options.includeDeletedForms },
+          });
+
+      const workbook = await buildExportWorkbook(exportData as any, {
+        baseUrl: window.location.origin,
+        token: grant.token,
+        tokenParam: grant.tokenParam,
       });
-      const workbook = await buildExportWorkbook(exportData as any);
-      const fileName = `patients_filtered_export_${new Date().toISOString().split("T")[0]}.xlsx`;
+      const today = new Date().toISOString().split("T")[0];
+      const fileName = filtered
+        ? `patients_filtered_export_${today}.xlsx`
+        : `patients_export_${today}.xlsx`;
       await downloadWorkbook(workbook, fileName);
+
+      toast.success(
+        `Export ready. File links expire ${format(new Date(grant.expiresAt), "yyyy MMM dd")}.`,
+      );
     } catch (error: any) {
-      Logger.error({ msg: "Error exporting filtered patients:", error });
-      toast.error("Failed to export filtered patients");
+      Logger.error({
+        msg: filtered
+          ? "Error exporting filtered patients:"
+          : "Error exporting patients:",
+        error,
+      });
+      toast.error(
+        filtered
+          ? "Failed to export filtered patients"
+          : "Failed to export patients",
+      );
     }
   };
 
@@ -883,20 +1028,35 @@ function RouteComponent() {
       </div>
 
       <div className="pt-4 flex gap-3">
-        <Button type="button" variant="outline" onClick={handleExport}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setPendingExport("all")}
+        >
           <LucideDownload className="mr-2 h-4 w-4" />
           Export All Patient Data
         </Button>
         <Button
           type="button"
           variant="outline"
-          onClick={handleFilteredExport}
+          onClick={() => setPendingExport("filtered")}
           disabled={!hasActiveFilters || patientsList.length === 0}
         >
           <LucideFilter className="mr-2 h-4 w-4" />
           Export Filtered Patients ({totalItems})
         </Button>
       </div>
+
+      <ExportOptionsDialog
+        scope={pendingExport}
+        options={exportOptions}
+        onOptionsChange={setExportOptions}
+        onCancel={() => setPendingExport(null)}
+        onConfirm={(scope) => {
+          setPendingExport(null);
+          runExport(scope, exportOptions);
+        }}
+      />
 
       <If show={selectedPatients.size > 0}>
         <div className="mt-8 font-semibold">
@@ -1074,5 +1234,90 @@ function RouteComponent() {
         </Pagination>
       </div>
     </div>
+  );
+}
+
+/** The expiry entered here is advisory; AccessGrant.mint is what enforces it. */
+function ExportOptionsDialog({
+  scope,
+  options,
+  onOptionsChange,
+  onCancel,
+  onConfirm,
+}: {
+  scope: ExportScope | null;
+  options: ExportOptions;
+  onOptionsChange: (options: ExportOptions) => void;
+  onCancel: () => void;
+  onConfirm: (scope: ExportScope) => void;
+}) {
+  const expiryDaysMax = AccessGrant.expiryDaysMax(ATTACHMENT_LINK_SCOPE);
+
+  return (
+    <Dialog
+      open={scope !== null}
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Export options</DialogTitle>
+          <DialogDescription>
+            Uploaded files are exported as links. Anyone with the workbook can
+            open those links until they expire.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4 py-2">
+          <Input
+            type="number"
+            label="File links expire after (days)"
+            description={`Between ${AccessGrant.EXPIRY_DAYS_MIN} and ${expiryDaysMax} days.`}
+            min={AccessGrant.EXPIRY_DAYS_MIN}
+            max={expiryDaysMax}
+            // Renders NaN as empty so the field can be cleared and retyped.
+            value={
+              Number.isNaN(options.linkExpiryDays) ? "" : options.linkExpiryDays
+            }
+            onChange={(e) =>
+              onOptionsChange({
+                ...options,
+                linkExpiryDays: e.target.valueAsNumber,
+              })
+            }
+          />
+
+          <label className="flex items-start gap-3 text-sm">
+            <Checkbox
+              className="mt-0.5"
+              checked={options.includeDeletedForms}
+              onCheckedChange={(checked) =>
+                onOptionsChange({
+                  ...options,
+                  includeDeletedForms: checked === true,
+                })
+              }
+            />
+            <span>Export includes deleted forms that may have patient data</span>
+          </label>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            disabled={scope === null}
+            onClick={() => {
+              if (scope !== null) onConfirm(scope);
+            }}
+          >
+            <LucideDownload className="mr-2 h-4 w-4" />
+            Export
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

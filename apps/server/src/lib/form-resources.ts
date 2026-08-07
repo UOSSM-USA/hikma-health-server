@@ -5,6 +5,7 @@ import db from "@/db";
 import User from "@/models/user";
 import Token from "@/models/token";
 import EventLog from "@/models/event-logs";
+import AccessGrant from "@/models/access-grant";
 
 /**
  * Deliberately stricter than the global storage allowlist, which also permits
@@ -254,6 +255,35 @@ export const authenticateCaller = createServerOnlyFn(
     } catch {
       return null;
     }
+  },
+);
+
+export const ACCESS_GRANT_QUERY_PARAM = "t";
+
+export type GrantedCaller = AuthenticatedCaller & { grantId: string };
+
+/**
+ * Resolve a caller from an access-grant token in the query string.
+ *
+ * Deliberately NOT folded into `authenticateCaller`: a grant token travels
+ * inside a file that leaves the building, so doing that would silently make it
+ * a credential for uploads and deletes too. Routes opt in by calling this with
+ * the scope they require.
+ */
+export const resolveGrantedCaller = createServerOnlyFn(
+  async (
+    request: Request,
+    required: { scope: AccessGrant.Scope; subjectId?: string | null },
+  ): Promise<GrantedCaller | null> => {
+    const token = new URL(request.url).searchParams.get(
+      ACCESS_GRANT_QUERY_PARAM,
+    );
+    if (!token) return null;
+
+    const grant = await AccessGrant.resolve(token, required);
+    if (!grant) return null;
+
+    return { id: grant.userId, grantId: grant.id };
   },
 );
 

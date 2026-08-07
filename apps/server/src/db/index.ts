@@ -38,6 +38,7 @@ import type Device from "@/models/device";
 import type DevicePinCode from "@/models/device-pin-code";
 import type EducationContent from "@/models/education-content";
 import type Report from "@/models/report";
+import type AccessGrant from "@/models/access-grant";
 import { Pool } from "pg";
 import type { StringId, StringContent } from "@/models/string-content";
 
@@ -75,6 +76,7 @@ export type Database = {
   education_content: EducationContent.Table.T;
   reports: Report.Table.T;
   report_components: Report.ComponentTable.T;
+  access_grants: AccessGrant.Table.T;
 };
 
 // The table names in the database
