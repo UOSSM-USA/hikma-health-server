@@ -43,12 +43,9 @@ export const prescriptionsQueryRouter = createTRPCRouter({
   /**
    * Search prescriptions with optional filters.
    *
-   * Implementation details:
-   * - Optional text search on notes, items (JSONB text), and joined patient name via ILIKE
-   * - Filter by clinic_id (pickup_clinic_id), status (array of allowed values), date
-   * - Returns paginated { data, total, limit, offset }
-   * - status filter: WHERE status IN (...)
-   * - date filter: WHERE prescribed_at on the given day (truncate to day boundaries)
+   * `clinic_id` filters on `pickup_clinic_id`, and `date` matches `prescribed_at`
+   * across the whole day rather than an instant. Returns paginated
+   * `{ data, total, limit, offset }`.
    */
   search: authedProcedure
     .input(

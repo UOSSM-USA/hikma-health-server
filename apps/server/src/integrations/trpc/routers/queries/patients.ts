@@ -117,11 +117,8 @@ export const patientsQueryRouter = createTRPCRouter({
    * Find patients with similar names using native Postgres text operations.
    * Ranks by: exact match > prefix match > contains, using ILIKE.
    *
-   * Implementation details:
-   * - Uses LOWER + ILIKE for case-insensitive matching
-   * - Scoring: exact=3, starts-with=2, contains=1, per name part
-   * - Combined score is summed and sorted descending
-   * - No pg_trgm or fuzzystrmatch extension required
+   * Hand-rolled scoring rather than similarity(): no pg_trgm or fuzzystrmatch
+   * extension is required.
    */
   similar: authedProcedure
     .input(
@@ -139,8 +136,6 @@ export const patientsQueryRouter = createTRPCRouter({
 
         if (!gn && !sn) return { data: [] };
 
-        // Score each name part: exact=3, prefix=2, contains=1
-        // Use CASE expressions in SQL for ranking
         const data = await db
           .selectFrom("patients")
           .selectAll()

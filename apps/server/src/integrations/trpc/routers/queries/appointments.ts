@@ -61,11 +61,8 @@ export const appointmentsQueryRouter = createTRPCRouter({
   /**
    * List appointments within a date range with optional filters and pagination.
    *
-   * Implementation details:
-   * - Filter by start_date..end_date on the `timestamp` column
-   * - Optional clinic_id exact match, status exact match
-   * - Returns paginated { data, total, limit, offset }
-   * - Count query runs in parallel with data query for efficiency
+   * The date range applies to the `timestamp` column. Returns paginated
+   * `{ data, total, limit, offset }`.
    */
   list: authedProcedure
     .input(
@@ -88,11 +85,9 @@ export const appointmentsQueryRouter = createTRPCRouter({
   /**
    * Search appointments by text query with filters.
    *
-   * Implementation details:
-   * - Text search on patient name (join patients), reason, notes using ILIKE
-   * - Filter by clinic_id, department_ids (JSONB overlap), status (array of allowed), date
-   * - Returns paginated { data, total, limit, offset }
-   * - department_ids filter: `departments::jsonb ?| array[...]`
+   * Searching patient name means joining `patients`; `department_ids` is a JSONB
+   * overlap (`departments::jsonb ?| array[...]`), not an equality filter.
+   * Returns paginated `{ data, total, limit, offset }`.
    */
   search: authedProcedure
     .input(

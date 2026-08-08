@@ -11,7 +11,6 @@ import type Clinic from "@/models/clinic";
  * Created per-request in the fetch handler.
  */
 export type TRPCContext = {
-  /** Raw Authorization header value, if present */
   authHeader: string | null;
 };
 

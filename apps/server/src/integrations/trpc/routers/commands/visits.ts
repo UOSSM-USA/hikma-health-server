@@ -51,7 +51,6 @@ export const visitsCommandRouter = createTRPCRouter({
           .where("is_deleted", "=", false)
           .execute();
 
-        // Return full visit object
         const visit = await db
           .selectFrom("visits")
           .selectAll()

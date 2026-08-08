@@ -78,7 +78,6 @@ export const commandAppRouter = createTRPCRouter({
 const appRouter = createTRPCRouter({
   ...queryProcedures,
   ...commandProcedures,
-  // Include nested routers in merged type
   patients_q: patientsQueryRouter,
   clinics: clinicsQueryRouter,
   clinic_departments: clinicDepartmentsQueryRouter,

@@ -1,8 +1,7 @@
 /**
- * Sync pull query procedure — delegates to existing Sync.getDeltaRecords.
+ * Sync pull query procedures.
  *
  * The RPC caller is always an authenticated user (via JWT), not a device.
- * We construct a RequestCaller from the tRPC auth context.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -16,13 +15,9 @@ import * as Sentry from "@sentry/tanstackstart-react";
 export const syncQueryRouter = createTRPCRouter({
   /**
    * Pull changes since last sync timestamp.
-   * Delegates to Sync.getDeltaRecords with peerType inferred from context.
    *
-   * Implementation details:
-   * - Constructs a RequestCaller from the authenticated tRPC context
-   * - Passes peerType as "unknown" (treated as mobile — safe default)
-   * - Caller can optionally specify peerType to get hub-scoped results
-   * - Returns { changes, timestamp } matching the REST /api/v2/sync GET response
+   * Returns `{ changes, timestamp }`, matching the REST `/api/v2/sync` GET
+   * response.
    */
   pull: authedProcedure
     .input(

@@ -6,8 +6,6 @@ import type { RequestCaller } from "@/types";
 import {
   resolveEntitiesForPeer,
   applyClinicScope,
-  EXEMPT_FROM_HISTORY_LIMIT,
-  getMaxHistoryDaysSync,
   type SyncEntity,
 } from "./sync-shared";
 
@@ -288,9 +286,6 @@ export const AUX_DELIVERY_NAMES: readonly string[] = AUX_TABLES.map(
  * pull has no upper bound because it takes its own timestamp at the moment it
  * runs; a paged run must use the snapshot its client will adopt as a watermark,
  * or rows written mid-run would be delivered and then re-requested.
- *
- * These are exempt from MAX_HISTORY_DAYS_SYNC, as they are in `getDeltaRecords`:
- * configuration and permissions are not history.
  */
 async function fetchAuxTables(args: {
   since: number;
@@ -348,18 +343,6 @@ async function fetchAuxTables(args: {
 const deliveryName = (entity: SyncEntity): string =>
   entity.Table.mobileName ?? entity.Table.name;
 
-/** Lower bound for one entity/bucket, honouring MAX_HISTORY_DAYS_SYNC. */
-function lowerBound(entity: SyncEntity, since: number): Date {
-  const clientSince = new Date(since);
-  const maxDays = getMaxHistoryDaysSync();
-  if (maxDays === null) return clientSince;
-  if (EXEMPT_FROM_HISTORY_LIMIT.includes(deliveryName(entity))) {
-    return clientSince;
-  }
-  const cutoff = new Date(Date.now() - maxDays * 24 * 60 * 60 * 1000);
-  return clientSince < cutoff ? cutoff : clientSince;
-}
-
 /** One keyset query for a single entity/bucket. */
 async function fetchBucket(args: {
   entity: SyncEntity;
@@ -373,7 +356,8 @@ async function fetchBucket(args: {
   const { entity, bucket, since, ts, key, limit, clinicIds } = args;
   const table = entity.Table.name;
   const sortCol = SORT_COLUMN[bucket];
-  const from = lowerBound(entity, since);
+  // MAX_HISTORY_DAYS_SYNC is deliberately not applied here — see getDeltaPage.
+  const from = new Date(since);
   const upper = new Date(ts);
 
   // The deleted bucket selects only (id, deleted_at) — a tombstone needs no
@@ -399,9 +383,12 @@ async function fetchBucket(args: {
       .where("deleted_at", "is", null)
       .where("is_deleted", "=", false);
   } else {
-    // A since of 0 means "this device has nothing", so there is nothing for a
-    // tombstone to delete. Matches getDeltaRecords' existing behaviour.
-    if (since === 0) return [];
+    // Unlike getDeltaRecords, no `since === 0` skip. There 0 means a fresh
+    // device with nothing to delete; here both callers pass 0 from devices that
+    // may already hold records — the manual "everything" run by definition, and
+    // first sync whenever `last_pulled_at` is unset on a device already
+    // populated from a hub. Skipping tombstones strands every prior deletion
+    // permanently, because the completed run moves the watermark past them.
     q = db
       .selectFrom(table as any)
       .select(["id", "deleted_at"] as any)
@@ -450,6 +437,17 @@ async function fetchBucket(args: {
  * later page, with each query upper-bounded by it. Rows written mid-backfill
  * therefore cannot shift pages; they are picked up by the client's next sync,
  * whose cursor is this `ts`.
+ *
+ * `since` is honoured verbatim. Unlike `getDeltaRecords`, this does not raise
+ * the lower bound to MAX_HISTORY_DAYS_SYNC: that limit bounds the history
+ * routine sync keeps pushing at a device, while this is the recovery path whose
+ * purpose is to fetch that history back. Routine sync must not route through
+ * here.
+ *
+ * Restoring the clamp would not narrow a run but empty it — both non-deleted
+ * buckets share one lower bound, so a record older than the cutoff and
+ * untouched since matches neither, and the completed run then moves the
+ * client's watermark past the gap.
  */
 export async function getDeltaPage(args: {
   since: number;

@@ -45,8 +45,6 @@ import { Logger } from "@hikmahealth/js-utils"
 interface SyncSettingsScreenProps extends AppStackScreenProps<"SyncSettings"> {}
 const { height, width } = Dimensions.get("screen")
 
-// ── Helpers ───────────────────────────────────────────────────────────
-
 const formatTimestamp = (ts: number | null): string => {
   if (!ts) return "Never"
   return new Date(ts).toLocaleString()
@@ -131,8 +129,6 @@ function useHeartbeats(servers: ServerDisplay[], active: boolean) {
 
   return statuses
 }
-
-// ── Screen ────────────────────────────────────────────────────────────
 
 export const SyncSettingsScreen: FC<SyncSettingsScreenProps> = () => {
   const [isCameraScannerActive, setIsCameraScannerActive] = useState(false)
@@ -255,7 +251,6 @@ export const SyncSettingsScreen: FC<SyncSettingsScreenProps> = () => {
     if (isSyncing) return
     try {
       await startSync()
-      await startSync()
     } catch (error) {
       Logger.error({ msg: "Manual sync failed:", error })
     }
@@ -313,8 +308,6 @@ export const SyncSettingsScreen: FC<SyncSettingsScreenProps> = () => {
     </Screen>
   )
 }
-
-// ── Components ────────────────────────────────────────────────────────
 
 function ConnectButton({ onPress, mode }: { onPress: () => void; mode: "connect" | "change" }) {
   return (
@@ -385,8 +378,6 @@ function ActiveBadge({ isDefault }: { isDefault: boolean }) {
     </View>
   )
 }
-
-// ── Styles ────────────────────────────────────────────────────────────
 
 const $root: ViewStyle = {
   flex: 1,

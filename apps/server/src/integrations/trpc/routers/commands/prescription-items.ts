@@ -7,15 +7,7 @@ import { authedProcedure, createTRPCRouter } from "../../init";
 import { flexTimestamp, flexTimestampOptional } from "@/lib/rpc-utils";
 
 export const prescriptionItemsCommandRouter = createTRPCRouter({
-  /**
-   * Create a new prescription item (upsert).
-   *
-   * Implementation details:
-   * - Upsert on id conflict
-   * - Auto-generate id if omitted (uuidv7)
-   * - metadata stored as JSONB
-   * - Set server_created_at on insert, last_modified on both
-   */
+  /** Create a new prescription item (upsert on id conflict). */
   create: authedProcedure
     .input(
       z.object({
@@ -46,10 +38,7 @@ export const prescriptionItemsCommandRouter = createTRPCRouter({
   /**
    * Update mutable fields on a prescription item.
    *
-   * Implementation details:
-   * - Only provided (non-undefined) fields are SET
-   * - metadata is a JSONB column
-   * - Returns full prescription item object after update
+   * Only provided (non-undefined) fields are SET. Returns the full item.
    */
   update: authedProcedure
     .input(
@@ -77,16 +66,10 @@ export const prescriptionItemsCommandRouter = createTRPCRouter({
    * Dispense a prescription item from one or more inventory batches.
    * Decrements inventory and increments quantity_dispensed.
    *
-   * Implementation details:
-   * - Runs in a single transaction for atomicity
-   * - For each batch_id in batch_quantities:
-   *   1. SELECT FOR UPDATE on clinic_inventory row to prevent races
-   *   2. Assert quantity_available >= requested quantity
-   *   3. Decrement quantity_available by the requested amount
-   * - After all batches processed, increment prescription_items.quantity_dispensed
-   *   by the total dispensed
-   * - If any batch has insufficient stock, the entire transaction rolls back
-   * - Returns { ok: true, total_dispensed: number }
+   * Must run as one transaction: each batch takes SELECT FOR UPDATE on its
+   * `clinic_inventory` row before checking stock, or two concurrent dispenses
+   * both pass the check and oversell. Insufficient stock in any batch rolls the
+   * whole thing back rather than dispensing part of it.
    */
   dispense: authedProcedure
     .input(

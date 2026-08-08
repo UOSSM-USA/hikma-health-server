@@ -362,6 +362,37 @@ describe("getDeltaPage against a real database", () => {
     expect(totals.user_clinic_permissions).toBeGreaterThanOrEqual(1);
   });
 
+  // The recovery path must ignore MAX_HISTORY_DAYS_SYNC. Clamping does not
+  // narrow a run but empties it of exactly the old records a recovery exists to
+  // restore, and the completed run then moves the watermark past the gap.
+  it("honours a since older than MAX_HISTORY_DAYS_SYNC", async () => {
+    const previous = process.env.MAX_HISTORY_DAYS_SYNC;
+    process.env.MAX_HISTORY_DAYS_SYNC = "30";
+    try {
+      const ancientAt = new Date(Date.now() - 400 * 86_400_000).toISOString();
+      const ancientId = await insertPatient(ancientAt);
+
+      const page = await getDeltaPage({
+        since: Date.parse(ancientAt) - 1_000,
+        cursor: null,
+        pageBytes: 12_000_000,
+        pageRows: 2_000,
+        peerType: "android",
+        caller,
+      });
+
+      // Patient is entity 0, so the first page is the patients `created` bucket
+      // walking forward from `since`, and the seeded row sits at the front of it.
+      const ids = (page.changes.patients?.created ?? []).map((r: any) =>
+        String(r.id),
+      );
+      expect(ids).toContain(ancientId);
+    } finally {
+      if (previous === undefined) delete process.env.MAX_HISTORY_DAYS_SYNC;
+      else process.env.MAX_HISTORY_DAYS_SYNC = previous;
+    }
+  });
+
   // A byte budget below one row's size must still make progress, or the pull
   // never terminates. This degenerates to one row per page — one round trip per
   // row, plus a walk through every empty bucket — so it is deliberately slow
@@ -377,4 +408,49 @@ describe("getDeltaPage against a real database", () => {
     },
     180_000,
   );
+
+  // `since = 0` must still deliver tombstones. Both callers of the backfill send
+  // 0 from devices that may hold records — the manual "everything" run, and
+  // first sync on a device already populated from a hub — and the completed run
+  // moves the watermark past every tombstone it skipped, so a deletion missed
+  // here is missed permanently.
+  //
+  // Entered at the patients `deleted` bucket through a hand-built cursor: from
+  // bucket zero, `since = 0` would drain every patient in the database first.
+  it("delivers tombstones when since is 0", async () => {
+    const deletedAt = new Date(sinceMark + 7).toISOString();
+    const doomedId = await insertPatient(sharedAt);
+    await testDb
+      .updateTable("patients")
+      .set({
+        is_deleted: true,
+        deleted_at: sql`${deletedAt}::timestamptz`,
+      } as any)
+      .where("id", "=", doomedId)
+      .execute();
+
+    const page = await getDeltaPage({
+      since: 0,
+      cursor: encodeCursor({
+        v: 1,
+        since: 0,
+        ts: Date.now(),
+        t: 0,
+        b: "deleted",
+        // Just before the seeded tombstone, so the walk does not have to cross
+        // every deletion the database has ever accumulated to reach it.
+        k: [
+          new Date(sinceMark + 6).toISOString(),
+          "00000000-0000-0000-0000-000000000000",
+        ],
+        n: {},
+      }),
+      pageBytes: 12_000_000,
+      pageRows: 2_000,
+      peerType: "android",
+      caller,
+    });
+
+    expect(page.changes.patients?.deleted ?? []).toContain(doomedId);
+  });
 });

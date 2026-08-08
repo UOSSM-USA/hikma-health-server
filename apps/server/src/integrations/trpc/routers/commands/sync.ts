@@ -1,8 +1,7 @@
 /**
- * Sync push command procedure — delegates to existing Sync.persistClientChanges.
+ * Sync push command procedures.
  *
  * The RPC caller is always an authenticated user (via JWT), not a device.
- * We construct a RequestCaller from the tRPC auth context.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -23,15 +22,12 @@ const deltaDataSchema = z.object({
 export const syncCommandRouter = createTRPCRouter({
   /**
    * Push client changes to the server.
-   * Delegates to Sync.persistClientChanges with the authenticated user context.
    *
-   * Implementation details:
-   * - Constructs a RequestCaller from the authenticated tRPC context
-   * - Passes peerType as "unknown" (treated as mobile — safe default) unless specified
-   * - The changes payload matches the REST POST /api/v2/sync body format
-   * - Server-authoritative tables (users, registration_forms, event_forms) are silently skipped
-   *   by Sync.persistClientChanges
-   * - Returns empty object on success (matching hub spec)
+   * The `changes` payload matches the REST POST `/api/v2/sync` body format, and
+   * success returns an empty object to match the hub spec.
+   *
+   * Server-authoritative tables — users, registration_forms, event_forms — are
+   * silently skipped by `Sync.persistClientChanges`.
    */
   push: authedProcedure
     .input(

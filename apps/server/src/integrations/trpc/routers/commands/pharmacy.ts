@@ -10,14 +10,8 @@ export const dispensingCommandRouter = createTRPCRouter({
   /**
    * Record a dispensing event (medication given to a patient).
    *
-   * Implementation details:
-   * - Upsert on id conflict
-   * - Auto-generate id if omitted (uuidv7)
-   * - metadata stored as JSONB
-   * - dispensed_at is a flex timestamp
-   * - Set server_created_at on insert, last_modified on both
-   * - Does NOT decrement inventory — that's prescription_items.dispense's job.
-   *   This is a standalone dispensing record (e.g. OTC or walk-in dispensing).
+   * Must NOT decrement inventory — that is `prescription_items.dispense`'s job.
+   * This is a standalone dispensing record, e.g. OTC or walk-in dispensing.
    */
   create: authedProcedure
     .input(

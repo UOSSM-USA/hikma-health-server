@@ -29,7 +29,12 @@ const RUNNING = {
 let mockState: Record<string, unknown> = { ...RUNNING }
 
 jest.mock("@/hooks/useManualSync", () => ({
-  useManualSync: () => ({ state: mockState, start: mockStart, resume: mockResume, abort: mockAbort }),
+  useManualSync: () => ({
+    state: mockState,
+    start: mockStart,
+    resume: mockResume,
+    abort: mockAbort,
+  }),
 }))
 
 jest.mock("expo-keep-awake", () => ({ useKeepAwake: jest.fn() }))
@@ -162,7 +167,7 @@ describe("ManualSyncScreen", () => {
 
   it("offers abort while a run is in progress", () => {
     const { getByText } = screen()
-    fireEvent.press(getByText(/abort/i))
+    fireEvent.press(getByText(/cancel/i))
     expect(mockAbort).toHaveBeenCalled()
   })
 
@@ -199,7 +204,7 @@ describe("ManualSyncScreen", () => {
   it("does not offer abort once the run has finished", () => {
     mockState = { ...RUNNING, phase: "done" }
     const { queryByText } = screen()
-    expect(queryByText(/abort/i)).toBeNull()
+    expect(queryByText(/cancel/i)).toBeNull()
   })
 
   it("reports both directions on completion", () => {
@@ -211,7 +216,13 @@ describe("ManualSyncScreen", () => {
   // Rejected records are still pending locally. Saying so is the difference
   // between a user retrying and a user assuming their edits are safe.
   it("surfaces a conflict count when the server rejected records", () => {
-    mockState = { ...RUNNING, phase: "done", recordsApplied: 10, recordsPushed: 2, rejectedCount: 4 }
+    mockState = {
+      ...RUNNING,
+      phase: "done",
+      recordsApplied: 10,
+      recordsPushed: 2,
+      rejectedCount: 4,
+    }
     const { getByText } = screen()
     expect(getByText(/4 record/)).toBeTruthy()
   })
@@ -243,7 +254,12 @@ describe("ManualSyncScreen", () => {
   })
 
   it("does not offer to continue after a terminal failure", () => {
-    mockState = { ...RUNNING, phase: "error", error: "Server rejected the cursor", resumable: false }
+    mockState = {
+      ...RUNNING,
+      phase: "error",
+      error: "Server rejected the cursor",
+      resumable: false,
+    }
     const { queryByText } = screen()
     expect(queryByText(/continue/i)).toBeNull()
   })
