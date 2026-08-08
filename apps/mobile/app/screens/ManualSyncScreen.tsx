@@ -100,7 +100,7 @@ export const ManualSyncScreen: FC<AppStackScreenProps<"ManualSync">> = ({ route,
   }, [isRunning])
 
   return (
-    <Screen style={$root} preset="fixed">
+    <Screen style={$root} preset="fixed" safeAreaEdges={["top", "bottom"]}>
       <View style={$centre} direction="column" gap={16}>
         {isRunning && <ActivityIndicator size="large" color={colors.palette.primary600} />}
 
@@ -135,7 +135,7 @@ export const ManualSyncScreen: FC<AppStackScreenProps<"ManualSync">> = ({ route,
 
         {state.phase === "error" && <Text size="sm" text={state.error ?? "Unknown error"} />}
 
-        {isRunning && <Button text="Abort" onPress={abort} />}
+        {isRunning && <Button text="Cancel" onPress={abort} />}
 
         {state.phase === "error" && state.resumable && <Button text="Continue" onPress={resume} />}
 

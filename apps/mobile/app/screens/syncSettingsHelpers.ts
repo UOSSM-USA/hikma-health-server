@@ -46,8 +46,8 @@ export const peerDisplayUrl = (peer: Peer.T): string => {
 
 /**
  * Convert a Peer.T to the ServerDisplay shape the UI components expect.
- * `isActive` only reflects whether the peer's status is "active" —
- * use `markSyncTarget` to determine which peer is the actual sync target.
+ * `isActive` is the peer's status, not which peer sync would pick —
+ * `Peer.getActiveUrl` resolves that.
  */
 export const peerToServerDisplay = (peer: Peer.T): ServerDisplay => ({
   id: peer.id,
@@ -56,26 +56,6 @@ export const peerToServerDisplay = (peer: Peer.T): ServerDisplay => ({
   isActive: peer.status === "active",
   lastSyncedAt: peer.lastSyncedAt,
 })
-
-/**
- * Given a list of server displays, mark only the one the sync service
- * would actually pick as the sync target.
- *
- * When `activeSyncPeerId` is provided (user has explicitly chosen a peer),
- * that peer is marked as the target. Otherwise falls back to the default
- * priority: active hub first, then active cloud.
- */
-// export const markSyncTarget = (
-//   servers: ServerDisplay[],
-// ): ServerDisplay[] => {
-//     const activeHub = servers.find((s) => s.type === "local" && s.isActive)
-//     targetId = activeHub?.id ?? servers.find((s) => s.type === "cloud" && s.isActive)?.id
-
-//   return servers.map((s) => ({
-//     ...s,
-//     isActive: s.id === targetId,
-//   }))
-// }
 
 export const getServerDisplayName = (type: DisplayServerType): string => {
   switch (type) {

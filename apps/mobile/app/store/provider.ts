@@ -1,10 +1,41 @@
 import * as SecureStorage from "expo-secure-store"
 import { createStore } from "@xstate/store"
+import * as Sentry from "@sentry/react-native"
 import { Option } from "effect"
 
 import User from "@/models/User"
 import UserClinicPermissions from "@/models/UserClinicPermissions"
 import { Logger } from "@hikmahealth/js-utils"
+
+export const PROVIDER_STORAGE_KEY = "providerStore"
+
+/**
+ * Persist the session, flattening Options to the plain values `app.tsx` reads
+ * on cold start. Call from `enqueue.effect` — @xstate/store v4 never runs
+ * `emits` handlers, so a side effect placed there goes silent.
+ */
+const persistProvider = (payload: User.Provider): void => {
+  const toStore = {
+    ...payload,
+    id: payload.id,
+    name: payload.name,
+    role: Option.getOrNull(payload.role),
+    instance_url: Option.getOrNull(payload.instance_url),
+    clinic_id: Option.getOrNull(payload.clinic_id),
+    clinic_name: Option.getOrNull(payload.clinic_name),
+    // TODO: get the permissions
+    permissions:
+      payload.permissions &&
+      Option.isOption(payload.permissions) &&
+      Option.getOrNull(payload.permissions),
+  }
+
+  SecureStorage.setItemAsync(PROVIDER_STORAGE_KEY, JSON.stringify(toStore)).catch((error) => {
+    // This signs the user out on the next launch, and Logger is a no-op in release.
+    Logger.error({ msg: "[Provider] Failed to persist the session", error })
+    Sentry.captureException(error)
+  })
+}
 
 export const providerStore = createStore({
   context: {
@@ -28,25 +59,6 @@ export const providerStore = createStore({
         >
       >(),
   },
-  emits: {
-    provider_changed: (payload: User.Provider) => {
-      const toStore = {
-        ...payload,
-        id: payload.id,
-        name: payload.name,
-        role: Option.getOrNull(payload.role),
-        instance_url: Option.getOrNull(payload.instance_url),
-        clinic_id: Option.getOrNull(payload.clinic_id),
-        clinic_name: Option.getOrNull(payload.clinic_name),
-        // TODO: get the permissions
-        permissions:
-          payload.permissions &&
-          Option.isOption(payload.permissions) &&
-          Option.getOrNull(payload.permissions),
-      }
-      return SecureStorage.setItemAsync("providerStore", JSON.stringify(toStore))
-    },
-  },
   on: {
     reset: (context, _, enque) => {
       Logger.warn("🔥 Calling Reset")
@@ -60,7 +72,7 @@ export const providerStore = createStore({
         clinic_name: Option.none<string>(),
         permissions: Option.none<UserClinicPermissions.T>(),
       }
-      enque.emit.provider_changed(payload)
+      enque.effect(() => persistProvider(payload))
       return {
         ...payload,
       }
@@ -68,7 +80,7 @@ export const providerStore = createStore({
 
     set_provider: (context, event: User.Provider, enque) => {
       Logger.log({ msg: "Setting provider:", data: JSON.stringify(event, null, 2) })
-      enque.emit.provider_changed(event)
+      enque.effect(() => persistProvider(event))
       return {
         id: event.id,
         name: event.name,

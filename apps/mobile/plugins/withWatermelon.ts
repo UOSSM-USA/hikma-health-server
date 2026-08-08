@@ -47,14 +47,18 @@ function buildGradle(config: ExpoConfig): ExpoConfig {
 
     if (!mod.modResults.contents.includes("pickFirst '**/libc++_shared.so'")) {
       Logger.log("[WatermelonDB] Adding pickFirst configuration for libc++_shared.so")
+      // NOTE: `android {` must stay at column 0. Other config plugins anchor on
+      // it with a start-of-line regex — @sentry/react-native matches
+      // /^android {/m to insert `apply from: ... sentry.gradle` above it. If we
+      // re-emit the block indented, those plugins silently find no match and
+      // skip their injection (Sentry only warns).
       mod.modResults.contents = mod.modResults.contents.replace(
         "android {",
-        `
-        android {
-          packagingOptions {
-             pickFirst '**/libc++_shared.so'
-          }
-        `,
+        `android {
+    packagingOptions {
+        pickFirst '**/libc++_shared.so'
+    }
+`,
       )
     } else {
       Logger.log("[WatermelonDB] pickFirst configuration already exists")
@@ -62,12 +66,12 @@ function buildGradle(config: ExpoConfig): ExpoConfig {
 
     if (!mod.modResults.contents.includes("implementation project(':watermelondb-jsi')")) {
       Logger.log("[WatermelonDB] Adding watermelondb-jsi implementation to dependencies")
+      // Same column-0 rule as the `android {` block above.
       mod.modResults.contents = mod.modResults.contents.replace(
         "dependencies {",
-        `
-        dependencies {
-          implementation project(':watermelondb-jsi')
-        `,
+        `dependencies {
+    implementation project(':watermelondb-jsi')
+`,
       )
       Logger.log("[WatermelonDB] Successfully added watermelondb-jsi dependency")
     } else {

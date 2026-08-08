@@ -1,5 +1,20 @@
 ### Workflows
 
+#### Session survives a cold restart
+**Status: ✅ Implemented** - Test file: `.maestro/flows/session-survives-cold-restart.yaml`
+
+Guards the signed-in session across a force-quit. Must use the non-seeded
+launcher: `_OnFlowStartSeeded` sets `shouldSeedE2E`, which makes `AppNavigator`
+skip the startup path. The mid-flow `launchApp` omits `clearState`/`clearKeychain`
+— that state is what the flow tests.
+
+Steps:
+1. Clean launch, sign in for real
+2. Relaunch with `stopApp: true` only
+3. Assert the patient list, not the login screen
+4. Open Settings and assert the provider email — proves the identity rehydrated,
+   not just that a signed-in-looking screen rendered
+
 #### Register a new patient
 Assuming the user is already logged in.
 

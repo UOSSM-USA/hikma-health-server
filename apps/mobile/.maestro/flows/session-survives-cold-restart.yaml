@@ -1,0 +1,59 @@
+# flow: Session Survives Cold Restart
+# Force-quit and relaunch must land back on the patient list, not the login
+# screen. Non-seeded on purpose: _OnFlowStartSeeded sets shouldSeedE2E, which
+# makes AppNavigator return before the startup path under test.
+
+appId: ${MAESTRO_APP_ID}
+onFlowStart:
+  - runFlow: ../shared/_OnFlowStart.yaml
+  - runFlow: ../shared/sign-in.yaml
+---
+- assertVisible: "Patients"
+
+# stopApp only — clearState/clearKeychain would erase the state under test,
+# which is why no existing launcher can catch this.
+- launchApp:
+    stopApp: true
+    arguments:
+      isE2E: "true"
+
+- runFlow: ../shared/_DismissExpoScreens.yaml
+
+# A tester account cannot sync; this alert is incidental.
+- runFlow:
+    when:
+      visible: "Please sign in with your server.*"
+    commands:
+      - tapOn: "OK"
+
+# Dev-client overlays can reappear late on this second launch, as on the first.
+- retry:
+    maxRetries: 8
+    commands:
+      - runFlow:
+          when:
+            visible: "Continue"
+          commands:
+            - tapOn: "Continue"
+      - runFlow:
+          when:
+            visible: "Reload"
+          commands:
+            - tapOn: "Close"
+      - assertVisible: "Patients"
+
+# These two are the login screen's fields.
+- assertNotVisible: "Email Address"
+- assertNotVisible: "Password"
+- assertVisible:
+    id: "patientList"
+
+# `isSignedIn` needs id, name and email together, and Settings is the only
+# screen rendering the email — so this catches a partially hydrated provider.
+- tapOn:
+    id: "drawerButton"
+- waitForAnimationToEnd
+- tapOn: "Settings"
+- waitForAnimationToEnd
+- assertVisible: "User Account"
+- assertVisible: ${TESTER_EMAIL}

@@ -563,9 +563,8 @@ namespace Peer {
   }
 
   /**
-   * Resolve the active peer's URL. Drop-in replacement for the deprecated getHHApiUrl().
-   * Uses the user-selected activeSyncPeerId if set, otherwise falls back to
-   * the default peer priority (hub > cloud).
+   * Resolve the active peer's URL, by peer priority: hub > cloud. Drop-in
+   * replacement for the deprecated getHHApiUrl().
    */
   export const getActiveUrl = async (): Promise<string | null> => {
     const activePeers = await DB.getActive()
