@@ -4,10 +4,10 @@
  * Generally speaking, it will contain an auth flow (registration, login, forgot password)
  * and a "main" flow which the user will use once logged in.
  */
-import { ComponentProps, useEffect } from "react"
+import { ComponentProps, useCallback, useEffect } from "react"
 import * as SecureStore from "expo-secure-store"
 import { createDrawerNavigator } from "@react-navigation/drawer"
-import { NavigationContainer } from "@react-navigation/native"
+import { NavigationContainer, NavigationState } from "@react-navigation/native"
 import { createNativeStackNavigator, NativeStackScreenProps } from "@react-navigation/native-stack"
 import * as Sentry from "@sentry/react-native"
 import { useSelector } from "@xstate/react"
@@ -29,9 +29,10 @@ import { useAppTheme } from "@/theme/context"
 
 import { AppointmentNavigator } from "./AppointmentNavigator"
 import { PharmacyNavigator } from "./PharmacyNavigator"
-import { navigationRef, useBackButtonHandler } from "./navigationUtilities"
+import { getActiveRouteName, navigationRef, useBackButtonHandler } from "./navigationUtilities"
 import { PatientNavigator } from "./PatientNavigator"
 import { shouldSeedE2E } from "@/utils/e2e"
+import { applyScreenCapturePolicy, initScreenCaptureProtection } from "@/utils/screenCapture"
 import { Logger } from "@hikmahealth/js-utils"
 
 /**
@@ -229,11 +230,43 @@ export interface NavigationProps extends Partial<
 
 export const AppNavigator = (props: NavigationProps) => {
   const { navigationTheme } = useAppTheme()
+  // Pulled out of the spread rather than overridden after it: screen capture
+  // protection hangs off these two, and a spread that drifted below the
+  // overrides would disable it on every screen with nothing to catch it.
+  const { onReady, onStateChange, ...containerProps } = props
 
   useBackButtonHandler((routeName) => exitRoutes.includes(routeName))
 
+  useEffect(() => {
+    void initScreenCaptureProtection()
+  }, [])
+
+  // `onStateChange` does not fire on the first render, and persisted navigation
+  // restores the app into the last-visited screen — usually a patient record —
+  // so the initial route has to be covered here or it renders unprotected.
+  const handleReady = useCallback(() => {
+    void applyScreenCapturePolicy(
+      navigationRef.isReady() ? getActiveRouteName(navigationRef.getRootState()) : undefined,
+    )
+    onReady?.()
+  }, [onReady])
+
+  const handleStateChange = useCallback(
+    (state: NavigationState | undefined) => {
+      void applyScreenCapturePolicy(state ? getActiveRouteName(state) : undefined)
+      onStateChange?.(state)
+    },
+    [onStateChange],
+  )
+
   return (
-    <NavigationContainer ref={navigationRef} theme={navigationTheme} {...props}>
+    <NavigationContainer
+      ref={navigationRef}
+      theme={navigationTheme}
+      onReady={handleReady}
+      onStateChange={handleStateChange}
+      {...containerProps}
+    >
       <ErrorBoundary catchErrors={Config.catchErrors}>
         <AppStack />
       </ErrorBoundary>
