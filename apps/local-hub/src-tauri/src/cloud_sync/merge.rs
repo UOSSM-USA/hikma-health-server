@@ -370,6 +370,70 @@ mod tests {
     }
 
     #[test]
+    fn app_config_clinic_ids_survives_the_merge() {
+        // The scope column only reaches devices behind a hub if app_config
+        // declares it — upsert filters incoming records against the real table,
+        // so a missing column is dropped silently rather than erroring.
+        let conn = setup_test_db();
+
+        let scoped = make_record(
+            "cfg-scoped",
+            1000,
+            2000,
+            vec![
+                ("namespace", Value::String("ui".into())),
+                ("key", Value::String("patient_view.actions".into())),
+                ("value", Value::String("[]".into())),
+                ("data_type", Value::String("array".into())),
+                (
+                    "clinic_ids",
+                    Value::Array(vec![Value::String("clinic-a".into())]),
+                ),
+            ],
+        );
+        // A NULL scope means "applies to all clinics" and must stay NULL, not
+        // become "[]" — that would mean "applies to no clinic".
+        let global = make_record(
+            "cfg-global",
+            1000,
+            2000,
+            vec![
+                ("namespace", Value::String("ui".into())),
+                ("key", Value::String("other.setting".into())),
+                ("value", Value::String("1".into())),
+                ("data_type", Value::String("number".into())),
+                ("clinic_ids", Value::Null),
+            ],
+        );
+
+        let mut changes = SyncDatabaseChangeSet::new();
+        let mut cs = SyncTableChangeSet::new();
+        cs.created.push(scoped);
+        cs.created.push(global);
+        changes.add_table_changes("app_config", cs);
+
+        apply_cloud_changes(&conn, &changes).unwrap();
+
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT clinic_ids FROM app_config WHERE id = 'cfg-scoped'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored.as_deref(), Some(r#"["clinic-a"]"#));
+
+        let global_scope: Option<String> = conn
+            .query_row(
+                "SELECT clinic_ids FROM app_config WHERE id = 'cfg-global'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(global_scope, None);
+    }
+
+    #[test]
     fn unknown_columns_from_cloud_are_skipped() {
         let conn = setup_test_db();
         let record = make_record(

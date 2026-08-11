@@ -1,4 +1,4 @@
-import { FC, useEffect, useReducer, useState } from "react"
+import { FC, useEffect, useMemo, useReducer, useState } from "react"
 import { Pressable, TextStyle, ViewStyle } from "react-native"
 import { LegendList } from "@legendapp/list/react-native"
 import { Q } from "@nozbe/watermelondb"
@@ -13,6 +13,7 @@ import DropDownPicker from "react-native-dropdown-picker"
 import { catchError, of as of$ } from "rxjs"
 
 import { AgendaDateSetter } from "@/components/AgendaDateSetter"
+import { FilterPanel } from "@/components/FilterPanel"
 import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
 import { TextField } from "@/components/TextField"
@@ -34,6 +35,7 @@ import { providerStore } from "@/store/provider"
 import { colors } from "@/theme/colors"
 import { useAppTheme } from "@/theme/context"
 import { ThemedStyle } from "@/theme/types"
+import { describePrescriptionFilters } from "@/utils/filterChips"
 import { friendlyString, getPrescriptionStatusColor, toggleStringInArray } from "@/utils/misc"
 import { useSafeAreaInsetsStyle } from "@/utils/useSafeAreaInsetsStyle"
 
@@ -53,11 +55,10 @@ export const PharmacyViewScreen: FC<PharmacyViewScreenProps> = ({ route, navigat
   } = useSelector(providerStore, (state) => state.context)
   const propsClinicId = Option.getOrElse(clinic_id, () => "")
 
-  const { prescriptions, clearFilters, filters, handleFiltersChange, loadMore } =
-    useDBPrescriptionsFilter(propsClinicId)
-
   const { clinics: clinicsList, isLoading: isLoadingClinics } = useDBClinicsList()
-  const activeClinic = clinicsList.find((clinic) => clinic.id === filters.clinicId)
+
+  const { prescriptions, clearFilters, filters, handleFiltersChange, loadMore } =
+    useDBPrescriptionsFilter(propsClinicId, clinicsList)
 
   const handlePrescriptionPress = (prescription: Prescription.T) => {
     navigation.navigate("PrescriptionView", {
@@ -79,7 +80,7 @@ export const PharmacyViewScreen: FC<PharmacyViewScreenProps> = ({ route, navigat
       ListHeaderComponent={
         <PrescriptionsListHeader
           clinicsList={clinicsList}
-          clinic={activeClinic || null}
+          defaultClinicId={propsClinicId}
           clearFilters={clearFilters}
           filters={filters}
           onFiltersChange={handleFiltersChange}
@@ -110,14 +111,15 @@ export const PharmacyViewScreen: FC<PharmacyViewScreenProps> = ({ route, navigat
       ListFooterComponent={<View mb={64}></View>}
       onEndReached={loadMore}
       onEndReachedThreshold={0.5}
-      extraData={`${filters.status}_${filters.clinicId}_${filters.searchQuery}__${filters.date.toDateString()}`}
+      extraData={`${filters.status}_${filters.clinicId}_${filters.country}_${filters.city}_${filters.searchQuery}__${filters.date.toDateString()}`}
     />
   )
 }
 
 type PrescriptionListHeaderProps = {
   clinicsList: Clinic.DBClinic[]
-  clinic: Clinic.DBClinic | null
+  /** The provider's own clinic — the default scope, so never shown as a chip. */
+  defaultClinicId: string
   clearFilters: () => void
   filters: PrescriptionsFilters
   onFiltersChange: (filters: Partial<PrescriptionsFilters>) => void
@@ -127,14 +129,61 @@ const statusesList = Prescription.statusList
 
 const PrescriptionsListHeader: FC<PrescriptionListHeaderProps> = ({
   clinicsList,
-  clinic,
+  defaultClinicId,
   clearFilters,
   filters,
   onFiltersChange,
 }: PrescriptionListHeaderProps) => {
   const { themed } = useAppTheme()
   const { paddingTop: safeAreaPaddingTop } = useSafeAreaInsetsStyle(["top"])
-  const [openDropdown, setOpenDropdown] = useState<"clinic" | "status" | "department" | null>(null)
+  const [openDropdown, setOpenDropdown] = useState<
+    "clinic" | "status" | "department" | "country" | "city" | null
+  >(null)
+
+  const countryOptions = useMemo(() => Clinic.countryOptions(clinicsList), [clinicsList])
+  const cityOptions = useMemo(
+    () => Clinic.cityOptions(clinicsList, filters.country),
+    [clinicsList, filters.country],
+  )
+  // The "All …" entry matches the unset value, so leaving it in an otherwise
+  // empty list would mask the placeholder explaining why there is nothing.
+  const countryItems = useMemo(
+    () =>
+      countryOptions.length === 0
+        ? []
+        : [
+            { label: "All countries", value: "" },
+            ...countryOptions.map((country) => ({ label: country, value: country })),
+          ],
+    [countryOptions],
+  )
+  const cityItems = useMemo(
+    () =>
+      cityOptions.length === 0
+        ? []
+        : [
+            { label: "All cities", value: "" },
+            ...cityOptions.map((city) => ({ label: city, value: city })),
+          ],
+    [cityOptions],
+  )
+  const clinicOptions = useMemo(
+    () => Clinic.clinicsIn(clinicsList, filters.country, filters.city),
+    [clinicsList, filters.country, filters.city],
+  )
+
+  const chips = useMemo(
+    () =>
+      describePrescriptionFilters(filters, {
+        clinics: clinicsList,
+        defaultClinicId,
+      }).map((chip) => ({
+        key: chip.key,
+        label: chip.label,
+        onRemove: () => onFiltersChange(chip.clear),
+      })),
+    [filters, clinicsList, defaultClinicId, onFiltersChange],
+  )
 
   return (
     <View style={themed($headerContainer)}>
@@ -149,63 +198,130 @@ const PrescriptionsListHeader: FC<PrescriptionListHeaderProps> = ({
         RightAccessory={() => <LucideSearch style={$searchIcon} />}
       />
 
-      <View mt={10}>
-        <Text preset="formLabel" text="Clinic" />
+      <FilterPanel chips={chips} onClearAll={clearFilters}>
+        <View mt={10}>
+          <Text preset="formLabel" text="Country" />
 
-        <DropDownPicker
-          open={openDropdown === "clinic"}
-          setOpen={(open) => {
-            if (open as unknown as boolean) setOpenDropdown("clinic")
-            else setOpenDropdown(null)
-          }}
-          modalTitle="Clinic"
-          style={$dropDownPickerStyle}
-          zIndex={990000}
-          modalContentContainerStyle={[
-            $modalContentContainerStyle,
-            { paddingTop: safeAreaPaddingTop },
-          ]}
-          zIndexInverse={990000}
-          listMode="MODAL"
-          items={clinicsList.map((clinic) => ({
-            label: clinic.name,
-            value: clinic.id,
-          }))}
-          value={filters.clinicId || ""}
-          setValue={(cb) => {
-            const data = cb(filters.clinicId)
-            onFiltersChange({ clinicId: data })
-          }}
-        />
-      </View>
-
-      <View mt={10}>
-        <Text preset="formLabel" text="Status" />
-
-        <View direction="row" flexWrap="wrap" gap={5}>
-          {statusesList.map((status) => (
-            <Pressable
-              style={[$statusChip, filters.status.includes(status) ? $statusChipActive : null]}
-              key={status}
-              onPress={() => {
-                onFiltersChange({
-                  status: toggleStringInArray(status, filters.status) as Prescription.Status[],
-                })
-              }}
-            >
-              <Text
-                style={[
-                  filters.status.includes(status) ? $statusChipActiveText : $statusChipText,
-                  null,
-                ]}
-                size="xxs"
-              >
-                {upperFirst(status.replaceAll("_", " "))}
-              </Text>
-            </Pressable>
-          ))}
+          <DropDownPicker
+            open={openDropdown === "country"}
+            setOpen={(open) => {
+              if (open as unknown as boolean) setOpenDropdown("country")
+              else setOpenDropdown(null)
+            }}
+            modalTitle="Country"
+            style={$dropDownPickerStyle}
+            modalContentContainerStyle={[
+              $modalContentContainerStyle,
+              { paddingTop: safeAreaPaddingTop },
+            ]}
+            zIndex={990000}
+            zIndexInverse={990000}
+            listMode="MODAL"
+            disabled={countryOptions.length === 0}
+            disabledStyle={$dropDownPickerDisabledStyle}
+            placeholder={
+              countryOptions.length === 0 ? "No clinics have a country set" : "All countries"
+            }
+            items={countryItems}
+            value={filters.country}
+            setValue={(cb) => {
+              const data = cb(filters.country)
+              onFiltersChange({ country: data })
+            }}
+          />
         </View>
-      </View>
+
+        <View mt={10}>
+          <Text preset="formLabel" text="City" />
+
+          <DropDownPicker
+            open={openDropdown === "city"}
+            setOpen={(open) => {
+              if (open as unknown as boolean) setOpenDropdown("city")
+              else setOpenDropdown(null)
+            }}
+            modalTitle="City"
+            style={$dropDownPickerStyle}
+            modalContentContainerStyle={[
+              $modalContentContainerStyle,
+              { paddingTop: safeAreaPaddingTop },
+            ]}
+            zIndex={990000}
+            zIndexInverse={990000}
+            listMode="MODAL"
+            disabled={cityOptions.length === 0}
+            disabledStyle={$dropDownPickerDisabledStyle}
+            placeholder={cityOptions.length === 0 ? "No clinics have a city set" : "All cities"}
+            items={cityItems}
+            value={filters.city}
+            setValue={(cb) => {
+              const data = cb(filters.city)
+              onFiltersChange({ city: data })
+            }}
+          />
+        </View>
+
+        <View mt={10}>
+          <Text preset="formLabel" text="Clinic" />
+
+          <DropDownPicker
+            open={openDropdown === "clinic"}
+            setOpen={(open) => {
+              if (open as unknown as boolean) setOpenDropdown("clinic")
+              else setOpenDropdown(null)
+            }}
+            modalTitle="Clinic"
+            style={$dropDownPickerStyle}
+            zIndex={990000}
+            modalContentContainerStyle={[
+              $modalContentContainerStyle,
+              { paddingTop: safeAreaPaddingTop },
+            ]}
+            zIndexInverse={990000}
+            listMode="MODAL"
+            items={[
+              { label: "All clinics", value: "" },
+              ...clinicOptions.map((clinic) => ({
+                label: clinic.name,
+                value: clinic.id,
+              })),
+            ]}
+            value={filters.clinicId || ""}
+            setValue={(cb) => {
+              const data = cb(filters.clinicId)
+              onFiltersChange({ clinicId: data })
+            }}
+          />
+        </View>
+
+        <View mt={10}>
+          <Text preset="formLabel" text="Status" />
+
+          <View direction="row" flexWrap="wrap" gap={5}>
+            {statusesList.map((status) => (
+              <Pressable
+                style={[$statusChip, filters.status.includes(status) ? $statusChipActive : null]}
+                key={status}
+                onPress={() => {
+                  onFiltersChange({
+                    status: toggleStringInArray(status, filters.status) as Prescription.Status[],
+                  })
+                }}
+              >
+                <Text
+                  style={[
+                    filters.status.includes(status) ? $statusChipActiveText : $statusChipText,
+                    null,
+                  ]}
+                  size="xxs"
+                >
+                  {upperFirst(status.replaceAll("_", " "))}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </FilterPanel>
 
       <AgendaDateSetter date={filters.date} setDate={(date) => onFiltersChange({ date })} />
     </View>
@@ -370,6 +486,10 @@ const $dropDownPickerStyle: ViewStyle = {
   borderColor: colors.palette.neutral400,
   zIndex: 990000,
   flex: 1,
+}
+
+const $dropDownPickerDisabledStyle: ViewStyle = {
+  opacity: 0.5,
 }
 
 const $statusChip: ViewStyle = {

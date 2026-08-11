@@ -13,6 +13,117 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * A *civil date* is a calendar date with no timezone — a date of birth, not an
+ * instant — carried as "YYYY-MM-DD" with no offset ever applied.
+ *
+ * A `Date` holding one can be in either of two *frames*, same type but opposite
+ * correct treatment:
+ *
+ *   - **Local calendar parts** — `new Date(y, m, d)`, how `pg` parses a
+ *     Postgres `date` column and how a browser date picker builds its value.
+ *     Local getters invert it.
+ *   - **A UTC instant** — arrived over JSON from `toISOString()`. UTC getters
+ *     invert it.
+ *
+ * The wrong one shifts the day anywhere off UTC, so pick by frame rather than
+ * merging these into a single helper.
+ */
+const civilDateParts = (
+  value: Date,
+  frame: "local" | "utc",
+): string | null => {
+  if (Number.isNaN(value.getTime())) return null;
+  const [y, m, d] =
+    frame === "local"
+      ? [value.getFullYear(), value.getMonth() + 1, value.getDate()]
+      : [value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate()];
+  return [y, String(m).padStart(2, "0"), String(d).padStart(2, "0")].join("-");
+};
+
+const asCivilDateString = (
+  value: Date | string | null | undefined,
+  frame: "local" | "utc",
+): string | null => {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    // An ISO instant in string form came from a toISOString() somewhere, so
+    // read it back in UTC regardless of the caller's frame.
+    const parsed = new Date(trimmed);
+    return civilDateParts(parsed, "utc");
+  }
+
+  return civilDateParts(value, frame);
+};
+
+/**
+ * Civil date out of a `Date` built from **local calendar parts** — parsed by
+ * `pg` from a `date` column, or picked in a browser date input.
+ */
+export function civilDateFromLocalDate(
+  value: Date | string | null | undefined,
+): string | null {
+  return asCivilDateString(value, "local");
+}
+
+/**
+ * Civil date out of a **UTC instant** — a `Date` or ISO string that reached us
+ * over JSON. A "YYYY-MM-DD" string passes through.
+ *
+ * Only recovers the intended day when the sender did not already lose it: a
+ * client sending `new Date(y, m, d).toISOString()` has destroyed it east of UTC
+ * before we see it, which is why the registration form sends "YYYY-MM-DD".
+ */
+export function civilDateFromInstant(
+  value: Date | string | null | undefined,
+): string | null {
+  return asCivilDateString(value, "utc");
+}
+
+/**
+ * Parse a civil date for *display*: "YYYY-MM-DD" becomes a `Date` at **local**
+ * midnight, so formatting it prints the day that was stored. `new Date(str)`
+ * would yield UTC midnight and print the previous day west of UTC.
+ *
+ * A `Date` passes through; any other string falls back to normal parsing.
+ * Returns null when there is nothing usable to show.
+ */
+export function parseCivilDate(
+  value: Date | string | null | undefined,
+): Date | null {
+  if (value === null || value === undefined) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+
+  const matched = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (matched) {
+    const [, year, month, day] = matched.map(Number);
+    const date = new Date(year, month - 1, day);
+    // Reject overflow such as "2024-13-45", which the Date constructor would
+    // silently roll forward into a different month.
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day
+    ) {
+      return null;
+    }
+    return date;
+  }
+
+  const fallback = new Date(trimmed);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
+/**
 Utility function that processes the values of an object
 
 @param {Object} obj
@@ -421,13 +532,11 @@ export function calculateAge(
   } else if (typeof dateOfBirth === "number") {
     dob = new Date(dateOfBirth);
   } else if (typeof dateOfBirth === "string") {
-    // Check if the string is in "YYYY-MM-DD" format
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
-      dob = new Date(dateOfBirth);
-    } else {
-      // If not in "YYYY-MM-DD" format, try parsing as a regular date string
-      dob = new Date(dateOfBirth);
-    }
+    // A DOB is a civil date; parsed as UTC midnight it would be compared
+    // against a local `now`, putting the age boundary a day out.
+    const parsed = parseCivilDate(dateOfBirth);
+    if (parsed === null) return "";
+    dob = parsed;
   } else {
     return "";
   }

@@ -46,7 +46,9 @@ jest.mock("../../app/store/provider", () => {
       getSnapshot: () => ({
         context: {
           role: Option.some("super_admin"),
-          clinicId: Option.some("clinic-1"),
+          // snake_case, matching the real store. A camelCase key is silently
+          // absent, and Option.getOrNull then throws instead of returning null.
+          clinic_id: Option.some("clinic-1"),
         },
       }),
     },
@@ -174,7 +176,8 @@ function makePatientRecord(
   for (const col of baseColumns) {
     values[col] = fields[col] ?? ""
   }
-  // date_of_birth must be a Date for format() in Patient.DB.register
+  // register accepts date_of_birth as either a "YYYY-MM-DD" string or a Date;
+  // this exercises the Date form.
   if (typeof values["date_of_birth"] === "string" && values["date_of_birth"]) {
     values["date_of_birth"] = new Date(values["date_of_birth"])
   } else if (!values["date_of_birth"]) {

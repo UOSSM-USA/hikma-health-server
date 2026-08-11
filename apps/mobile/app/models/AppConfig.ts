@@ -3,7 +3,7 @@ import { Option } from "effect"
 import AppConfigModel from "@/db/model/AppConfig"
 import database from "@/db"
 import { Q } from "@nozbe/watermelondb"
-import { Logger } from "@hikmahealth/js-utils"
+import { appliesToClinic } from "@/utils/appConfigScope"
 
 namespace AppConfig {
   export type T = {
@@ -66,37 +66,36 @@ namespace AppConfig {
     export type T = AppConfigModel
 
     /**
-     * Given a namespace and key, retrieve the configuration value
+     * Given a namespace and key, retrieve the configuration value that applies
+     * to `clinicId`.
+     *
+     * `clinicId` is required rather than optional so a caller cannot silently
+     * ignore a row's clinic scope. Pass `null` only where the device genuinely
+     * has no clinic selected; a scoped row then will not apply, failing closed.
+     *
+     * Picks the first applicable row rather than taking one and testing it:
+     * `app_config` is `PRIMARY KEY (namespace, key)` today, so there is at most
+     * one, but this keeps working if that widens to allow per-clinic rows.
+     *
      * @param {Namespace} namespace - The namespace of the configuration
      * @param {string} key - The key of the configuration
+     * @param {string | null} clinicId - The device's current clinic
      * @returns {Promise<string | number | boolean | object | Array<any> | null>} - The configuration value
      */
     export const getValue = async (
       namespace: Namespace,
       key: string,
+      clinicId: string | null,
     ): Promise<string | number | boolean | object | Array<any> | null> => {
-      const res = await database
+      const rows = await database
         .get<AppConfigModel>("app_config")
-        .query(Q.where("namespace", namespace), Q.where("key", key), Q.take(1))
+        .query(Q.where("namespace", namespace), Q.where("key", key))
         .fetch()
 
-      await database
-        .get<AppConfigModel>("app_config")
-        .query()
-        .fetchCount()
-        .then((count) => {
-          Logger.log({ count })
-        })
-      Logger.log({ res, namespace, key })
-
-      if (res.length === 0) {
-        return null
-      }
-      const config = res[0]
+      const config = rows.find((row) => appliesToClinic(row.appliesToClinicIds, clinicId))
       if (!config) {
         return null
       }
-      Logger.log({ config })
       return Utils.parseValue(config) || null
     }
   }
@@ -110,7 +109,7 @@ namespace AppConfig {
      * @param {AppConfig.EncodedT} config - The configuration entry
      * @returns {any} - The parsed value
      */
-    export const parseValue = (config: AppConfig.EncodedT): any => {
+    export const parseValue = (config: Pick<AppConfig.EncodedT, "value" | "dataType">): any => {
       if (config.value === null) return null
 
       switch (config.dataType) {

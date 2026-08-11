@@ -221,16 +221,15 @@ export const navData = {
       isActive: true,
       items: [
         {
-          title: "Mobile Apps",
-          url: "/app/settings/register-mobile-app",
-        },
-        {
-          title: "Configuration",
-          url: "/app/settings/configurations",
-        },
-        {
+          // Also carries the QR that points a mobile app at this server.
           title: "Devices",
           url: "/app/settings/devices",
+        },
+        {
+          // Client-app layout editors live under this page rather than as their
+          // own sidebar entries.
+          title: "Configuration",
+          url: "/app/settings/configurations",
         },
         // {
         //   title: "File Storage",

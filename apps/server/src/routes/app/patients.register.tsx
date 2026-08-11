@@ -25,6 +25,7 @@ import {
   type RegistrationFieldView,
 } from "@/components/form-builder/PatientRegistrationFields";
 import { adminMiddleware } from "@/middleware/auth";
+import { civilDateFromLocalDate } from "@/lib/utils";
 import {
   compileRules,
   computedCount,
@@ -260,10 +261,10 @@ function RouteComponent() {
       id: patientId,
       given_name: data.given_name ?? null,
       surname: data.surname ?? null,
-      date_of_birth:
-        data.date_of_birth instanceof Date
-          ? data.date_of_birth.toISOString()
-          : (data.date_of_birth ?? null),
+      // The picker hands us a Date built from local parts, so toISOString()
+      // would move it to the previous day east of UTC — destroying the civil
+      // date before the server ever sees it. Send "YYYY-MM-DD" instead.
+      date_of_birth: civilDateFromLocalDate(data.date_of_birth),
       sex: data.sex ?? null,
       citizenship: data.citizenship ?? null,
       hometown: data.hometown ?? null,

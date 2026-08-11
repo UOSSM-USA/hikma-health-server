@@ -47,7 +47,14 @@ export function useOperationModeInit() {
   useEffect(() => {
     async function init() {
       try {
-        const raw = await AppConfig.DB.getValue(AppConfig.Namespaces.SYSTEM, "operation_mode")
+        // No clinic: this runs at startup, before one is necessarily selected.
+        // operation_mode is global by nature, so a clinic-scoped row
+        // deliberately will not apply and the device stays offline.
+        const raw = await AppConfig.DB.getValue(
+          AppConfig.Namespaces.SYSTEM,
+          "operation_mode",
+          null,
+        )
         const serverConfig: ModeConfig =
           typeof raw === "string" && VALID_MODES.includes(raw as ModeConfig)
             ? (raw as ModeConfig)

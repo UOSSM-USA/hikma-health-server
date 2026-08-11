@@ -22,6 +22,7 @@ import { SelectInput } from "@/components/select-input";
 import { toggleAppointmentStatus } from "@/lib/server-functions/appointments";
 import { toast } from "sonner";
 import { useRouter } from "@tanstack/react-router";
+import { parseCivilDate } from "@/lib/utils";
 import { Logger } from "@hikmahealth/js-utils";
 
 export const Route = createFileRoute("/app/appointments/")({
@@ -66,11 +67,12 @@ function RouteComponent() {
   const { appointments, departmentNames } = Route.useLoaderData();
   const router = useRouter();
 
-  // Function to calculate age from date of birth
+  // The DOB is a civil date, so it is parsed from local parts to match the
+  // local getters below — see `parseCivilDate`.
   const calculateAge = (dateOfBirth: Date | string | null | undefined) => {
-    if (!dateOfBirth) return "N/A";
+    const birthDate = parseCivilDate(dateOfBirth);
+    if (!birthDate) return "N/A";
     const today = new Date();
-    const birthDate = new Date(dateOfBirth);
     let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
 

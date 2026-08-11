@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { Logger } from "@hikmahealth/js-utils";
+import { civilDateFromLocalDate } from "@/lib/utils";
 import Patient from "./patient";
 import PatientAdditionalAttribute from "./patient-additional-attribute";
 import Clinic from "./clinic";
@@ -172,6 +173,73 @@ export const getMaxHistoryDaysSync = (): number | null => {
 
   return days;
 };
+
+/**
+ * Columns holding a *civil date*, which must reach the client as "YYYY-MM-DD"
+ * and never as an instant. Both pull queries are generic `selectAll()`s, so `pg`
+ * hands these over as local-midnight Dates that JSON would serialize through
+ * toISOString(), shifting the day on any server not running on UTC.
+ *
+ * Deliberately narrower than `isDateColumn`, which also covers instants that
+ * SHOULD be sent as ISO strings. The schema's other `date` columns (onset_date,
+ * end_date, batch_expiry_date, …) are civil dates too, but their models type
+ * them as `Date` and mobile expects that shape, so they are a separate change.
+ *
+ * Both pull paths must apply this. The paged one carries a device's first sync,
+ * and a row it delivers unnormalized is never corrected — the ordinary pull only
+ * re-sends rows that change again.
+ */
+export const CIVIL_DATE_COLUMNS_BY_TABLE: ReadonlyMap<
+  string,
+  ReadonlySet<string>
+> = new Map([["patients", new Set(["date_of_birth"])]]);
+
+/**
+ * Rewrite this table's civil-date columns to "YYYY-MM-DD" in place of the Date
+ * objects `pg` produced. Returns the rows unchanged when the table has none, and
+ * tolerates a projection that omits one — the paged pull's `deleted` bucket
+ * selects only (id, deleted_at).
+ */
+export const normalizeCivilDates = <T extends Record<string, any>>(
+  tableName: string,
+  rows: T[],
+): T[] => {
+  const columns = CIVIL_DATE_COLUMNS_BY_TABLE.get(tableName);
+  if (!columns) return rows;
+  return rows.map((row) => {
+    let next: T | null = null;
+    for (const column of columns) {
+      if (!(column in row)) continue;
+      const civil = civilDateFromLocalDate(row[column]);
+      if (civil === row[column]) continue;
+      next ??= { ...row };
+      (next as Record<string, any>)[column] = civil;
+    }
+    return next ?? row;
+  });
+};
+
+/**
+ * Tables replicated in full on every pull instead of as a delta.
+ *
+ * A delta delivers a row exactly once, so a device that misses that window
+ * never sees the row again — a permanent, silent gap. Mobile resolves clinic
+ * references through `findAndObserve`, which throws when the row is absent,
+ * taking down the screen rather than the one row. Re-sending makes any such
+ * loss self-correcting on the next sync, whatever caused it.
+ *
+ * "Full" is still subject to `applyClinicScope` — a hub gets a snapshot of its
+ * own clinics — so this restores a row a device was entitled to and dropped, it
+ * does not widen anyone's entitlement.
+ *
+ * Safe to re-send: mobile never writes clinics (`Clinic` is absent from
+ * `ENTITIES_TO_PULL_FROM_MOBILE`), so a snapshot cannot clobber a local edit.
+ *
+ * Implemented twice: `getFullSnapshot` in sync.ts, the `isSnapshot` branches of
+ * `fetchBucket` in sync-paged.ts. Both, or the guarantee above is false for
+ * whichever path is missed.
+ */
+export const FULL_SNAPSHOT_TABLES: ReadonlySet<string> = new Set(["clinics"]);
 
 // Maps server table names to their clinic column for hub scoping.
 // Tables not listed here have no direct clinic association and sync unfiltered.

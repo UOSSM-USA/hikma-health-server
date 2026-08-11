@@ -3,6 +3,7 @@ import { Pressable, StyleProp, TextStyle, ViewStyle } from "react-native"
 import { withObservables } from "@nozbe/watermelondb/react"
 import { format, isValid } from "date-fns"
 import { LucideTrash2 } from "lucide-react-native"
+import { catchError, of as of$ } from "rxjs"
 
 import { Text } from "@/components/Text"
 import { translate } from "@/i18n/translate"
@@ -40,9 +41,16 @@ export interface PatientVisitItemProps {
   onDelete: (visitId: string) => void
 }
 
+// `visit.clinic` is an immutableRelation, so its observable is a bare
+// findAndObserve(clinic_id) with no null guard: both an absent clinic_id and one
+// pointing at a clinic this device never synced make it error, and
+// withObservables re-throws that during render — taking down the whole screen
+// rather than one row. Test the foreign key, then catch the dangling-id case.
 const enhanceVisitItem = withObservables(["visit"], ({ visit }) => ({
   visit, // shortcut for visit.observe
-  clinic: visit.clinic,
+  clinic: visit.clinicId
+    ? visit.clinic.observe().pipe(catchError(() => of$(null)))
+    : of$(null),
 }))
 
 /** Inner rendering logic shared by both enhanced and plain variants */
@@ -69,9 +77,11 @@ function PatientVisitItemInner({ visit, clinic, onPress, onDelete }: PatientVisi
             borderBottomWidth: 1,
           }}
         />
+        {/* `If` is a component, so this child is built before the condition is
+            read — the access must be safe on its own. */}
         <If condition={!!clinic}>
           <Text>
-            {translate("common:clinic")}: {clinic.name}
+            {translate("common:clinic")}: {clinic?.name}
           </Text>
         </If>
         <If condition={visit.checkInTimestamp && isValid(visit.checkInTimestamp)}>

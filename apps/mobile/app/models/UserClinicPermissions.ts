@@ -519,6 +519,7 @@ namespace UserClinicPermissions {
         (await AppConfig.DB.getValue(
           AppConfig.Namespaces.AUTH,
           "disable-mobile-permissions-checking",
+          Option.getOrNull(user.clinic_id),
         )) || false
 
       /// SUPER ADMIN CAN ACCESS EVERYTHING.

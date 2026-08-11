@@ -37,7 +37,6 @@ import { Route as AppPatientsCustomizeRegistrationFormRouteImport } from './rout
 import { Route as AppPatientsRegisterRouteImport } from './routes/app/patients.register'
 import { Route as AppPrescriptionsIndexRouteImport } from './routes/app/prescriptions.index'
 import { Route as AppReportsIndexRouteImport } from './routes/app/reports/index'
-import { Route as AppSettingsConfigurationsRouteImport } from './routes/app/settings.configurations'
 import { Route as AppSettingsRegisterMobileAppRouteImport } from './routes/app/settings.register-mobile-app'
 import { Route as AppUsersIndexRouteImport } from './routes/app/users.index'
 import { Route as RpcCommandSplatRouteImport } from './routes/rpc.command.$'
@@ -52,6 +51,8 @@ import { Route as AppInventoryDrugCatalogueIndexRouteImport } from './routes/app
 import { Route as AppPrescriptionsEditSplatRouteImport } from './routes/app/prescriptions.edit.$'
 import { Route as AppReportsIdIndexRouteImport } from './routes/app/reports/$id.index'
 import { Route as AppReportsIdEditRouteImport } from './routes/app/reports/$id.edit'
+import { Route as AppSettingsConfigurationsIndexRouteImport } from './routes/app/settings.configurations.index'
+import { Route as AppSettingsConfigurationsPatientViewActionsRouteImport } from './routes/app/settings.configurations.patient-view-actions'
 import { Route as AppSettingsDevicesIndexRouteImport } from './routes/app/settings.devices.index'
 import { Route as AppUsersEditSplatRouteImport } from './routes/app/users.edit.$'
 import { Route as AppUsersManagePermissionsSplatRouteImport } from './routes/app/users.manage-permissions.$'
@@ -201,12 +202,6 @@ const AppReportsIndexRoute = AppReportsIndexRouteImport.update({
   path: '/reports/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppSettingsConfigurationsRoute =
-  AppSettingsConfigurationsRouteImport.update({
-    id: '/settings/configurations',
-    path: '/settings/configurations',
-    getParentRoute: () => AppRoute,
-  } as any)
 const AppSettingsRegisterMobileAppRoute =
   AppSettingsRegisterMobileAppRouteImport.update({
     id: '/settings/register-mobile-app',
@@ -282,6 +277,18 @@ const AppReportsIdEditRoute = AppReportsIdEditRouteImport.update({
   path: '/reports/$id/edit',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSettingsConfigurationsIndexRoute =
+  AppSettingsConfigurationsIndexRouteImport.update({
+    id: '/settings/configurations/',
+    path: '/settings/configurations/',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppSettingsConfigurationsPatientViewActionsRoute =
+  AppSettingsConfigurationsPatientViewActionsRouteImport.update({
+    id: '/settings/configurations/patient-view-actions',
+    path: '/settings/configurations/patient-view-actions',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppSettingsDevicesIndexRoute = AppSettingsDevicesIndexRouteImport.update({
   id: '/settings/devices/',
   path: '/settings/devices/',
@@ -345,7 +352,6 @@ export interface FileRoutesByFullPath {
   '/app/patients/$id': typeof AppPatientsIdRoute
   '/app/patients/customize-registration-form': typeof AppPatientsCustomizeRegistrationFormRoute
   '/app/patients/register': typeof AppPatientsRegisterRoute
-  '/app/settings/configurations': typeof AppSettingsConfigurationsRoute
   '/app/settings/register-mobile-app': typeof AppSettingsRegisterMobileAppRoute
   '/rpc/command/$': typeof RpcCommandSplatRoute
   '/rpc/query/$': typeof RpcQuerySplatRoute
@@ -363,12 +369,14 @@ export interface FileRoutesByFullPath {
   '/app/event-forms/edit/$': typeof AppEventFormsEditSplatRoute
   '/app/prescriptions/edit/$': typeof AppPrescriptionsEditSplatRoute
   '/app/reports/$id/edit': typeof AppReportsIdEditRoute
+  '/app/settings/configurations/patient-view-actions': typeof AppSettingsConfigurationsPatientViewActionsRoute
   '/app/users/edit/$': typeof AppUsersEditSplatRoute
   '/app/users/manage-permissions/$': typeof AppUsersManagePermissionsSplatRoute
   '/app/clinics/$id/': typeof AppClinicsIdIndexRoute
   '/app/inventory/clinic-inventory/': typeof AppInventoryClinicInventoryIndexRoute
   '/app/inventory/drug-catalogue/': typeof AppInventoryDrugCatalogueIndexRoute
   '/app/reports/$id/': typeof AppReportsIdIndexRoute
+  '/app/settings/configurations/': typeof AppSettingsConfigurationsIndexRoute
   '/app/settings/devices/': typeof AppSettingsDevicesIndexRoute
   '/api/events/$eventId/attachments/$resourceId': typeof ApiEventsEventIdAttachmentsResourceIdRoute
   '/app/inventory/drug-catalogue/edit/$': typeof AppInventoryDrugCatalogueEditSplatRoute
@@ -395,7 +403,6 @@ export interface FileRoutesByTo {
   '/app/patients/$id': typeof AppPatientsIdRoute
   '/app/patients/customize-registration-form': typeof AppPatientsCustomizeRegistrationFormRoute
   '/app/patients/register': typeof AppPatientsRegisterRoute
-  '/app/settings/configurations': typeof AppSettingsConfigurationsRoute
   '/app/settings/register-mobile-app': typeof AppSettingsRegisterMobileAppRoute
   '/rpc/command/$': typeof RpcCommandSplatRoute
   '/rpc/query/$': typeof RpcQuerySplatRoute
@@ -413,12 +420,14 @@ export interface FileRoutesByTo {
   '/app/event-forms/edit/$': typeof AppEventFormsEditSplatRoute
   '/app/prescriptions/edit/$': typeof AppPrescriptionsEditSplatRoute
   '/app/reports/$id/edit': typeof AppReportsIdEditRoute
+  '/app/settings/configurations/patient-view-actions': typeof AppSettingsConfigurationsPatientViewActionsRoute
   '/app/users/edit/$': typeof AppUsersEditSplatRoute
   '/app/users/manage-permissions/$': typeof AppUsersManagePermissionsSplatRoute
   '/app/clinics/$id': typeof AppClinicsIdIndexRoute
   '/app/inventory/clinic-inventory': typeof AppInventoryClinicInventoryIndexRoute
   '/app/inventory/drug-catalogue': typeof AppInventoryDrugCatalogueIndexRoute
   '/app/reports/$id': typeof AppReportsIdIndexRoute
+  '/app/settings/configurations': typeof AppSettingsConfigurationsIndexRoute
   '/app/settings/devices': typeof AppSettingsDevicesIndexRoute
   '/api/events/$eventId/attachments/$resourceId': typeof ApiEventsEventIdAttachmentsResourceIdRoute
   '/app/inventory/drug-catalogue/edit/$': typeof AppInventoryDrugCatalogueEditSplatRoute
@@ -448,7 +457,6 @@ export interface FileRoutesById {
   '/app/patients/$id': typeof AppPatientsIdRoute
   '/app/patients/customize-registration-form': typeof AppPatientsCustomizeRegistrationFormRoute
   '/app/patients/register': typeof AppPatientsRegisterRoute
-  '/app/settings/configurations': typeof AppSettingsConfigurationsRoute
   '/app/settings/register-mobile-app': typeof AppSettingsRegisterMobileAppRoute
   '/rpc/command/$': typeof RpcCommandSplatRoute
   '/rpc/query/$': typeof RpcQuerySplatRoute
@@ -466,12 +474,14 @@ export interface FileRoutesById {
   '/app/event-forms/edit/$': typeof AppEventFormsEditSplatRoute
   '/app/prescriptions/edit/$': typeof AppPrescriptionsEditSplatRoute
   '/app/reports/$id/edit': typeof AppReportsIdEditRoute
+  '/app/settings/configurations/patient-view-actions': typeof AppSettingsConfigurationsPatientViewActionsRoute
   '/app/users/edit/$': typeof AppUsersEditSplatRoute
   '/app/users/manage-permissions/$': typeof AppUsersManagePermissionsSplatRoute
   '/app/clinics/$id/': typeof AppClinicsIdIndexRoute
   '/app/inventory/clinic-inventory/': typeof AppInventoryClinicInventoryIndexRoute
   '/app/inventory/drug-catalogue/': typeof AppInventoryDrugCatalogueIndexRoute
   '/app/reports/$id/': typeof AppReportsIdIndexRoute
+  '/app/settings/configurations/': typeof AppSettingsConfigurationsIndexRoute
   '/app/settings/devices/': typeof AppSettingsDevicesIndexRoute
   '/api/events/$eventId/attachments/$resourceId': typeof ApiEventsEventIdAttachmentsResourceIdRoute
   '/app/inventory/drug-catalogue/edit/$': typeof AppInventoryDrugCatalogueEditSplatRoute
@@ -502,7 +512,6 @@ export interface FileRouteTypes {
     | '/app/patients/$id'
     | '/app/patients/customize-registration-form'
     | '/app/patients/register'
-    | '/app/settings/configurations'
     | '/app/settings/register-mobile-app'
     | '/rpc/command/$'
     | '/rpc/query/$'
@@ -520,12 +529,14 @@ export interface FileRouteTypes {
     | '/app/event-forms/edit/$'
     | '/app/prescriptions/edit/$'
     | '/app/reports/$id/edit'
+    | '/app/settings/configurations/patient-view-actions'
     | '/app/users/edit/$'
     | '/app/users/manage-permissions/$'
     | '/app/clinics/$id/'
     | '/app/inventory/clinic-inventory/'
     | '/app/inventory/drug-catalogue/'
     | '/app/reports/$id/'
+    | '/app/settings/configurations/'
     | '/app/settings/devices/'
     | '/api/events/$eventId/attachments/$resourceId'
     | '/app/inventory/drug-catalogue/edit/$'
@@ -552,7 +563,6 @@ export interface FileRouteTypes {
     | '/app/patients/$id'
     | '/app/patients/customize-registration-form'
     | '/app/patients/register'
-    | '/app/settings/configurations'
     | '/app/settings/register-mobile-app'
     | '/rpc/command/$'
     | '/rpc/query/$'
@@ -570,12 +580,14 @@ export interface FileRouteTypes {
     | '/app/event-forms/edit/$'
     | '/app/prescriptions/edit/$'
     | '/app/reports/$id/edit'
+    | '/app/settings/configurations/patient-view-actions'
     | '/app/users/edit/$'
     | '/app/users/manage-permissions/$'
     | '/app/clinics/$id'
     | '/app/inventory/clinic-inventory'
     | '/app/inventory/drug-catalogue'
     | '/app/reports/$id'
+    | '/app/settings/configurations'
     | '/app/settings/devices'
     | '/api/events/$eventId/attachments/$resourceId'
     | '/app/inventory/drug-catalogue/edit/$'
@@ -604,7 +616,6 @@ export interface FileRouteTypes {
     | '/app/patients/$id'
     | '/app/patients/customize-registration-form'
     | '/app/patients/register'
-    | '/app/settings/configurations'
     | '/app/settings/register-mobile-app'
     | '/rpc/command/$'
     | '/rpc/query/$'
@@ -622,12 +633,14 @@ export interface FileRouteTypes {
     | '/app/event-forms/edit/$'
     | '/app/prescriptions/edit/$'
     | '/app/reports/$id/edit'
+    | '/app/settings/configurations/patient-view-actions'
     | '/app/users/edit/$'
     | '/app/users/manage-permissions/$'
     | '/app/clinics/$id/'
     | '/app/inventory/clinic-inventory/'
     | '/app/inventory/drug-catalogue/'
     | '/app/reports/$id/'
+    | '/app/settings/configurations/'
     | '/app/settings/devices/'
     | '/api/events/$eventId/attachments/$resourceId'
     | '/app/inventory/drug-catalogue/edit/$'
@@ -852,13 +865,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppReportsIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/settings/configurations': {
-      id: '/app/settings/configurations'
-      path: '/settings/configurations'
-      fullPath: '/app/settings/configurations'
-      preLoaderRoute: typeof AppSettingsConfigurationsRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/app/settings/register-mobile-app': {
       id: '/app/settings/register-mobile-app'
       path: '/settings/register-mobile-app'
@@ -957,6 +963,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppReportsIdEditRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/settings/configurations/': {
+      id: '/app/settings/configurations/'
+      path: '/settings/configurations'
+      fullPath: '/app/settings/configurations/'
+      preLoaderRoute: typeof AppSettingsConfigurationsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/settings/configurations/patient-view-actions': {
+      id: '/app/settings/configurations/patient-view-actions'
+      path: '/settings/configurations/patient-view-actions'
+      fullPath: '/app/settings/configurations/patient-view-actions'
+      preLoaderRoute: typeof AppSettingsConfigurationsPatientViewActionsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/settings/devices/': {
       id: '/app/settings/devices/'
       path: '/settings/devices'
@@ -1016,7 +1036,6 @@ interface AppRouteChildren {
   AppPatientsIdRoute: typeof AppPatientsIdRoute
   AppPatientsCustomizeRegistrationFormRoute: typeof AppPatientsCustomizeRegistrationFormRoute
   AppPatientsRegisterRoute: typeof AppPatientsRegisterRoute
-  AppSettingsConfigurationsRoute: typeof AppSettingsConfigurationsRoute
   AppSettingsRegisterMobileAppRoute: typeof AppSettingsRegisterMobileAppRoute
   AppAppointmentsIndexRoute: typeof AppAppointmentsIndexRoute
   AppClinicsIndexRoute: typeof AppClinicsIndexRoute
@@ -1032,12 +1051,14 @@ interface AppRouteChildren {
   AppEventFormsEditSplatRoute: typeof AppEventFormsEditSplatRoute
   AppPrescriptionsEditSplatRoute: typeof AppPrescriptionsEditSplatRoute
   AppReportsIdEditRoute: typeof AppReportsIdEditRoute
+  AppSettingsConfigurationsPatientViewActionsRoute: typeof AppSettingsConfigurationsPatientViewActionsRoute
   AppUsersEditSplatRoute: typeof AppUsersEditSplatRoute
   AppUsersManagePermissionsSplatRoute: typeof AppUsersManagePermissionsSplatRoute
   AppClinicsIdIndexRoute: typeof AppClinicsIdIndexRoute
   AppInventoryClinicInventoryIndexRoute: typeof AppInventoryClinicInventoryIndexRoute
   AppInventoryDrugCatalogueIndexRoute: typeof AppInventoryDrugCatalogueIndexRoute
   AppReportsIdIndexRoute: typeof AppReportsIdIndexRoute
+  AppSettingsConfigurationsIndexRoute: typeof AppSettingsConfigurationsIndexRoute
   AppSettingsDevicesIndexRoute: typeof AppSettingsDevicesIndexRoute
   AppInventoryDrugCatalogueEditSplatRoute: typeof AppInventoryDrugCatalogueEditSplatRoute
   AppSettingsDevicesEditSplatRoute: typeof AppSettingsDevicesEditSplatRoute
@@ -1052,7 +1073,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppPatientsCustomizeRegistrationFormRoute:
     AppPatientsCustomizeRegistrationFormRoute,
   AppPatientsRegisterRoute: AppPatientsRegisterRoute,
-  AppSettingsConfigurationsRoute: AppSettingsConfigurationsRoute,
   AppSettingsRegisterMobileAppRoute: AppSettingsRegisterMobileAppRoute,
   AppAppointmentsIndexRoute: AppAppointmentsIndexRoute,
   AppClinicsIndexRoute: AppClinicsIndexRoute,
@@ -1068,12 +1088,15 @@ const AppRouteChildren: AppRouteChildren = {
   AppEventFormsEditSplatRoute: AppEventFormsEditSplatRoute,
   AppPrescriptionsEditSplatRoute: AppPrescriptionsEditSplatRoute,
   AppReportsIdEditRoute: AppReportsIdEditRoute,
+  AppSettingsConfigurationsPatientViewActionsRoute:
+    AppSettingsConfigurationsPatientViewActionsRoute,
   AppUsersEditSplatRoute: AppUsersEditSplatRoute,
   AppUsersManagePermissionsSplatRoute: AppUsersManagePermissionsSplatRoute,
   AppClinicsIdIndexRoute: AppClinicsIdIndexRoute,
   AppInventoryClinicInventoryIndexRoute: AppInventoryClinicInventoryIndexRoute,
   AppInventoryDrugCatalogueIndexRoute: AppInventoryDrugCatalogueIndexRoute,
   AppReportsIdIndexRoute: AppReportsIdIndexRoute,
+  AppSettingsConfigurationsIndexRoute: AppSettingsConfigurationsIndexRoute,
   AppSettingsDevicesIndexRoute: AppSettingsDevicesIndexRoute,
   AppInventoryDrugCatalogueEditSplatRoute:
     AppInventoryDrugCatalogueEditSplatRoute,

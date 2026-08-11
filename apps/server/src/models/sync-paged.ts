@@ -6,6 +6,8 @@ import type { RequestCaller } from "@/types";
 import {
   resolveEntitiesForPeer,
   applyClinicScope,
+  FULL_SNAPSHOT_TABLES,
+  normalizeCivilDates,
   type SyncEntity,
 } from "./sync-shared";
 
@@ -301,8 +303,11 @@ async function fetchAuxTables(args: {
 
   for (const { table, createdCol, updatedCol } of AUX_TABLES) {
     // `applyClinicScope` filters user_clinic_permissions by its clinic_id and
-    // leaves app_config untouched — it has no clinic association. Same
-    // treatment the ordinary pull gives them.
+    // leaves app_config untouched, as the ordinary pull does. app_config now has
+    // a `clinic_ids` column but is deliberately absent from
+    // `CLINIC_ARRAY_TABLES`: its semantics invert event_forms' (null = all
+    // clinics, [] = none), so that jsonb branch would read "scoped to no clinic"
+    // as "global". Devices scope these rows on read instead.
     const created = (await applyClinicScope(
       db
         .selectFrom(table as any)
@@ -326,7 +331,11 @@ async function fetchAuxTables(args: {
 
     if (created.length === 0 && updated.length === 0) continue;
 
-    changes[table] = { created, updated, deleted: [] };
+    changes[table] = {
+      created: normalizeCivilDates(table, created),
+      updated: normalizeCivilDates(table, updated),
+      deleted: [],
+    };
     counts[table] = created.length + updated.length;
   }
 
@@ -360,6 +369,19 @@ async function fetchBucket(args: {
   const from = new Date(since);
   const upper = new Date(ts);
 
+  /**
+   * A snapshot table ignores `since`: live rows ride `created` and tombstones
+   * ride `deleted`, leaving `updated` nothing to carry. Splitting across created
+   * and updated would double up, since without a lower bound a row modified
+   * after creation satisfies both predicates.
+   *
+   * `created`, not the ordinary pull's `updated`: mobile applies these pages
+   * with `sendCreatedAsUpdated: true` (cloudManualSync.ts), which is what
+   * suppresses the per-record logError for rows the device already holds.
+   */
+  const isSnapshot = FULL_SNAPSHOT_TABLES.has(table);
+  if (isSnapshot && bucket === "updated") return [];
+
   // The deleted bucket selects only (id, deleted_at) — a tombstone needs no
   // payload, and selecting all columns would blow the byte budget for nothing.
   // Build it separately rather than calling selectAll() then select().
@@ -369,10 +391,18 @@ async function fetchBucket(args: {
     q = db
       .selectFrom(table as any)
       .selectAll()
-      .where("server_created_at", ">=", from)
       .where("server_created_at", "<=", upper)
-      .where("deleted_at", "is", null)
-      .where("is_deleted", "=", false);
+      .where("deleted_at", "is", null);
+    if (isSnapshot) {
+      // Null-safe, matching `getFullSnapshot`: `is_deleted` is nullable, and
+      // `= false` skips NULL, which would put such a row in neither list. Delta
+      // tables keep `= false`, long-standing behaviour left alone here.
+      q = q.where("is_deleted", "is not", true);
+    } else {
+      q = q
+        .where("is_deleted", "=", false)
+        .where("server_created_at", ">=", from);
+    }
   } else if (bucket === "updated") {
     q = db
       .selectFrom(table as any)
@@ -392,9 +422,19 @@ async function fetchBucket(args: {
     q = db
       .selectFrom(table as any)
       .select(["id", "deleted_at"] as any)
-      .where("deleted_at", ">", from)
-      .where("deleted_at", "<=", upper)
-      .where("is_deleted", "=", true);
+      .where("deleted_at", "<=", upper);
+    if (isSnapshot) {
+      // Every tombstone, not just those since `from`, and keyed on `deleted_at`
+      // alone — `getFullSnapshot` treats either marker as removal.
+      //
+      // It does catch one shape this cannot: `is_deleted` set with no
+      // `deleted_at`. That is the keyset's sort column, and a NULL has no cursor
+      // position. Ordinary delta sync misses it for the same reason, so it is a
+      // pre-existing data defect, not a gap introduced here.
+      q = q.where("deleted_at", "is not", null);
+    } else {
+      q = q.where("deleted_at", ">", from).where("is_deleted", "=", true);
+    }
   }
 
   // The sort value again, as microsecond-precision text. See SORT_KEY_ALIAS —
@@ -422,7 +462,11 @@ async function fetchBucket(args: {
     .orderBy("id")
     .limit(limit);
 
-  return (await q.execute()) as Record<string, any>[];
+  // Ahead of `assemblePage`, so the byte budget measures what is actually sent.
+  // A civil date left as a Date reaches the client through superjson still typed
+  // as one, and mobile's `updateDates` reads it with getUTC* getters — a day
+  // early on any server east of UTC.
+  return normalizeCivilDates(table, (await q.execute()) as Record<string, any>[]);
 }
 
 /**

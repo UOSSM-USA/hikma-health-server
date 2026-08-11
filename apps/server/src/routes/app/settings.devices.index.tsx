@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
 import { Logger } from "@hikmahealth/js-utils";
+import { ConnectMobileAppCard } from "@/components/connect-mobile-app-card";
 
 // ── Server functions ──────────────────────────────────────────────
 
@@ -132,12 +133,17 @@ function RouteComponent() {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
+  // The QR sits above the gate on purpose: scanning it only writes a peer URL
+  // on the phone and grants nothing server-side, and it was previously reachable
+  // on an ungated route. Gating it here would quietly take the capability away
+  // from every non-super-admin.
   if (!isSuperAdmin) {
     return (
       <div className="container py-6">
+        <h1 className="text-2xl font-bold mb-6">Devices</h1>
+        <ConnectMobileAppCard />
         <p className="text-muted-foreground">
-          You are not authorized to view this page. Only Super Admins can manage
-          devices.
+          Only Super Admins can view and manage registered devices.
         </p>
       </div>
     );
@@ -196,6 +202,8 @@ function RouteComponent() {
           </Link>
         </Button>
       </div>
+
+      <ConnectMobileAppCard />
 
       <div className="rounded-md border">
         <Table>

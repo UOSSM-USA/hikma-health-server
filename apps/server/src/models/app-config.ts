@@ -29,6 +29,7 @@ namespace AppConfig {
     updated_at: Schema.DateFromSelf,
     last_modified: Schema.DateFromSelf,
     last_modified_by: Schema.NullOr(Schema.String),
+    clinic_ids: Schema.NullOr(Schema.Array(Schema.String)),
   });
 
   /** Common configuration namespaces */
@@ -69,6 +70,7 @@ namespace AppConfig {
       updated_at: "updated_at",
       last_modified: "last_modified",
       last_modified_by: "last_modified_by",
+      clinic_ids: "clinic_ids",
     };
 
     export interface T {
@@ -81,6 +83,11 @@ namespace AppConfig {
       updated_at: Generated<Date>;
       last_modified: Generated<Date>;
       last_modified_by: string | null;
+      /**
+       * Not `JSONColumnType<string[] | null>`, which pins the write types at
+       * `string` and so rejects the SQL NULL this table uses for "all clinics".
+       */
+      clinic_ids: ColumnType<string[] | null, string | null, string | null>;
     }
 
     export type AppConfigs = Selectable<T>;
@@ -153,6 +160,11 @@ namespace AppConfig {
      * @param {string | null} value - The value to set
      * @param {AppConfig.DataTypeT} dataType - The data type of the value
      * @param {string | null} updatedBy - The ID of the user making the update
+     * @param {string[] | null | undefined} clinicIds - The clinic scope. An
+     *   array scopes the row to those clinics, `null` to all clinics, and
+     *   omitting it leaves an existing row's scope untouched. Callers that do
+     *   not manage scope must omit it rather than pass `null`, or every write
+     *   through them silently unscopes the row.
      * @returns {Promise<AppConfig.EncodedT>} - The created/updated configuration
      */
     export const set = createServerOnlyFn(
@@ -160,10 +172,13 @@ namespace AppConfig {
         namespace: string,
         key: string,
         displayName: string | null,
-        value: string | null | number | boolean,
+        value: string | null | number | boolean | unknown[],
         dataType: AppConfig.DataTypeT,
         updatedBy: string | null = null,
+        clinicIds?: string[] | null,
       ): Promise<AppConfig.EncodedT> => {
+        const managesScope = clinicIds !== undefined;
+
         const result = await db
           .insertInto(AppConfig.Table.name)
           .values({
@@ -172,6 +187,13 @@ namespace AppConfig {
             display_name: displayName,
             value: Utils.serializeValue(value, dataType),
             data_type: dataType,
+            // SQL NULL for "all clinics", an explicit ::jsonb cast otherwise.
+            // Never the bare array — node-pg renders it as a Postgres array
+            // literal ({a,b}), not JSON.
+            clinic_ids:
+              clinicIds === undefined || clinicIds === null
+                ? null
+                : sql`${JSON.stringify(clinicIds)}::jsonb`,
             last_modified_by: updatedBy,
             created_at: sql`now()::timestamp with time zone`,
             updated_at: sql`now()::timestamp with time zone`,
@@ -182,6 +204,12 @@ namespace AppConfig {
               display_name: (eb) => eb.ref("excluded.display_name"),
               value: (eb) => eb.ref("excluded.value"),
               data_type: (eb) => eb.ref("excluded.data_type"),
+              // Only when the caller manages scope; updating unconditionally
+              // would let a scope-unaware caller reset an existing row to "all
+              // clinics" on every ordinary value edit.
+              ...(managesScope
+                ? { clinic_ids: sql.ref("excluded.clinic_ids") }
+                : {}),
               last_modified_by: updatedBy,
               updated_at: sql`now()::timestamp with time zone`,
               last_modified: sql`now()::timestamp with time zone`,

@@ -37,6 +37,11 @@ export function localeDate(
     dateObj = new Date(date)
   } else if (typeof date === "string" && /^-?\d+$/.test(date.trim())) {
     dateObj = new Date(Number(date))
+  } else if (typeof date === "string") {
+    // A bare "YYYY-MM-DD" is a civil date; `new Date` would read it as UTC
+    // midnight and print the previous day west of UTC. Other strings are
+    // unaffected.
+    dateObj = parseYYYYMMDD(date, null) ?? new Date(date)
   } else {
     dateObj = new Date(date)
   }
@@ -64,13 +69,9 @@ export function calculateAge(dateOfBirth: Date | string | number | null): string
   } else if (typeof dateOfBirth === "number") {
     dob = new Date(dateOfBirth)
   } else if (typeof dateOfBirth === "string") {
-    // Check if the string is in "YYYY-MM-DD" format
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
-      dob = new Date(dateOfBirth)
-    } else {
-      // If not in "YYYY-MM-DD" format, try parsing as a regular date string
-      dob = new Date(dateOfBirth)
-    }
+    // A DOB is a civil date; parsed as UTC midnight it would be compared
+    // against a local `now`, putting the age boundary a day out west of UTC.
+    dob = parseYYYYMMDD(dateOfBirth, null) ?? new Date(dateOfBirth)
   } else {
     return ""
   }

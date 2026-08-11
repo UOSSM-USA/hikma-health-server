@@ -314,6 +314,9 @@ const appConfigSchema = tableSchema({
     { name: "last_modified", type: "number" },
     { name: "last_modified_by", type: "string", isOptional: true },
     { name: "display_name", type: "string", isOptional: true },
+
+    // V11 — see db/model/AppConfig.ts for the null/[]/[ids] semantics
+    { name: "clinic_ids", type: "string", isOptional: true },
   ],
 })
 
@@ -515,7 +518,7 @@ export const peersSchema = tableSchema({
 })
 
 export default appSchema({
-  version: 10, // 🔥 IMPORTANT!! 🔥 when migrating dont forget to change this number
+  version: 11, // 🔥 IMPORTANT!! 🔥 when migrating dont forget to change this number
   tables: [
     patientSchema,
     clinicSchema,

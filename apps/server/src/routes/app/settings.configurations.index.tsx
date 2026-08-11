@@ -16,7 +16,8 @@ import { permissionsMiddleware, superAdminMiddleware } from "@/middleware/auth";
 import AppConfig from "@/models/app-config";
 import ServerVariable from "@/models/server_variable";
 import User from "@/models/user";
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { ChevronRight } from "lucide-react";
 import { createServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -87,7 +88,7 @@ const upsertServerVariable = createServerFn({ method: "POST" })
     return await ServerVariable.update(data);
   });
 
-export const Route = createFileRoute("/app/settings/configurations")({
+export const Route = createFileRoute("/app/settings/configurations/")({
   component: RouteComponent,
   loader: async ({ params }) => {
     const [
@@ -452,6 +453,23 @@ function RouteComponent() {
               { value: "user_choice", label: "User Choice" },
             ]}
           />
+        </div>
+
+        <div className="flex flex-col gap-4 pt-4 border-t">
+          <h2 className="text-lg font-semibold">Client App Layout</h2>
+          <div className="text-sm text-muted-foreground">
+            Control what clinicians see, and in what order, inside the mobile
+            app. Changes reach devices on their next sync.
+          </div>
+
+          <div>
+            <Button asChild variant="outline">
+              <Link to="/app/settings/configurations/patient-view-actions">
+                Patient view actions
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <div className="flex flex-col gap-4 pt-4 border-t">

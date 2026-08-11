@@ -107,6 +107,46 @@ describe("Clinic.resolveClinicIds", () => {
   })
 })
 
+describe("Clinic.resolveClinicIdConstraint", () => {
+  it("applies no constraint when nothing is selected", () => {
+    expect(
+      Clinic.resolveClinicIdConstraint(CLINICS, { country: "", city: "", clinicId: "" }),
+    ).toBeNull()
+  })
+
+  it("constrains to nothing when a region has no clinics", () => {
+    // Distinct from the unselected case above: a nullable clinic column keeps
+    // its NULL rows when unconstrained and drops them when constrained.
+    expect(
+      Clinic.resolveClinicIdConstraint(CLINICS, { country: "Tanzania", city: "", clinicId: "" }),
+    ).toEqual([])
+  })
+
+  it("constrains to the clinics of the selected country", () => {
+    expect(
+      Clinic.resolveClinicIdConstraint(CLINICS, { country: "Kenya", city: "", clinicId: "" }),
+    ).toEqual(["a", "b", "c", "g"])
+  })
+
+  it("constrains to the clinics of the selected city", () => {
+    expect(
+      Clinic.resolveClinicIdConstraint(CLINICS, { country: "", city: "Mombasa", clinicId: "" }),
+    ).toEqual(["c"])
+  })
+
+  it("lets a specific clinic win over its region", () => {
+    expect(
+      Clinic.resolveClinicIdConstraint(CLINICS, { country: "Kenya", city: "", clinicId: "c" }),
+    ).toEqual(["c"])
+  })
+
+  it("constrains to the selected clinic even when the clinic list has not loaded", () => {
+    expect(Clinic.resolveClinicIdConstraint([], { country: "", city: "", clinicId: "a" })).toEqual([
+      "a",
+    ])
+  })
+})
+
 describe("Clinic.pruneLocationSelection", () => {
   it("leaves a consistent selection alone", () => {
     const selection = { country: "Kenya", city: "Nairobi", clinicId: "a" }

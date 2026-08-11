@@ -12,6 +12,7 @@ import PatientAdditionalAttribute from "@/db/model/PatientAdditionalAttribute"
 import { RegistrationFormField } from "@/db/model/PatientRegistrationForm"
 import VisitModel from "@/db/model/Visit"
 import { providerStore } from "@/store/provider"
+import { toDateSafe } from "@/utils/date"
 
 import Event from "./Event"
 import PatientRegistrationForm from "./PatientRegistrationForm"
@@ -454,8 +455,11 @@ namespace Patient {
         newPatient.photoUrl = getPatientFieldByName(patientRecord, "photo_url", "") || ""
         newPatient.camp = getPatientFieldByName(patientRecord, "camp", "") || ""
         newPatient.hometown = getPatientFieldByName(patientRecord, "hometown", "") || ""
+        // The form hands this over as either a "YYYY-MM-DD" string or a Date.
+        // `format` resolves a string via `new Date(str)` — UTC midnight — then
+        // prints it locally, losing a day west of UTC; toDateSafe does not.
         newPatient.dateOfBirth = format(
-          getPatientFieldByName(patientRecord, "date_of_birth", new Date()) || new Date(),
+          toDateSafe(getPatientFieldByName(patientRecord, "date_of_birth", new Date()), new Date()),
           "yyyy-MM-dd",
         )
         newPatient.additionalData = getPatientFieldByName(

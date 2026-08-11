@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { isValid, startOfDay } from "date-fns"
 import { useDebounceValue } from "usehooks-ts"
 
 import database from "@/db"
 import PrescriptionModel from "@/db/model/Prescription"
+import Clinic from "@/models/Clinic"
 import Prescription from "@/models/Prescription"
 import { Logger } from "@hikmahealth/js-utils"
 
@@ -12,21 +13,26 @@ type ISOStringDate = string
 export type PrescriptionsFilters = {
   status: Prescription.Status[]
   date: Date
-  clinicId: string | null
+  clinicId: string
+  country: string
+  city: string
   searchQuery: string
 }
 
 const initialFilters: PrescriptionsFilters = {
   status: ["pending"],
   date: startOfDay(new Date()),
-  clinicId: null,
+  clinicId: "",
+  country: "",
+  city: "",
   searchQuery: "",
 }
 
 const PAGE_SIZE = 50
 
 export function useDBPrescriptionsFilter(
-  clinicId: string | null,
+  clinicId: string,
+  clinics: readonly Clinic.LocationFields[],
   date?: ISOStringDate,
 ): {
   filters: PrescriptionsFilters
@@ -58,9 +64,23 @@ export function useDBPrescriptionsFilter(
   // Extract date string for dependency array
   const dateString = filters.date.toISOString()
 
+  const clinicIds = useMemo(
+    () =>
+      Clinic.resolveClinicIdConstraint(clinics, {
+        country: filters.country,
+        city: filters.city,
+        clinicId: filters.clinicId,
+      }),
+    [clinics, filters.country, filters.city, filters.clinicId],
+  )
+  // A comparable stand-in for the clinic, country and city filters together.
+  // "all" rather than "" so an unset selection stays distinct from one that
+  // matches no clinic.
+  const clinicIdsKey = clinicIds === null ? "all" : clinicIds.join(",")
+
   useEffect(() => {
     Logger.log("useDBPrescriptionsFilter useEffect called")
-    const { status, date, clinicId } = filters
+    const { status, date } = filters
     setLoading(true)
 
     // Prepare status filter - handle empty array case for "all"
@@ -69,7 +89,7 @@ export function useDBPrescriptionsFilter(
     // Build the conditions using the helper function
     const conditions = Prescription.DB.createSearchQueryConditions(
       debouncedSearchQuery,
-      clinicId,
+      clinicIds,
       statusFilter,
       date,
       pagination,
@@ -90,7 +110,7 @@ export function useDBPrescriptionsFilter(
       sub.unsubscribe()
     }
   }, [
-    filters.clinicId,
+    clinicIdsKey,
     filters.status,
     dateString,
     debouncedSearchQuery,
@@ -99,17 +119,28 @@ export function useDBPrescriptionsFilter(
   ])
 
   const handleFiltersChange = (newFilters: Partial<PrescriptionsFilters>) => {
-    // Reset pagination when filters change
-    if (
-      newFilters.status !== undefined ||
-      newFilters.clinicId !== undefined ||
-      newFilters.date !== undefined ||
-      newFilters.searchQuery !== undefined
-    ) {
-      setPagination({ offset: 0, limit: PAGE_SIZE })
-    }
+    setPagination({ offset: 0, limit: PAGE_SIZE })
 
-    setFilters((prev) => ({ ...prev, ...newFilters }))
+    // Prune only on a location change. On every change it would clear a clinic
+    // the user never chose to clear: the provider's own clinic is absent from
+    // `clinics` while archived or still syncing, so pruning would drop it,
+    // leaving no constraint at all and widening the list to every clinic.
+    const touchesLocation =
+      newFilters.country !== undefined ||
+      newFilters.city !== undefined ||
+      newFilters.clinicId !== undefined
+
+    setFilters((prev) => {
+      const next = { ...prev, ...newFilters }
+      if (!touchesLocation) return next
+
+      const location = Clinic.pruneLocationSelection(clinics, {
+        country: next.country,
+        city: next.city,
+        clinicId: next.clinicId,
+      })
+      return { ...next, ...location }
+    })
   }
 
   const clearFilters = () => {

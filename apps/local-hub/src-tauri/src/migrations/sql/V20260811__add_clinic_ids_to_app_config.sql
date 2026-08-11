@@ -1,0 +1,11 @@
+-- Add the clinic scope column mirrored from the cloud's app_config.clinic_ids.
+-- Without it, cloud_sync's merge silently drops the column (it filters incoming
+-- records against PRAGMA table_info), so devices behind a hub would never
+-- receive a config row's scope.
+--
+-- TEXT holds the JSON array, matching event_forms.clinic_ids. json_value_to_sql
+-- renders a JSON array as its text form and a JSON null as SQL NULL.
+--
+-- NULL means the row applies to ALL clinics; an empty array means NO clinic.
+-- This is the INVERSE of event_forms.clinic_ids, where empty means all clinics.
+ALTER TABLE app_config ADD COLUMN clinic_ids TEXT;

@@ -37,21 +37,24 @@ export function usePermissionGuard() {
   const [isLoading, setIsLoading] = useState(true)
   const [isPermissionsDisabled, setIsPermissionsDisabled] = useState(false)
 
-  // Load the global disable toggle once
+  // Reload the disable toggle whenever the clinic changes — the config row can
+  // be scoped to specific clinics.
   useEffect(() => {
     let cancelled = false
-    AppConfig.DB.getValue(AppConfig.Namespaces.AUTH, "disable-mobile-permissions-checking").then(
-      (value) => {
-        if (!cancelled) {
-          const disabled = value === true || value === "true"
-          setIsPermissionsDisabled(disabled)
-        }
-      },
-    )
+    AppConfig.DB.getValue(
+      AppConfig.Namespaces.AUTH,
+      "disable-mobile-permissions-checking",
+      clinicId,
+    ).then((value) => {
+      if (!cancelled) {
+        const disabled = value === true || value === "true"
+        setIsPermissionsDisabled(disabled)
+      }
+    })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [clinicId])
 
   // Subscribe to live permission updates
   useEffect(() => {

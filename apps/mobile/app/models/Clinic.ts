@@ -79,6 +79,10 @@ namespace Clinic {
   /**
    * A specific clinic wins over its region, so a selected clinic still resolves
    * correctly before the clinic list has loaded.
+   *
+   * An empty result means "no clinic matches" — callers narrow to it rather
+   * than ignoring it. Where the filtered column is nullable, use
+   * `resolveClinicIdConstraint` instead.
    */
   export const resolveClinicIds = (
     clinics: readonly LocationFields[],
@@ -86,6 +90,23 @@ namespace Clinic {
   ): string[] => {
     if (selection.clinicId) return [selection.clinicId]
     return clinicsIn(clinics, selection.country, selection.city).map((clinic) => clinic.id)
+  }
+
+  /**
+   * The same resolution as `resolveClinicIds`, but returns `null` when the
+   * selection is entirely unset, meaning the caller should apply no clinic
+   * constraint at all.
+   *
+   * The distinction matters for nullable clinic columns: `IN` never matches
+   * NULL, so constraining to every known clinic id is not equivalent to not
+   * constraining — it silently hides every row that has no clinic.
+   */
+  export const resolveClinicIdConstraint = (
+    clinics: readonly LocationFields[],
+    selection: LocationSelection,
+  ): string[] | null => {
+    if (!selection.clinicId && !selection.country && !selection.city) return null
+    return resolveClinicIds(clinics, selection)
   }
 
   /**

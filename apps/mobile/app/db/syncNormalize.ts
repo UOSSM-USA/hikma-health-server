@@ -166,6 +166,10 @@ export const updateDates = (changes: SyncDatabaseChangeSet): void => {
         if (record.metadata) record.metadata = safeStringify(record.metadata, "{}")
         if (record.form_fields) record.form_fields = safeStringify(record.form_fields, "[]")
         if (record.translations) record.translations = safeStringify(record.translations, "[]")
+        // The falsy guard is load-bearing for app_config.clinic_ids: it lets
+        // null survive as null, meaning "applies to all clinics". Widening it to
+        // `!== undefined` would rewrite that to "[]" — "applies to no clinic" —
+        // disabling every global config row.
         if (record.clinic_ids) record.clinic_ids = safeStringify(record.clinic_ids, "[]")
         if (record.form_data) record.form_data = safeStringify(record.form_data, "[]")
         if (record.fields) record.fields = safeStringify(record.fields, "[]")

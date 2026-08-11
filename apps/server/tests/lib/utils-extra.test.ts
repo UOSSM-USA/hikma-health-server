@@ -143,8 +143,10 @@ describe("orderedList", () => {
 describe("calculateAge", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    // Pin "now" to 2025-06-15T00:00:00Z for deterministic age calculations
-    vi.setSystemTime(new Date("2025-06-15T00:00:00Z"));
+    // Local midnight, not a UTC instant: these cases are stated in civil terms
+    // ("born yesterday"), so today must actually BE June 15 in the runner's
+    // timezone.
+    vi.setSystemTime(new Date(2025, 5, 15));
   });
 
   afterEach(() => {
@@ -166,7 +168,8 @@ describe("calculateAge", () => {
   });
 
   it("calculates age from a Date object", () => {
-    const dob = new Date("1990-06-15T00:00:00Z");
+    // Local parts, so "exactly 35 years before now" holds in every timezone.
+    const dob = new Date(1990, 5, 15);
     const result = calculateAge(dob);
     expect(result).toContain("35 year");
   });
@@ -196,8 +199,9 @@ describe("calculateAge", () => {
   });
 
   it("handles timestamp numbers", () => {
-    // Jan 1, 2000 00:00:00 UTC
-    const result = calculateAge(946684800000);
+    // Jan 1, 2000 local midnight as epoch ms, so the 25-year gap to the pinned
+    // "now" is exact in every timezone.
+    const result = calculateAge(new Date(2000, 0, 1).getTime());
     expect(result).toContain("25 year");
   });
 

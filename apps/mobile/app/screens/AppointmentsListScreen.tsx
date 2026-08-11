@@ -22,6 +22,7 @@ import { catchError, of as of$ } from "rxjs"
 import { useDebounceValue } from "usehooks-ts"
 
 import { AgendaDateSetter } from "@/components/AgendaDateSetter"
+import { FilterPanel } from "@/components/FilterPanel"
 import { If } from "@/components/If"
 import { Text } from "@/components/Text"
 import { TextField } from "@/components/TextField"
@@ -39,6 +40,7 @@ import { providerStore } from "@/store/provider"
 import { colors } from "@/theme/colors"
 import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
+import { describeAppointmentFilters } from "@/utils/filterChips"
 import { friendlyString, getAppintmentStatusColor } from "@/utils/misc"
 import { useSafeAreaInsetsStyle } from "@/utils/useSafeAreaInsetsStyle"
 
@@ -87,6 +89,7 @@ export const AppointmentsListScreen: FC<AppointmentsListScreenProps> = ({ naviga
         <AppointmentListHeader
           clinicsList={clinicsList}
           clinic={activeClinic}
+          defaultClinicId={propsClinicId}
           clearFilters={clearFilters}
           filters={filters}
           onFiltersChange={handleFiltersChange}
@@ -124,6 +127,8 @@ export const AppointmentsListScreen: FC<AppointmentsListScreenProps> = ({ naviga
 interface AppointmentListHeaderProps {
   clinicsList: Clinic.DBClinic[]
   clinic?: Clinic.DBClinic
+  /** The provider's own clinic — the default scope, so never shown as a chip. */
+  defaultClinicId: string
   filters: AppointmentsFilters
   clearFilters: () => void
   onFiltersChange: (filters: Partial<AppointmentsFilters>) => void
@@ -150,18 +155,19 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
     onFiltersChange,
     departmentList = [],
     clinicsList,
+    defaultClinicId,
   }: {
     filters: AppointmentsFilters
     clearFilters: () => void
     onFiltersChange: (filters: Partial<AppointmentsFilters>) => void
     departmentList: ClinicDepartmentModel[]
     clinicsList: Clinic.DBClinic[]
+    defaultClinicId: string
   }) => {
     const { themed } = useAppTheme()
     const [openDropdown, setOpenDropdown] = useState<
       "clinic" | "status" | "department" | "country" | "city" | null
     >(null)
-    const [isCollapsed, setIsCollapsed] = useState(true)
     const { paddingTop: safeAreaPaddingTop } = useSafeAreaInsetsStyle(["top"])
 
     const countryOptions = useMemo(() => Clinic.countryOptions(clinicsList), [clinicsList])
@@ -196,10 +202,18 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
       [clinicsList, filters.country, filters.city],
     )
 
-    const selectedClinic = clinicsList.find((clinic) => clinic.id === filters.clinicId)
-    const selectedStatus = filters.status
-    const selectedDepartments = departmentList.filter((department) =>
-      filters.departmentIds.includes(department.id),
+    const chips = useMemo(
+      () =>
+        describeAppointmentFilters(filters, {
+          clinics: clinicsList,
+          departments: departmentList,
+          defaultClinicId,
+        }).map((chip) => ({
+          key: chip.key,
+          label: chip.label,
+          onRemove: () => onFiltersChange(chip.clear),
+        })),
+      [filters, clinicsList, departmentList, defaultClinicId, onFiltersChange],
     )
 
     return (
@@ -214,37 +228,7 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
           RightAccessory={() => <LucideSearch style={$searchIcon} />}
         />
 
-        <If condition={isCollapsed}>
-          <View>
-            {filters.country ? <Text text={`Country: ${filters.country}`} /> : null}
-
-            {filters.city ? <Text text={`City: ${filters.city}`} /> : null}
-
-            {selectedClinic && <Text text={`Clinic: ${selectedClinic.name}`} />}
-
-            {selectedStatus && <Text text={`Status: ${friendlyString(selectedStatus)}`} />}
-
-            {selectedDepartments.length > 0 && (
-              <Text
-                text={`Departments: ${selectedDepartments.map((department) => department.name).join(", ")}`}
-              />
-            )}
-
-            <View direction="row" justifyContent="flex-end">
-              <Pressable style={$collapsibleButton} onPress={() => setIsCollapsed(false)}>
-                <Text text="Expand Filters" color={colors.palette.primary700} />
-                <LucideChevronDown size={24} color={colors.palette.primary700} />
-              </Pressable>
-            </View>
-          </View>
-        </If>
-        <If condition={!isCollapsed}>
-          <View direction="row" justifyContent="flex-end">
-            <Pressable style={$collapsibleButton} onPress={() => setIsCollapsed(true)}>
-              <Text text="Hide Filters" color={colors.palette.primary700} />
-              <LucideChevronUp size={24} color={colors.palette.primary700} />
-            </Pressable>
-          </View>
+        <FilterPanel chips={chips} onClearAll={clearFilters}>
           <View mt={10}>
             <Text preset="formLabel" text="Country" />
 
@@ -433,7 +417,7 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
             }}
           />
         </View>*/}
-        </If>
+        </FilterPanel>
         <View>
           <AgendaDateSetter date={filters.date} setDate={(date) => onFiltersChange({ date })} />
         </View>
@@ -441,13 +425,6 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
     )
   },
 )
-
-const $collapsibleButton: ViewStyle = {
-  flexDirection: "row",
-  justifyContent: "center",
-  alignItems: "center",
-  gap: 4,
-}
 
 const $container: ViewStyle = {
   justifyContent: "center",
@@ -624,16 +601,6 @@ const $appointmentListItem: ViewStyle = {
 export const ItemSeparatorComponent = () => {
   const { themed } = useAppTheme()
   return <View style={themed($separator)} />
-}
-
-// Helper function to count active filters
-const getActiveFilterCount = (filters: FilterState): number => {
-  let count = 0
-  if (filters.selectedClinicId) count++
-  if (filters.selectedDepartmentIds.length > 0) count++
-  if (filters.selectedStatuses.length > 0) count++
-  if (filters.searchQuery.length > 0) count++
-  return count
 }
 
 // Styles

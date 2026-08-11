@@ -33,25 +33,30 @@ export function useClinicIdsWithPermission(
   permission: UserPermissionsT,
 ): ClinicIdsWithPermissionResult {
   const role = useSelector(providerStore, (state) => Option.getOrNull(state.context.role))
+  const clinicId = useSelector(providerStore, (state) => Option.getOrNull(state.context.clinic_id))
 
   const [clinicIds, setClinicIds] = useState<string[] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isPermissionsDisabled, setIsPermissionsDisabled] = useState<boolean | null>(null)
 
-  // Load the global disable toggle once
+  // Reload the disable toggle whenever the clinic changes — the config row can
+  // be scoped to specific clinics. This hook answers a cross-clinic question,
+  // but the toggle gating it resolves against the currently signed-in clinic.
   useEffect(() => {
     let cancelled = false
-    AppConfig.DB.getValue(AppConfig.Namespaces.AUTH, "disable-mobile-permissions-checking").then(
-      (value) => {
-        if (!cancelled) {
-          setIsPermissionsDisabled(value === true || value === "true")
-        }
-      },
-    )
+    AppConfig.DB.getValue(
+      AppConfig.Namespaces.AUTH,
+      "disable-mobile-permissions-checking",
+      clinicId,
+    ).then((value) => {
+      if (!cancelled) {
+        setIsPermissionsDisabled(value === true || value === "true")
+      }
+    })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [clinicId])
 
   // Subscribe to permission changes reactively
   useEffect(() => {

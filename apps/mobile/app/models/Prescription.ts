@@ -585,19 +585,22 @@ namespace Prescription {
 
     /**
      * Create query conditions for searching prescriptions
+     *
+     * `clinicIds` is the pickup-clinic constraint: `null` applies none, while
+     * an empty array matches nothing. `pickup_clinic_id` is nullable, so the
+     * two are not interchangeable — see `Clinic.resolveClinicIdConstraint`.
      */
     export const createSearchQueryConditions = (
       searchQuery: string,
-      clinicId: string | null,
+      clinicIds: string[] | null,
       status: Status[],
       date: Date,
       options: { offset?: number; limit?: number } = { offset: 0, limit: 50 },
     ): Q.Clause[] => {
       const conditions: Q.Clause[] = [Q.where("is_deleted", false)]
 
-      // Add clinic filter if provided
-      if (clinicId) {
-        conditions.push(Q.where("pickup_clinic_id", clinicId))
+      if (clinicIds !== null) {
+        conditions.push(Q.where("pickup_clinic_id", Q.oneOf(clinicIds)))
       }
 
       // Add date filter - filter by prescribed date

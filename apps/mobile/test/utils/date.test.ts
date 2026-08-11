@@ -1,7 +1,7 @@
 import fc from "fast-check"
 
 import { localeDate, calculateAge, parseYYYYMMDD, toDateSafe } from "../../app/utils/date"
-import { addDays, subDays, subYears, subMonths } from "date-fns"
+import { addDays, format, subDays, subYears, subMonths } from "date-fns"
 
 // Mock i18next
 jest.mock("i18next", () => ({
@@ -425,6 +425,58 @@ describe("date utilities", () => {
           },
         ),
       )
+    })
+  })
+
+  // These hold in every timezone under a local parse, and fail west of UTC
+  // under `new Date("2000-01-15")`. Run with TZ=America/New_York to check.
+  describe("civil dates are timezone-invariant", () => {
+    it("parses YYYY-MM-DD to local midnight on the stated day", () => {
+      const dob = toDateSafe("2000-01-15", new Date())
+      expect([dob.getFullYear(), dob.getMonth(), dob.getDate()]).toEqual([2000, 0, 15])
+      expect([dob.getHours(), dob.getMinutes()]).toEqual([0, 0])
+    })
+
+    it("round-trips a stored YYYY-MM-DD through toDateSafe unchanged", () => {
+      // The composition Patient.DB.register uses when writing DOB.
+      for (const stored of ["2000-01-15", "2000-02-01", "1999-12-31", "2024-02-29"]) {
+        expect(format(toDateSafe(stored, new Date()), "yyyy-MM-dd")).toBe(stored)
+      }
+    })
+
+    it("displays the stored day, not the day before", () => {
+      expect(localeDate("2002-02-02", "dd MMM yyyy")).toBe("02 Feb 2002")
+      expect(localeDate("2000-01-15", "dd MMM yyyy")).toBe("15 Jan 2000")
+      expect(localeDate("1999-12-31", "dd MMM yyyy")).toBe("31 Dec 1999")
+    })
+
+    it("agrees between the string and Date forms when displaying", () => {
+      expect(localeDate("2002-02-02", "dd MMM yyyy")).toBe(
+        localeDate(new Date(2002, 1, 2), "dd MMM yyyy"),
+      )
+    })
+
+    it("still treats numeric and instant inputs as instants", () => {
+      const instant = new Date(2002, 1, 2, 13, 45)
+      expect(localeDate(instant, "dd MMM yyyy")).toBe("02 Feb 2002")
+      expect(localeDate(instant.getTime(), "dd MMM yyyy")).toBe("02 Feb 2002")
+      expect(localeDate(String(instant.getTime()), "dd MMM yyyy")).toBe("02 Feb 2002")
+    })
+
+    it("does not age a patient up on the evening before their birthday", () => {
+      jest.useFakeTimers()
+      // 23:00 local the day before the 24th birthday. A UTC parse lands the DOB
+      // on the 14th west of UTC and wrongly reports 24 years.
+      jest.setSystemTime(new Date(2024, 0, 14, 23, 0))
+      expect(calculateAge("2000-01-15")).toMatch(/^23 years/)
+      jest.useRealTimers()
+    })
+
+    it("agrees between the string and Date forms of the same civil date", () => {
+      jest.useFakeTimers()
+      jest.setSystemTime(new Date(2024, 0, 14, 23, 0))
+      expect(calculateAge("2000-01-15")).toBe(calculateAge(new Date(2000, 0, 15)))
+      jest.useRealTimers()
     })
   })
 })

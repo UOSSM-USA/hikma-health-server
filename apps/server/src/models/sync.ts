@@ -13,8 +13,10 @@ import {
   ENTITIES_TO_PULL_FROM_HUB,
   EXEMPT_FROM_HISTORY_LIMIT,
   CLINIC_COLUMN_BY_TABLE,
+  FULL_SNAPSHOT_TABLES,
   applyClinicScope,
   getMaxHistoryDaysSync,
+  normalizeCivilDates,
 } from "./sync-shared";
 
 /** Returns true if the value looks like a raw epoch timestamp (10-13 digit numeric string or number, possibly negative for pre-1970 dates). */
@@ -218,6 +220,52 @@ namespace Sync {
   type DBChangeSet = PullResponse["changes"];
 
   /**
+   * Every live row as `updated`, every removed row's id as `deleted`.
+   *
+   * `updated` rather than `created`: WatermelonDB updates the rows the device
+   * already has and creates the ones it does not, whereas `created` logs an
+   * error for every row that already exists. The one error it does log per
+   * created row is worth keeping — it names devices that were missing a clinic.
+   *
+   * Both predicates read `is_deleted` null-safely, since it is nullable and
+   * `is_deleted = false` does not match NULL — such a row would otherwise be
+   * neither live nor deleted and vanish from both lists. The deleted side keys
+   * on `is_deleted` OR `deleted_at` so a row flagged without a timestamp is
+   * still removed from devices.
+   */
+  const getFullSnapshot = async (
+    tableName: string,
+    hubClinicIds: string[] | null,
+  ): Promise<DeltaData> => {
+    const live = await applyClinicScope(
+      db
+        .selectFrom(tableName as "clinics")
+        .where("deleted_at", "is", null)
+        .where("is_deleted", "is not", true)
+        .selectAll(),
+      tableName,
+      hubClinicIds,
+    ).execute();
+
+    const removed = await applyClinicScope(
+      db
+        .selectFrom(tableName as "clinics")
+        .where((eb) =>
+          eb.or([eb("is_deleted", "=", true), eb("deleted_at", "is not", null)]),
+        )
+        .select("id"),
+      tableName,
+      hubClinicIds,
+    ).execute();
+
+    return createDeltaData(
+      [],
+      normalizeCivilDates(tableName, live),
+      removed.map((record: { id: string }) => record.id),
+    );
+  };
+
+  /**
    * Get the delta records for the last synced at time
    * TODO: if lastSyncedAt is 0, no deleted records should be returned
    * @param lastSyncedAt
@@ -264,6 +312,15 @@ namespace Sync {
       const mobile_table_name = entity.Table.mobileName;
       const always_push_to_mobile =
         entity.Table?.ALWAYS_PUSH_TO_MOBILE || false;
+
+      // Replicated whole, so the watermark never applies to it.
+      if (FULL_SNAPSHOT_TABLES.has(server_table_name)) {
+        result[mobile_table_name] = await getFullSnapshot(
+          server_table_name,
+          hubClinicIds,
+        );
+        continue;
+      }
 
       // Configuration entities should always sync full history, not limited by MAX_HISTORY_DAYS_SYNC
       const isExemptFromHistoryLimit =
@@ -316,8 +373,8 @@ namespace Sync {
             ).execute();
 
       const deltaData = createDeltaData(
-        newRecords,
-        updatedRecords,
+        normalizeCivilDates(server_table_name, newRecords),
+        normalizeCivilDates(server_table_name, updatedRecords),
         deletedRecords.map((record: { id: string }) => record.id),
       );
 

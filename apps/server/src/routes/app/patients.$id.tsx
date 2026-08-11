@@ -40,6 +40,7 @@ import { PatientVitalsCard } from "@/components/patient/PatientVitalsCard";
 import { RecentVisitsList } from "@/components/patient/RecentVisitsList";
 import { PrescriptionsList } from "@/components/patient/PrescriptionsList";
 import { PatientProblemsList } from "@/components/patient/PatientProblemsList";
+import { parseCivilDate } from "@/lib/utils";
 import { Logger } from "@hikmahealth/js-utils";
 
 export const Route = createFileRoute("/app/patients/$id")({
@@ -197,6 +198,9 @@ function RouteComponent() {
   const router = useRouter();
   const patientId = params.id;
   const isEditing = !!patientId && patientId !== "new";
+  // Optional-chained: the `!patient` guard is further down, after the hooks, so
+  // this runs even when the patient failed to load.
+  const patientDateOfBirth = parseCivilDate(patient?.date_of_birth);
   const [mostRecentVital, setMostRecentVital] = useState<
     typeof PatientVital.PatientVitalSchema.Encoded | null
   >(null);
@@ -310,10 +314,11 @@ function RouteComponent() {
     });
   }
 
-  // Calculate age from date of birth
+  // The DOB is a civil date, so it is parsed from local parts to match the
+  // local getters below — see `parseCivilDate`.
   const calculateAge = (dob: Date | string | undefined) => {
-    if (!dob) return "Unknown";
-    const birthDate = new Date(dob);
+    const birthDate = parseCivilDate(dob);
+    if (!birthDate) return "Unknown";
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
@@ -409,8 +414,8 @@ function RouteComponent() {
             <div className="flex justify-between">
               <span className="text-muted-foreground">Date of Birth</span>
               <span className="font-medium">
-                {patient.date_of_birth
-                  ? format(new Date(patient.date_of_birth), "MMM dd, yyyy")
+                {patientDateOfBirth
+                  ? format(patientDateOfBirth, "MMM dd, yyyy")
                   : "—"}
               </span>
             </div>

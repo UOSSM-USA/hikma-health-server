@@ -75,11 +75,15 @@ export function useDBAppointmentsFilter(
     const { status, date, searchQuery, departmentIds } = filters
     setLoading(true)
 
+    // "all" is the no-status-filter sentinel; passing it through would become
+    // Q.oneOf(["all"]) and match nothing.
+    const statusFilter = status === "all" ? [] : [status]
+
     // build the conditions
     const conditions = Appointment.DB.createSearchQueryConditions(
       searchQuery,
       clinicIds,
-      [status],
+      statusFilter,
       date,
       pagination,
     )
@@ -117,8 +121,19 @@ export function useDBAppointmentsFilter(
   ])
 
   const handleFiltersChange = (newFilters: Partial<AppointmentsFilters>) => {
+    // Prune only on a location change. On every change it would clear a clinic
+    // the user never chose to clear: the provider's own clinic is absent from
+    // `clinics` while archived or still syncing, so pruning would drop it and
+    // widen the list from one clinic to every clinic.
+    const touchesLocation =
+      newFilters.country !== undefined ||
+      newFilters.city !== undefined ||
+      newFilters.clinicId !== undefined
+
     setFilters((prev) => {
       const next = { ...prev, ...newFilters }
+      if (!touchesLocation) return next
+
       const location = Clinic.pruneLocationSelection(clinics, {
         country: next.country,
         city: next.city,

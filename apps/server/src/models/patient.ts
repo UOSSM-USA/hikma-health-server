@@ -24,6 +24,8 @@ import {
   isValidUUID,
   safeJSONParse,
   safeStringify,
+  civilDateFromInstant,
+  civilDateFromLocalDate,
   toSafeDateString,
 } from "@/lib/utils";
 import { uuidv7 } from "uuidv7";
@@ -290,10 +292,12 @@ namespace Patient {
         id: patientId,
         given_name: Option.getOrElse(baseFields.given_name, () => null),
         surname: Option.getOrElse(baseFields.surname, () => null),
+        // Civil date — toISOString() would re-read it as an instant and shift
+        // the day.
         date_of_birth: Option.getOrElse(
           Option.map(
             baseFields.date_of_birth,
-            (date) => sql`${date.toISOString()}::date`,
+            (date) => sql`${civilDateFromInstant(date)}::date`,
           ),
           () => null,
         ),
@@ -383,9 +387,13 @@ namespace Patient {
   );
 
   /**
-   * Format date fields in a patient record to ISO strings
+   * Format date fields in a patient record for transport.
+   *
+   * Instants become ISO strings. date_of_birth is a *civil date* and becomes
+   * "YYYY-MM-DD" — it carries no timezone, so it must not be serialized as an
+   * instant.
+   *
    * @param patient Patient record with potential Date objects
-   * @returns Patient record with dates formatted as ISO strings
    */
   const formatPatientDates = <T extends Partial<Table.Patients>>(
     patient: T,
@@ -407,10 +415,9 @@ namespace Patient {
       patient.deleted_at instanceof Date
         ? patient.deleted_at.toISOString()
         : patient.deleted_at,
-    date_of_birth:
-      patient.date_of_birth instanceof Date
-        ? patient.date_of_birth.toISOString()
-        : patient.date_of_birth,
+    // Never toISOString() — that would shift the day on any server not running
+    // on UTC.
+    date_of_birth: civilDateFromLocalDate(patient.date_of_birth),
   });
 
   /**
@@ -837,8 +844,11 @@ namespace Patient {
               id: patientId,
               given_name: patient.given_name,
               surname: patient.surname,
+              // Civil date. Casting to timestamptz would resolve it against the
+              // session timezone before Postgres casts it back down to `date`,
+              // shifting the day whenever that timezone is not UTC.
               date_of_birth: patient.date_of_birth
-                ? sql`${patient.date_of_birth}::timestamp with time zone`
+                ? sql`${civilDateFromInstant(patient.date_of_birth)}::date`
                 : null,
               citizenship: patient.citizenship,
               photo_url: patient.photo_url || null,

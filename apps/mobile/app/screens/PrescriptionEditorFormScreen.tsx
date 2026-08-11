@@ -607,13 +607,25 @@ const enhanceInventoryItem = withObservables(
   ["inventoryItem"],
   ({ inventoryItem }: { inventoryItem: ClinicInventory.DB.T }) => ({
     inventoryItem,
-    drug: inventoryItem.drug,
+    // A drug_catalogue row this device never synced makes the relation error,
+    // and withObservables re-throws that during render — taking down the whole
+    // editor rather than this row. Test the foreign key, then catch a dangling
+    // id.
+    drug: inventoryItem.drugId
+      ? inventoryItem.drug.observe().pipe(catchError(() => of$(null)))
+      : of$(null),
   }),
 )
 
-const InventoryItem = enhanceInventoryItem(
-  ({ inventoryItem, drug }: { inventoryItem: ClinicInventory.DB.T; drug: DrugCatalogue.DB.T }) => {
+export const InventoryItem = enhanceInventoryItem(
+  ({ drug }: { inventoryItem: ClinicInventory.DB.T; drug: DrugCatalogue.DB.T | null }) => {
     const { theme } = useAppTheme()
+
+    // The parent renders this inside a Pressable, so a blank row would still be
+    // selectable — say why it is empty rather than leaving it silent.
+    if (!drug) {
+      return <Text size="lg" text="Drug details unavailable" />
+    }
 
     return (
       <View>

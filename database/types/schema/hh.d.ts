@@ -28,7 +28,7 @@ export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 export interface AccessGrants {
   created_at: Generated<Timestamp>;
   created_by_user_id: string;
-  description: string | null;
+  description: Generated<string | null>;
   expires_at: Timestamp;
   id: Generated<string>;
   revoked_at: Timestamp | null;
@@ -38,6 +38,7 @@ export interface AccessGrants {
 }
 
 export interface AppConfig {
+  clinic_ids: Json | null;
   created_at: Generated<Timestamp | null>;
   data_type: Generated<string>;
   display_name: string | null;
@@ -324,6 +325,14 @@ export interface Events {
   server_created_at: Generated<Timestamp | null>;
   updated_at: Generated<Timestamp | null>;
   visit_id: string | null;
+}
+
+export interface HhUnique {
+  created_at: Generated<Timestamp>;
+  key: string;
+  tag: string | null;
+  updated_at: Generated<Timestamp>;
+  value: string;
 }
 
 export interface InventoryTransactions {
@@ -737,6 +746,7 @@ export interface DB {
   event_forms: EventForms;
   event_logs: EventLogs;
   events: Events;
+  hh_unique: HhUnique;
   inventory_transactions: InventoryTransactions;
   patient_additional_attributes: PatientAdditionalAttributes;
   patient_allergies: PatientAllergies;

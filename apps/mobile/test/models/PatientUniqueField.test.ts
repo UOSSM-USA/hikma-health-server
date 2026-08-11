@@ -39,7 +39,9 @@ jest.mock("../../app/store/provider", () => {
       getSnapshot: () => ({
         context: {
           role: Option.some("super_admin"),
-          clinicId: Option.some("clinic-1"),
+          // snake_case, matching the real store. A camelCase key is silently
+          // absent, and Option.getOrNull then throws instead of returning null.
+          clinic_id: Option.some("clinic-1"),
         },
       }),
     },

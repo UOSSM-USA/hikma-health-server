@@ -31,6 +31,13 @@ import { PatientProfileSummary } from "@/components/PatientProfileSummary"
 import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
 import { View } from "@/components/View"
+import {
+  PATIENT_VIEW_ACTIONS,
+  PATIENT_VIEW_ACTIONS_KEY,
+  PATIENT_VIEW_ACTIONS_NAMESPACE,
+  type PatientViewActionId,
+} from "@/config/patientViewActions"
+import { useAppConfigValue } from "@/hooks/useAppConfigValue"
 import { usePatientAppointments } from "@/hooks/useDBPatientAppointments"
 import { useEventForms } from "@/hooks/useEventForms"
 import { usePatientRecord } from "@/hooks/usePatientRecord"
@@ -46,7 +53,9 @@ import Visit from "@/models/Visit"
 import { PatientNavigatorParamList } from "@/navigators/PatientNavigator"
 import { appStateStore } from "@/store/appState"
 import { languageStore } from "@/store/language"
+import { providerStore } from "@/store/provider"
 import { colors } from "@/theme/colors"
+import { resolveActionOrder } from "@/utils/actionOrder"
 import { localeDate } from "@/utils/date"
 import { Logger } from "@hikmahealth/js-utils"
 
@@ -80,6 +89,22 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
   const { appointments: allAppointments } = usePatientAppointments(patientId)
   const appointments = allAppointments.filter((apt) => apt.status?.toLowerCase() !== "cancelled")
   const { can } = usePermissionGuard()
+
+  const clinicId = useSelector(providerStore, (state) => Option.getOrNull(state.context.clinic_id))
+  const { value: actionsConfig } = useAppConfigValue(
+    PATIENT_VIEW_ACTIONS_NAMESPACE,
+    PATIENT_VIEW_ACTIONS_KEY,
+    clinicId,
+  )
+  const orderedActions = useMemo(
+    () =>
+      resolveActionOrder(
+        PATIENT_VIEW_ACTIONS,
+        actionsConfig,
+        can as (permission: string) => boolean,
+      ),
+    [actionsConfig, can],
+  )
 
   // const createNewAppointment = () => {
   //   navigation.navigate("AppointmentEditorForm", {
@@ -184,6 +209,38 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
     navigation.navigate("DiagnosisHistory", {
       patientId: patient?.value.id,
     })
+  }
+
+  const actionRenderers: Record<PatientViewActionId, PatientChartActionProps> = {
+    visit_history: {
+      onPress: () =>
+        navigation.navigate("PatientVisitsList", { patientId: route.params.patientId }),
+      label: translate("patientFile:visitHistory"),
+      description: translate("patientFile:visitHistoryDescription"),
+      testID: "patient-history-btn",
+      icon: LucideGalleryVerticalEnd,
+    },
+    prescriptions: {
+      onPress: handlePrescriptionsPress,
+      label: translate("common:prescriptions"),
+      description: translate("patientFile:actions.prescriptionDescription"),
+      testID: "patient-medications-btn",
+      icon: LucidePillBottle,
+    },
+    vitals: {
+      onPress: handleVitalsPress,
+      label: translate("common:vitals"),
+      description: translate("patientFile:actions.vitalsDescription"),
+      testID: "patient-vitals-btn",
+      icon: LucideActivitySquare,
+    },
+    diagnoses: {
+      onPress: handleDiagnosesPress,
+      label: translate("common:diagnoses"),
+      description: translate("patientFile:actions.diagnosisDescription"),
+      testID: "patient-diagnoses-btn",
+      icon: LucideClipboardList,
+    },
   }
 
   if (isLoading) {
@@ -334,38 +391,10 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
                 </View>
               </If>
             </View>
-            <PatientChartAction
-              onPress={() =>
-                navigation.navigate("PatientVisitsList", {
-                  patientId: patient.value.id,
-                })
-              }
-              label={translate("patientFile:visitHistory")}
-              description={translate("patientFile:visitHistoryDescription")}
-              testID="patient-history-btn"
-              icon={LucideGalleryVerticalEnd}
-            />
-            <PatientChartAction
-              label={translate("common:prescriptions")}
-              onPress={handlePrescriptionsPress}
-              testID="patient-medications-btn"
-              description={translate("patientFile:actions.prescriptionDescription")}
-              icon={LucidePillBottle}
-            />
-            <PatientChartAction
-              label={translate("common:vitals")}
-              onPress={handleVitalsPress}
-              testID="patient-vitals-btn"
-              description={translate("patientFile:actions.vitalsDescription")}
-              icon={LucideActivitySquare}
-            />
-            <PatientChartAction
-              label={translate("common:diagnoses")}
-              onPress={handleDiagnosesPress}
-              testID="patient-diagnoses-btn"
-              description={translate("patientFile:actions.diagnosisDescription")}
-              icon={LucideClipboardList}
-            />
+            {orderedActions.map((action) => {
+              const props = actionRenderers[action.id]
+              return <PatientChartAction key={action.id} {...props} />
+            })}
           </View>
 
           {/*<SnapshotFormLink
@@ -552,7 +581,7 @@ async function printHTML(props: PDFReportProps) {
 
           <div style="flex: 1">
               <h3 class="mb-0">${translate("common:dob")}</h3>
-              ${localeDate(new Date(patient.value.dateOfBirth), "MMMM dd yyyy", {})}
+              ${localeDate(patient.value.dateOfBirth, "MMMM dd yyyy", {})}
 
               <h3 class="mb-0">${translate("common:weight")}</h3>
               ${weight}
